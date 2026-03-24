@@ -48,3 +48,5 @@
   font-size: 12px;
   color: var(--destructive);
 }
+
+:global(.dark) .input { color-scheme: dark; }

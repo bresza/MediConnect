@@ -168,6 +168,9 @@
 
 .lgpdText strong { font-weight: 700; }
 
+:global(.dark) .lgpdBox { background-color: rgb(59 130 246 / 0.10); }
+:global(.dark) .lgpdText { color: #93c5fd; }
+
 .textarea {
   width: 100%;
   padding: 10px 12px;

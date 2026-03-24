@@ -65,6 +65,10 @@
 .statIconAmber   { background-color: #fffbeb; }
 .statIconEmerald { background-color: #ecfdf5; }
 
+:global(.dark) .statIconBlue    { background-color: rgb(59 130 246 / 0.15); }
+:global(.dark) .statIconAmber   { background-color: rgb(245 158 11 / 0.15); }
+:global(.dark) .statIconEmerald { background-color: rgb(16 185 129 / 0.15); }
+
 /* ── Content grid ─────────────────────────────────────────────── */
 .contentGrid {
   display: grid;

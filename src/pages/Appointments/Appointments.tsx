@@ -5,7 +5,7 @@ import { Badge } from "../../components/ui/Badge/Badge"
 import { Avatar } from "../../components/ui/Avatar/Avatar"
 import { Button } from "../../components/ui/Button/Button"
 import { Select } from "../../components/ui/Select/Select"
-import { formatAppointmentType, checkConflict } from "../../utils"
+import { formatAppointmentType, checkConflict, timeToMinutes } from "../../utils"
 import type { Appointment, Patient } from "../../types"
 import styles from "./Appointments.module.css"
 
@@ -168,23 +168,34 @@ export function Appointments({ appointments, patients, onAddAppointment }: Appoi
           {view === "day" && (
             <div className={styles.dayScroll}>
               {HOURS.map((h) => {
-                const apt = filteredAppointments.find((a) => a.time === h)
+                const slotMin = timeToMinutes(h)
+                const aptStart = filteredAppointments.find((a) => a.time === h)
+                const aptCover = !aptStart && filteredAppointments.find((a) => {
+                  const s = timeToMinutes(a.time)
+                  return slotMin > s && slotMin < s + a.duration
+                })
                 return (
                   <div key={h} className={styles.hourRow}>
                     <div className={styles.hourLabel}>{h}</div>
                     <div className={styles.hourCell}>
-                      {apt ? (
+                      {aptStart ? (
                         <div
-                          onClick={() => setSelected(apt)}
-                          className={`${styles.appointmentBlock} ${BLOCK_STYLE[apt.status] ?? styles.appointmentBlockDefault}`}
+                          onClick={() => setSelected(aptStart)}
+                          className={`${styles.appointmentBlock} ${BLOCK_STYLE[aptStart.status] ?? styles.appointmentBlockDefault}`}
                         >
                           <div className={styles.appointmentBlockRow}>
-                            <p className={styles.appointmentPatient}>{apt.patientName}</p>
-                            <Badge>{apt.status}</Badge>
+                            <p className={styles.appointmentPatient}>{aptStart.patientName}</p>
+                            <Badge>{aptStart.status}</Badge>
                           </div>
                           <p className={styles.appointmentMeta}>
-                            {formatAppointmentType(apt.type)} · {apt.doctorName} · {apt.duration}min
+                            {formatAppointmentType(aptStart.type)} · {aptStart.doctorName} · {aptStart.duration}min
                           </p>
+                        </div>
+                      ) : aptCover ? (
+                        <div className={styles.continuationSlot}>
+                          <span className={styles.continuationLabel}>
+                            Em atendimento · {aptCover.patientName}
+                          </span>
                         </div>
                       ) : (
                         <div className={styles.emptySlot} onClick={() => {
