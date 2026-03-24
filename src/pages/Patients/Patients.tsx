@@ -1,15 +1,19 @@
 import { useState } from "react"
-import { PATIENTS } from "../../data/mock"
 import { Topbar } from "../../components/layout/Topbar/Topbar"
 import { Card } from "../../components/ui/Card/Card"
 import { Badge } from "../../components/ui/Badge/Badge"
 import { Avatar } from "../../components/ui/Avatar/Avatar"
 import { Button } from "../../components/ui/Button/Button"
 import { formatDate } from "../../utils"
-import type { PageId } from "../../types"
+import type { PageId, Patient } from "../../types"
 import styles from "./Patients.module.css"
 
-interface PatientsProps { onNavigate: (page: PageId) => void }
+interface PatientsProps {
+  patients: Patient[]
+  onNavigate: (page: PageId) => void
+  onEditPatient: (p: Patient) => void
+  onViewRecords?: (p: Patient) => void
+}
 
 const SearchIcon = () => (
   <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -25,11 +29,11 @@ const PlusIcon = () => (
   </svg>
 )
 
-export function Patients({ onNavigate }: PatientsProps) {
-  const [search, setSearch]           = useState("")
+export function Patients({ patients, onNavigate, onEditPatient, onViewRecords }: PatientsProps) {
+  const [search, setSearch]             = useState("")
   const [filterStatus, setFilterStatus] = useState<"All" | "Active" | "Inactive">("All")
 
-  const filtered = PATIENTS.filter((p) =>
+  const filtered = patients.filter((p) =>
     (filterStatus === "All" || p.status === filterStatus) &&
     (p.name.toLowerCase().includes(search.toLowerCase()) || p.cpf.includes(search))
   )
@@ -40,7 +44,7 @@ export function Patients({ onNavigate }: PatientsProps) {
     <div>
       <Topbar
         title="Pacientes"
-        subtitle={`${PATIENTS.length} pacientes cadastrados`}
+        subtitle={`${patients.length} pacientes cadastrados`}
         action={
           <Button onClick={() => onNavigate("register")} icon={<PlusIcon />}>
             Novo paciente
@@ -100,8 +104,8 @@ export function Patients({ onNavigate }: PatientsProps) {
                     <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}><Badge>{p.status}</Badge></td>
                     <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}>
                       <div className={styles.actions}>
-                        <Button size="sm" variant="ghost" onClick={() => onNavigate("register")}>Editar</Button>
-                        <Button size="sm" variant="ghost">Prontuário</Button>
+                        <Button size="sm" variant="ghost" onClick={() => onEditPatient(p)}>Editar</Button>
+                        <Button size="sm" variant="ghost" onClick={() => onViewRecords?.(p)}>Prontuário</Button>
                       </div>
                     </td>
                   </tr>

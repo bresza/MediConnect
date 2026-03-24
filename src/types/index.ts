@@ -201,6 +201,47 @@ export interface FinancialRecord {
   observations?: string
 }
 
+// ─── MEDICAL RECORD ───────────────────────────────────────────────
+export type MedicalRecordStatus = "open" | "finalized"
+
+export interface VitalSigns {
+  bloodPressure?: string
+  heartRate?: number
+  temperature?: number
+  weight?: number
+  height?: number
+  oxygenSaturation?: number
+}
+
+export interface MedicalRecord {
+  id: number
+  patientId: number
+  patientName: string
+  doctorId: number
+  doctorName: string
+  appointmentId?: number
+  date: string
+  chiefComplaint: string
+  currentHistory?: string
+  allergies?: string
+  medications?: string
+  personalHistory?: string
+  familyHistory?: string
+  vitalSigns?: VitalSigns
+  physicalExam?: string
+  diagnosis?: string
+  cid10?: string
+  treatmentPlan?: string
+  prescriptions?: string
+  examRequests?: string
+  returnDate?: string
+  observations?: string
+  status: MedicalRecordStatus
+  createdAt: string
+  updatedAt?: string
+  updatedBy?: string
+}
+
 // ─── NAVIGATION ───────────────────────────────────────────────────
 export type PageId =
   | "dashboard"

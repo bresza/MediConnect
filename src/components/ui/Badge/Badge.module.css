@@ -51,6 +51,12 @@
   box-shadow: inset 0 0 0 1px #ddd6fe;
 }
 
+.open {
+  background-color: #eff6ff;
+  color: #1e40af;
+  box-shadow: inset 0 0 0 1px #bfdbfe;
+}
+
 .inactive,
 .blocked,
 .draft {

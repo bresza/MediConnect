@@ -1,14 +1,18 @@
-import { APPOINTMENTS, PATIENTS, REPORTS } from "../../data/mock"
+import { REPORTS } from "../../data/mock"
 import { Topbar } from "../../components/layout/Topbar/Topbar"
 import { Card } from "../../components/ui/Card/Card"
 import { Badge } from "../../components/ui/Badge/Badge"
 import { Avatar } from "../../components/ui/Avatar/Avatar"
 import { Button } from "../../components/ui/Button/Button"
 import { formatDate, formatAppointmentType } from "../../utils"
-import type { PageId } from "../../types"
+import type { PageId, Patient, Appointment } from "../../types"
 import styles from "./Dashboard.module.css"
 
-interface DashboardProps { onNavigate: (page: PageId) => void }
+interface DashboardProps {
+  patients: Patient[]
+  appointments: Appointment[]
+  onNavigate: (page: PageId) => void
+}
 
 const PlusIcon = () => (
   <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2"
@@ -20,7 +24,7 @@ const PlusIcon = () => (
 const STATS = [
   {
     label:    "Pacientes",
-    icon:     "M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8z",
+    icon:     "M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z",
     valCls:   styles.statPrimary,
     iconBg:   styles.statIconPrimary,
     iconStroke: "var(--primary)",
@@ -48,12 +52,16 @@ const STATS = [
   },
 ]
 
-export function Dashboard({ onNavigate }: DashboardProps) {
+export function Dashboard({ patients, appointments, onNavigate }: DashboardProps) {
+  const confirmed = appointments.filter((a) => a.status === "confirmed").length
+  const total     = appointments.filter((a) => a.status !== "blocked").length
+  const rate      = total > 0 ? Math.round((confirmed / total) * 100) : 0
+
   const statValues: Record<string, string | number> = {
-    "Pacientes":          PATIENTS.length,
-    "Agendamentos hoje":  APPOINTMENTS.length,
+    "Pacientes":          patients.length,
+    "Agendamentos hoje":  appointments.length,
     "Laudos pendentes":   REPORTS.filter((r) => r.status === "Draft").length,
-    "Taxa de presença":   "81%",
+    "Taxa de presença":   `${rate}%`,
   }
 
   return (
@@ -101,7 +109,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
               Ver tudo
             </Button>
           </div>
-          {APPOINTMENTS.slice(0, 5).map((a) => (
+          {appointments.slice(0, 5).map((a) => (
             <div key={a.id} className={styles.appointmentRow}>
               <span className={styles.appointmentTime}>{a.time}</span>
               <Avatar name={a.patientName} size="sm" />
@@ -124,7 +132,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
               Ver todos
             </Button>
           </div>
-          {PATIENTS.map((p) => (
+          {patients.map((p) => (
             <div key={p.id} className={styles.patientRow}>
               <Avatar name={p.name} size="sm" />
               <div className={styles.patientInfo}>

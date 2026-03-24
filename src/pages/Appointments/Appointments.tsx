@@ -1,19 +1,19 @@
-import { useState } from "react"
-import { APPOINTMENTS, PATIENTS } from "../../data/mock"
+import { useState, useEffect } from "react"
 import { Topbar } from "../../components/layout/Topbar/Topbar"
 import { Card } from "../../components/ui/Card/Card"
 import { Badge } from "../../components/ui/Badge/Badge"
 import { Avatar } from "../../components/ui/Avatar/Avatar"
 import { Button } from "../../components/ui/Button/Button"
 import { Select } from "../../components/ui/Select/Select"
-import { formatAppointmentType } from "../../utils"
-import type { Appointment } from "../../types"
+import { formatAppointmentType, checkConflict } from "../../utils"
+import type { Appointment, Patient } from "../../types"
 import styles from "./Appointments.module.css"
 
 type CalendarView = "day" | "week" | "month"
 
 const HOURS      = ["08:00","08:30","09:00","09:30","10:00","10:30","11:00","11:30","12:00","14:00","14:30","15:00","15:30","16:00","16:30","17:00"]
 const DAYS_SHORT = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"]
+const DOCTORS    = ["Dr. Roberto Farias", "Dra. Carla Nunes"]
 
 const PlusIcon = () => (
   <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.5"
@@ -28,23 +28,103 @@ const BLOCK_STYLE: Record<string, string> = {
   absent:    styles.appointmentBlockAbsent,
 }
 
-export function Appointments() {
+// ─── Modal form state ──────────────────────────────────────────────
+interface ModalForm {
+  date: string
+  time: string
+  patientName: string
+  doctorName: string
+  type: string
+  duration: string
+  channel: string
+  observations: string
+}
+
+const EMPTY_MODAL: ModalForm = {
+  date: "2026-03-18", time: "", patientName: "",
+  doctorName: "", type: "", duration: "30", channel: "", observations: "",
+}
+
+interface AppointmentsProps {
+  appointments: Appointment[]
+  patients: Patient[]
+  onAddAppointment: (a: Appointment) => void
+}
+
+export function Appointments({ appointments, patients, onAddAppointment }: AppointmentsProps) {
   const [view, setView]           = useState<CalendarView>("day")
   const [selected, setSelected]   = useState<Appointment | null>(null)
   const [showModal, setShowModal] = useState(false)
+  const [filterDoctor, setFilterDoctor] = useState("")
+  const [modal, setModal]         = useState<ModalForm>(EMPTY_MODAL)
+  const [conflict, setConflict]   = useState<string | null>(null)
+  const [modalError, setModalError] = useState<string | null>(null)
 
-  const hoje    = new Date(2026, 2, 18)
+  const hoje     = new Date(2026, 2, 18)
   const weekDays = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(hoje)
     d.setDate(hoje.getDate() - hoje.getDay() + i)
     return d
   })
 
+  const filteredAppointments = filterDoctor
+    ? appointments.filter((a) => a.doctorName === filterDoctor)
+    : appointments
+
   const summary = [
-    { label: "Confirmados", value: APPOINTMENTS.filter((a) => a.status === "confirmed").length, cls: styles.summaryGreen  },
-    { label: "Pendentes",   value: APPOINTMENTS.filter((a) => a.status === "pending").length,   cls: styles.summaryAmber  },
-    { label: "Ausentes",    value: APPOINTMENTS.filter((a) => a.status === "absent").length,    cls: styles.summaryRed    },
+    { label: "Confirmados", value: filteredAppointments.filter((a) => a.status === "confirmed").length, cls: styles.summaryGreen },
+    { label: "Pendentes",   value: filteredAppointments.filter((a) => a.status === "pending").length,   cls: styles.summaryAmber },
+    { label: "Ausentes",    value: filteredAppointments.filter((a) => a.status === "absent").length,    cls: styles.summaryRed   },
   ]
+
+  // ── Conflict detection whenever key modal fields change ──────────
+  useEffect(() => {
+    if (!modal.doctorName || !modal.time || !modal.date) {
+      setConflict(null)
+      return
+    }
+    const result = checkConflict(
+      appointments,
+      modal.doctorName,
+      modal.date,
+      modal.time,
+      Number(modal.duration) || 30,
+    )
+    setConflict(result ? result.message : null)
+  }, [modal.doctorName, modal.date, modal.time, modal.duration, appointments])
+
+  function setModalField(field: keyof ModalForm, value: string) {
+    setModal((m) => ({ ...m, [field]: value }))
+    setModalError(null)
+  }
+
+  function handleSaveAppointment() {
+    if (!modal.patientName) { setModalError("Selecione o paciente"); return }
+    if (!modal.doctorName)  { setModalError("Selecione o profissional"); return }
+    if (!modal.time)        { setModalError("Selecione o horário"); return }
+    if (!modal.type)        { setModalError("Selecione o tipo"); return }
+    if (conflict)           { setModalError("Resolva o conflito de horário antes de salvar"); return }
+
+    const newAppointment: Appointment = {
+      id:           Date.now(),
+      patientId:    patients.find((p) => p.name === modal.patientName)?.id ?? 0,
+      patientName:  modal.patientName,
+      doctorId:     DOCTORS.indexOf(modal.doctorName) + 1,
+      doctorName:   modal.doctorName,
+      date:         modal.date,
+      time:         modal.time,
+      duration:     Number(modal.duration) || 30,
+      type:         modal.type as Appointment["type"],
+      status:       "confirmed",
+      preferredChannel: modal.channel as Appointment["preferredChannel"] | undefined,
+      observations: modal.observations || undefined,
+    }
+
+    onAddAppointment(newAppointment)
+    setModal(EMPTY_MODAL)
+    setConflict(null)
+    setShowModal(false)
+  }
 
   const VIEW_LABELS: Record<CalendarView, string> = { day: "Dia", week: "Semana", month: "Mês" }
 
@@ -72,7 +152,13 @@ export function Appointments() {
         <Card>
           {/* Toolbar */}
           <div className={styles.toolbar}>
-            <Select options={["Todos os profissionais", "Dr. Roberto Farias", "Dra. Carla Nunes"]} className="" />
+            <Select
+              options={DOCTORS}
+              placeholder="Todos os profissionais"
+              value={filterDoctor}
+              onChange={(e) => { setFilterDoctor(e.target.value); setSelected(null) }}
+              className=""
+            />
             <Select options={["Todas as unidades", "Unidade Central"]} className="" />
             <div className={styles.spacer} />
             <button className={styles.todayBtn}>Hoje</button>
@@ -82,7 +168,7 @@ export function Appointments() {
           {view === "day" && (
             <div className={styles.dayScroll}>
               {HOURS.map((h) => {
-                const apt = APPOINTMENTS.find((a) => a.time === h)
+                const apt = filteredAppointments.find((a) => a.time === h)
                 return (
                   <div key={h} className={styles.hourRow}>
                     <div className={styles.hourLabel}>{h}</div>
@@ -101,7 +187,10 @@ export function Appointments() {
                           </p>
                         </div>
                       ) : (
-                        <div className={styles.emptySlot} onClick={() => setShowModal(true)}>
+                        <div className={styles.emptySlot} onClick={() => {
+                          setModal((m) => ({ ...m, time: h }))
+                          setShowModal(true)
+                        }}>
                           <span className={styles.emptySlotLabel}>+ Disponível</span>
                         </div>
                       )}
@@ -129,7 +218,7 @@ export function Appointments() {
                   <>
                     <div key={h} className={styles.weekHourLabel}>{h}</div>
                     {weekDays.map((d) => {
-                      const apt = d.getDate() === 18 ? APPOINTMENTS.find((a) => a.time === h) : null
+                      const apt = d.getDate() === 18 ? filteredAppointments.find((a) => a.time === h) : null
                       return (
                         <div key={d.toISOString()} className={styles.weekCell}>
                           {apt && <div className={styles.weekEvent}>{apt.patientName.split(" ")[0]}</div>}
@@ -150,7 +239,7 @@ export function Appointments() {
                   <div key={d} className={styles.monthDayLabel}>{d}</div>
                 ))}
                 {Array.from({ length: 31 }, (_, i) => {
-                  const day = i + 1
+                  const day      = i + 1
                   const isActive = day === 18
                   return (
                     <div key={day} className={`${styles.monthDayCell} ${isActive ? styles.monthDayCellActive : ""}`}>
@@ -221,28 +310,86 @@ export function Appointments() {
 
       {/* Modal */}
       {showModal && (
-        <div className={styles.modalOverlay} onClick={() => setShowModal(false)}>
+        <div className={styles.modalOverlay} onClick={() => { setShowModal(false); setModal(EMPTY_MODAL); setConflict(null); setModalError(null) }}>
           <Card className={styles.modal} onClick={(e) => e.stopPropagation()}>
             <h2 className={styles.modalTitle}>Novo agendamento</h2>
+
             <div className={styles.modalGrid}>
-              <input type="date" className={styles.dateInput} />
-              <input type="time" className={styles.dateInput} />
+              <input type="date" className={styles.dateInput}
+                value={modal.date} onChange={(e) => setModalField("date", e.target.value)} />
+
+              <select className={styles.dateInput}
+                value={modal.time} onChange={(e) => setModalField("time", e.target.value)}>
+                <option value="">Horário</option>
+                {HOURS.map((h) => <option key={h} value={h}>{h}</option>)}
+              </select>
+
               <div className={styles.colSpan2}>
-                <Select options={PATIENTS.map((p) => p.name)} placeholder="Paciente" />
+                <Select
+                  options={patients.map((p) => p.name)}
+                  placeholder="Paciente"
+                  value={modal.patientName}
+                  onChange={(e) => setModalField("patientName", e.target.value)}
+                />
               </div>
-              <Select options={["Dr. Roberto Farias", "Dra. Carla Nunes"]} placeholder="Profissional" />
-              <Select options={["Consulta", "Retorno", "Exame"]} placeholder="Tipo" />
-              <Select options={["20 min", "30 min", "40 min", "60 min"]} placeholder="Duração" />
-              <Select options={["WhatsApp", "Email", "SMS"]} placeholder="Confirmação" />
+
+              <Select
+                options={DOCTORS}
+                placeholder="Profissional"
+                value={modal.doctorName}
+                onChange={(e) => setModalField("doctorName", e.target.value)}
+              />
+
+              <Select
+                options={["Consulta", "Retorno", "Exame", "Procedimento"]}
+                placeholder="Tipo"
+                value={modal.type}
+                onChange={(e) => setModalField("type", e.target.value)}
+              />
+
+              <Select
+                options={["20 min", "30 min", "40 min", "60 min"]}
+                placeholder="Duração"
+                value={modal.duration ? `${modal.duration} min` : ""}
+                onChange={(e) => setModalField("duration", e.target.value.replace(" min", ""))}
+              />
+
+              <Select
+                options={["WhatsApp", "Email", "SMS"]}
+                placeholder="Confirmação"
+                value={modal.channel}
+                onChange={(e) => setModalField("channel", e.target.value)}
+              />
             </div>
+
             <textarea
               placeholder="Observações..."
               rows={2}
+              value={modal.observations}
+              onChange={(e) => setModalField("observations", e.target.value)}
               className={styles.modalTextarea}
             />
+
+            {/* Conflict warning */}
+            {conflict && (
+              <div className={styles.conflictWarning}>
+                <span style={{ fontSize: 16, lineHeight: 1.2 }}>⚠️</span>
+                <p className={styles.conflictText}>{conflict}</p>
+              </div>
+            )}
+
+            {/* Form error */}
+            {modalError && !conflict && (
+              <p style={{ marginTop: 10, fontSize: 12, color: "var(--destructive)" }}>{modalError}</p>
+            )}
+
             <div className={styles.modalFooter}>
-              <Button variant="ghost" onClick={() => setShowModal(false)}>Cancelar</Button>
-              <Button onClick={() => setShowModal(false)}>Confirmar agendamento</Button>
+              <Button variant="ghost" onClick={() => { setShowModal(false); setModal(EMPTY_MODAL); setConflict(null); setModalError(null) }}>
+                Cancelar
+              </Button>
+              <Button onClick={handleSaveAppointment} disabled={!!conflict}>
+                Confirmar agendamento
+              </Button>
             </div>
           </Card>
         </div>
