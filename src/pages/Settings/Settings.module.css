@@ -1,0 +1,59 @@
+.layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+}
+
+@media (min-width: 1024px) {
+  .layout { grid-template-columns: 220px 1fr; }
+}
+
+/* ── Side menu ────────────────────────────────────────────────── */
+.menuCard {
+  padding: 12px;
+  height: fit-content;
+}
+
+.menuBtn {
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 500;
+  font-family: var(--font-sans);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+  color: var(--muted-foreground);
+  display: block;
+}
+
+.menuBtn:hover {
+  background-color: var(--muted);
+  color: var(--foreground);
+}
+
+.menuBtnActive {
+  background-color: var(--accent);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+/* ── Content ──────────────────────────────────────────────────── */
+.contentCard { padding: 28px; }
+
+.grid2 {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+}
+
+.colSpan2 { grid-column: span 2; }
+
+.saveRow {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}

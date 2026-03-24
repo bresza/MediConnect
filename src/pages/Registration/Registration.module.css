@@ -1,0 +1,222 @@
+.formCard {
+  padding: 24px;
+  max-width: 768px;
+  width: 100%;
+}
+
+@media (min-width: 640px) {
+  .formCard { padding: 32px; }
+}
+
+/* ── Stepper ──────────────────────────────────────────────────── */
+.stepper {
+  display: flex;
+  align-items: center;
+  margin-bottom: 28px;
+  overflow-x: auto;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+}
+
+.step.flex1 { flex: 1; }
+
+.stepInner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stepCircle {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.stepCircleActive {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.stepCircleInactive {
+  background-color: var(--muted);
+  color: var(--muted-foreground);
+}
+
+.stepLabel {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.stepLabelActive {
+  font-weight: 700;
+  color: var(--foreground);
+}
+
+.stepLabelInactive { color: var(--muted-foreground); }
+
+.stepLine {
+  flex: 1;
+  height: 1px;
+  margin: 0 12px;
+}
+
+.stepLineDone   { background-color: var(--primary); }
+.stepLineUndone { background-color: var(--border); }
+
+/* ── Form grids ───────────────────────────────────────────────── */
+.grid2 {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+
+@media (min-width: 640px) {
+  .grid2 { grid-template-columns: repeat(2, 1fr); }
+}
+
+.grid3 {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+
+@media (min-width: 640px) {
+  .grid3 { grid-template-columns: repeat(3, 1fr); }
+}
+
+.grid4 {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+}
+
+@media (min-width: 1024px) {
+  .grid4 { grid-template-columns: repeat(4, 1fr); }
+}
+
+.gridAddress {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+
+@media (min-width: 640px) {
+  .gridAddress { grid-template-columns: 1fr 2fr 80px; }
+}
+
+.gridAddressBottom {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+  margin-top: 14px;
+}
+
+@media (min-width: 1024px) {
+  .gridAddressBottom { grid-template-columns: 1fr 1fr 1fr 100px; }
+}
+
+.colSpan2 { grid-column: span 2; }
+
+.marginTop { margin-top: 14px; }
+
+.docBox {
+  padding: 16px;
+  border-radius: var(--radius-lg);
+  background-color: var(--muted);
+  border: 1px solid var(--border);
+}
+
+.docBoxTitle {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 12px;
+}
+
+.docBoxGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+@media (min-width: 640px) {
+  .docBoxGrid { grid-template-columns: repeat(3, 1fr); }
+}
+
+.lgpdBox {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  background-color: #eff6ff;
+}
+
+.lgpdText {
+  font-size: 12px;
+  color: #1d4ed8;
+}
+
+.lgpdText strong { font-weight: 700; }
+
+.textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background-color: var(--input);
+  color: var(--foreground);
+  font-size: 13px;
+  font-family: var(--font-sans);
+  outline: none;
+  resize: vertical;
+  transition: border-color 150ms ease;
+}
+
+.textarea::placeholder { color: var(--muted-foreground); }
+.textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgb(124 144 130 / 0.2); }
+
+/* ── Form footer ──────────────────────────────────────────────── */
+.formFooter {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+
+.formFooterRight {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.stepCount {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+/* ── Checkbox ─────────────────────────────────────────────────── */
+.checkLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--foreground);
+  cursor: pointer;
+  margin-bottom: 8px;
+}
+
+.checkLabel input[type="checkbox"] {
+  accent-color: var(--primary);
+}

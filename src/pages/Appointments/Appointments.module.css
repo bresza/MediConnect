@@ -1,0 +1,472 @@
+.layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+@media (min-width: 1024px) {
+  .layout { grid-template-columns: 1fr 260px; }
+}
+
+/* ── Calendar toolbar ─────────────────────────────────────────── */
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.viewSwitcher {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.viewBtn {
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: var(--font-sans);
+  background: transparent;
+  color: var(--muted-foreground);
+  border: none;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.viewBtn:hover { background-color: var(--muted); }
+
+.viewBtnActive {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.viewBtnActive:hover {
+  background-color: #6b7d71;
+  color: var(--primary-foreground);
+}
+
+.todayBtn {
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--primary);
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 700;
+  font-family: var(--font-sans);
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+.todayBtn:hover { background-color: var(--accent); }
+
+.spacer { flex: 1; }
+
+/* ── Day view ─────────────────────────────────────────────────── */
+.dayScroll {
+  overflow-y: auto;
+  max-height: 480px;
+}
+
+.hourRow {
+  display: flex;
+  min-height: 52px;
+  border-bottom: 1px solid var(--border);
+}
+
+.hourLabel {
+  width: 64px;
+  padding: 12px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  font-weight: 600;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+}
+
+.hourCell {
+  flex: 1;
+  padding: 6px;
+}
+
+.appointmentBlock {
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  border-left: 3px solid;
+  cursor: pointer;
+}
+
+.appointmentBlockConfirmed {
+  background-color: #ecfdf5;
+  border-left-color: #10b981;
+}
+
+.appointmentBlockPending {
+  background-color: #fffbeb;
+  border-left-color: #f59e0b;
+}
+
+.appointmentBlockAbsent {
+  background-color: #fef2f2;
+  border-left-color: #ef4444;
+}
+
+.appointmentBlockDefault {
+  background-color: var(--muted);
+  border-left-color: var(--border);
+}
+
+.appointmentBlockRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.appointmentPatient {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--foreground);
+}
+
+.appointmentMeta {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  margin-top: 1px;
+}
+
+.emptySlot {
+  height: 100%;
+  min-height: 36px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  padding-left: 10px;
+  transition: background-color 150ms ease;
+}
+
+.emptySlot:hover { background-color: var(--muted); }
+
+.emptySlotLabel {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+/* ── Week view ────────────────────────────────────────────────── */
+.weekScroll { overflow-x: auto; }
+
+.weekGrid {
+  display: grid;
+  grid-template-columns: 64px repeat(7, 1fr);
+  min-width: 700px;
+}
+
+.weekDayHeader {
+  padding: 8px;
+  text-align: center;
+  background-color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+}
+
+.weekDayName {
+  font-size: 10px;
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.weekDayNum {
+  font-size: 16px;
+  color: var(--foreground);
+  margin-top: 2px;
+}
+
+.weekDayNumActive {
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.weekHourLabel {
+  padding: 10px 8px;
+  text-align: right;
+  font-size: 11px;
+  color: var(--muted-foreground);
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+  padding-right: 12px;
+}
+
+.weekCell {
+  border-bottom: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  padding: 4px;
+  min-height: 44px;
+}
+
+.weekEvent {
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  font-weight: 600;
+  background-color: #ecfdf5;
+  color: var(--foreground);
+  overflow: hidden;
+}
+
+/* ── Month view ───────────────────────────────────────────────── */
+.monthPadding { padding: 16px; }
+
+.monthGrid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.monthDayLabel {
+  padding: 6px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+}
+
+.monthDayCell {
+  padding: 8px;
+  border-radius: var(--radius-md);
+  text-align: center;
+  cursor: pointer;
+  min-height: 52px;
+  border: 1px solid var(--border);
+  background-color: var(--card);
+  transition: background-color 150ms ease;
+}
+
+.monthDayCell:hover { background-color: var(--muted); }
+
+.monthDayCellActive {
+  border-color: var(--primary);
+  background-color: var(--accent);
+}
+
+.monthDayNum { font-size: 14px; color: var(--foreground); }
+.monthDayNumActive { font-weight: 700; color: var(--primary); }
+
+.monthDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--primary);
+  margin: 4px auto 0;
+}
+
+/* ── Sidebar panels ───────────────────────────────────────────── */
+.sidePanel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.detailCard { padding: 20px; }
+
+.detailHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.detailTitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--foreground);
+}
+
+.closeBtn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--muted-foreground);
+  font-size: 20px;
+  line-height: 1;
+  padding: 2px 4px;
+}
+
+.detailPatientName {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--foreground);
+  margin-top: 10px;
+}
+
+.detailBadge { margin-top: 4px; }
+
+.detailFields {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.detailField {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+}
+
+.detailFieldKey { color: var(--muted-foreground); }
+.detailFieldVal { font-weight: 600; color: var(--foreground); }
+
+.detailActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.summaryCard { padding: 20px; }
+
+.summaryTitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--foreground);
+  margin-bottom: 12px;
+}
+
+.summaryRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.summaryLabel {
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+
+.summaryValue {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.summaryGreen   { color: #059669; }
+.summaryAmber   { color: #d97706; }
+.summaryRed     { color: #dc2626; }
+
+.queueCard { padding: 20px; }
+
+.queueTitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--foreground);
+  margin-bottom: 4px;
+}
+
+.queueSub {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+.queueItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.queueName {
+  font-size: 13px;
+  color: var(--foreground);
+  flex: 1;
+}
+
+.callBtn {
+  font-size: 11px;
+  color: var(--primary);
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-sm);
+  padding: 2px 8px;
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  transition: background-color 150ms ease;
+}
+
+.callBtn:hover { background-color: var(--accent); }
+
+/* ── Modal ────────────────────────────────────────────────────── */
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgb(0 0 0 / 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+
+.modal {
+  padding: 28px;
+  width: 100%;
+  max-width: 460px;
+  box-shadow: var(--shadow-xl);
+}
+
+.modalTitle {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--foreground);
+  margin-bottom: 20px;
+}
+
+.modalGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.colSpan2 { grid-column: span 2; }
+
+.dateInput {
+  padding: 10px 12px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background-color: var(--input);
+  font-size: 13px;
+  font-family: var(--font-sans);
+  outline: none;
+  width: 100%;
+  transition: border-color 150ms ease;
+}
+
+.dateInput:focus { border-color: var(--primary); }
+
+.modalTextarea {
+  width: 100%;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background-color: var(--input);
+  color: var(--foreground);
+  font-size: 13px;
+  font-family: var(--font-sans);
+  outline: none;
+  resize: none;
+  transition: border-color 150ms ease;
+}
+
+.modalTextarea:focus { border-color: var(--primary); }
+.modalTextarea::placeholder { color: var(--muted-foreground); }
+
+.modalFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}

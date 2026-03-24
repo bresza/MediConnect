@@ -1,0 +1,91 @@
+/* ── CSS Variables (Design Tokens) ───────────────────────────── */
+:root {
+  --background:               #f4f5f7;
+  --foreground:               #111827;
+  --card:                     #ffffff;
+  --card-foreground:          #111827;
+  --primary:                  #7c9082;
+  --primary-foreground:       #ffffff;
+  --muted:                    #f0f1f3;
+  --muted-foreground:         #6b7280;
+  --accent:                   #e8ede9;
+  --destructive:              #dc2626;
+  --border:                   #e5e7eb;
+  --input:                    #ffffff;
+  --ring:                     #7c9082;
+  --sidebar:                  #ffffff;
+  --sidebar-border:           #e5e7eb;
+
+  --font-sans:  "Open Sans", sans-serif;
+  --font-serif: "Source Serif 4", serif;
+  --font-mono:  "Source Code Pro", monospace;
+
+  --radius-sm:  6px;
+  --radius-md:  8px;
+  --radius-lg:  10px;
+  --radius-xl:  14px;
+
+  --shadow-sm:  0 1px 3px 0 rgb(0 0 0 / 0.08), 0 1px 2px -1px rgb(0 0 0 / 0.04);
+  --shadow-md:  0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.06);
+  --shadow-lg:  0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.05);
+  --shadow-xl:  0 20px 25px -5px rgb(0 0 0 / 0.12), 0 8px 10px -6px rgb(0 0 0 / 0.06);
+
+  --breakpoint-sm:  640px;
+  --breakpoint-md:  768px;
+  --breakpoint-lg:  1024px;
+  --breakpoint-xl:  1280px;
+}
+
+.dark {
+  --background:         #0f1117;
+  --foreground:         #f9fafb;
+  --card:               #1a1d24;
+  --card-foreground:    #f9fafb;
+  --primary:            #7c9082;
+  --primary-foreground: #ffffff;
+  --muted:              #252830;
+  --muted-foreground:   #9ca3af;
+  --accent:             #2a3530;
+  --destructive:        #ef4444;
+  --border:             #2d3139;
+  --input:              #1a1d24;
+  --ring:               #7c9082;
+  --sidebar:            #13161c;
+  --sidebar-border:     #2d3139;
+
+  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.3), 0 1px 2px -1px rgb(0 0 0 / 0.2);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.3), 0 2px 4px -2px rgb(0 0 0 / 0.2);
+}
+
+/* ── Reset ────────────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* ── Base ─────────────────────────────────────────────────────── */
+html { font-size: 16px; }
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--background);
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+button { font-family: var(--font-sans); }
+input, select, textarea { font-family: var(--font-sans); }
+
+/* ── Table rows global hover ──────────────────────────────────── */
+tbody tr { transition: background-color 120ms ease; }
+tbody tr:hover { background-color: var(--muted); }
+
+/* ── Scrollbar ────────────────────────────────────────────────── */
+::-webkit-scrollbar        { width: 5px; height: 5px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: var(--border); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted-foreground); }

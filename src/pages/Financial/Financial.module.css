@@ -1,0 +1,90 @@
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+@media (min-width: 768px) {
+  .statsGrid { grid-template-columns: repeat(4, 1fr); }
+}
+
+.statCard { padding: 16px 18px; }
+
+.statLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  line-height: 1;
+}
+
+.statValue {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+  margin-top: 8px;
+}
+
+@media (min-width: 640px) { .statValue { font-size: 22px; } }
+
+.statDefault { color: var(--foreground); }
+.statGreen   { color: #059669; }
+.statAmber   { color: #d97706; }
+.statRed     { color: #dc2626; }
+
+/* ── Table ────────────────────────────────────────────────────── */
+.tableScroll { overflow-x: auto; }
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  min-width: 700px;
+}
+
+.thead { background-color: var(--muted); }
+
+.th {
+  padding: 12px 16px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid var(--border);
+}
+
+.td {
+  padding: 13px 16px;
+  color: var(--muted-foreground);
+  border-bottom: 1px solid var(--border);
+}
+
+.tdLast { border-bottom: none; }
+
+.patientCell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.patientName {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.valueCell {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.discount {
+  font-size: 11px;
+  color: var(--muted-foreground);
+  margin-left: 4px;
+}
