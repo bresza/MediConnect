@@ -13,6 +13,7 @@ interface PatientsProps {
   onNavigate: (page: PageId) => void
   onEditPatient: (p: Patient) => void
   onViewRecords?: (p: Patient) => void
+  onViewProfile?: (p: Patient) => void
 }
 
 const SearchIcon = () => (
@@ -29,7 +30,7 @@ const PlusIcon = () => (
   </svg>
 )
 
-export function Patients({ patients, onNavigate, onEditPatient, onViewRecords }: PatientsProps) {
+export function Patients({ patients, onNavigate, onEditPatient, onViewRecords, onViewProfile }: PatientsProps) {
   const [search, setSearch]             = useState("")
   const [filterStatus, setFilterStatus] = useState<"All" | "Active" | "Inactive">("All")
 
@@ -88,10 +89,17 @@ export function Patients({ patients, onNavigate, onEditPatient, onViewRecords }:
               {filtered.map((p, i) => {
                 const isLast = i === filtered.length - 1
                 return (
-                  <tr key={p.id}>
+                  <tr
+                    key={p.id}
+                    className={styles.clickableRow}
+                    onClick={() => onViewProfile?.(p)}
+                  >
                     <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}>
                       <div className={styles.patientCell}>
-                        <Avatar name={p.name} size="sm" />
+                        {p.photoUrl
+                          ? <img src={p.photoUrl} alt={p.name} className={styles.patientPhoto} />
+                          : <Avatar name={p.name} size="sm" />
+                        }
                         <div>
                           <p className={styles.patientName}>{p.name}</p>
                           <p className={styles.patientEmail}>{p.email}</p>
@@ -103,7 +111,7 @@ export function Patients({ patients, onNavigate, onEditPatient, onViewRecords }:
                     <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}>{p.lastVisit ? formatDate(p.lastVisit) : "—"}</td>
                     <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}><Badge>{p.status}</Badge></td>
                     <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}>
-                      <div className={styles.actions}>
+                      <div className={styles.actions} onClick={(e) => e.stopPropagation()}>
                         <Button size="sm" variant="ghost" onClick={() => onEditPatient(p)}>Editar</Button>
                         <Button size="sm" variant="ghost" onClick={() => onViewRecords?.(p)}>Prontuário</Button>
                       </div>

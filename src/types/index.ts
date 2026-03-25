@@ -6,6 +6,8 @@ export interface User {
   name: string
   role: UserRole
   email: string
+  crm?: string
+  specialty?: string
 }
 
 // ─── PATIENT ──────────────────────────────────────────────────────
@@ -121,7 +123,7 @@ export interface Patient {
 }
 
 // ─── APPOINTMENT ──────────────────────────────────────────────────
-export type AppointmentStatus = "scheduled" | "confirmed" | "completed" | "cancelled" | "absent" | "blocked"
+export type AppointmentStatus = "scheduled" | "confirmed" | "completed" | "cancelled" | "absent" | "blocked" | "pending"
 export type AppointmentType = "consultation" | "exam" | "return" | "procedure"
 
 export interface Appointment {
@@ -242,6 +244,37 @@ export interface MedicalRecord {
   updatedBy?: string
 }
 
+// ─── PRESCRIPTION ─────────────────────────────────────────────────
+export type PrescriptionType = "simple" | "special" | "antimicrobial"
+
+export interface PrescriptionMedication {
+  id: number
+  name: string
+  concentration: string
+  form: string
+  quantity: string
+  posology: string
+  duration: string
+  instructions?: string
+}
+
+export interface Prescription {
+  id: number
+  patientId: number
+  patientName: string
+  patientDob?: string
+  doctorId: number
+  doctorName: string
+  doctorCrm?: string
+  doctorSpecialty?: string
+  date: string
+  type: PrescriptionType
+  medications: PrescriptionMedication[]
+  cid10?: string
+  observations?: string
+  status: "draft" | "emitted"
+}
+
 // ─── NAVIGATION ───────────────────────────────────────────────────
 export type PageId =
   | "dashboard"
@@ -253,3 +286,4 @@ export type PageId =
   | "messages"
   | "financial"
   | "settings"
+  | "patient-profile"

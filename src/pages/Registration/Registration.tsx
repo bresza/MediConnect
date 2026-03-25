@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { Topbar } from "../../components/layout/Topbar/Topbar"
 import { Card } from "../../components/ui/Card/Card"
 import { Button } from "../../components/ui/Button/Button"
@@ -26,6 +26,7 @@ type FormState = {
   dob: string
   maritalStatus: string
   occupation: string
+  photoUrl: string
   // Step 2
   docType: string
   cpf: string
@@ -38,7 +39,7 @@ type FormState = {
 }
 
 const EMPTY_FORM: FormState = {
-  name: "", gender: "", dob: "", maritalStatus: "", occupation: "",
+  name: "", gender: "", dob: "", maritalStatus: "", occupation: "", photoUrl: "",
   docType: "CPF", cpf: "", healthInsurance: "",
   phone: "", email: "", preferredChannel: "", observations: "",
 }
@@ -50,6 +51,7 @@ function patientToForm(p: Patient): FormState {
     dob:              p.dob ?? "",
     maritalStatus:    p.maritalStatus ?? "",
     occupation:       p.occupation ?? "",
+    photoUrl:         p.photoUrl ?? "",
     docType:          "CPF",
     cpf:              p.cpf ?? "",
     healthInsurance:  p.healthInsurance ?? "",
@@ -66,6 +68,15 @@ export function Registration({ patients, editingPatient, onAddPatient, onUpdateP
   const [form, setForm]     = useState<FormState>(editingPatient ? patientToForm(editingPatient) : EMPTY_FORM)
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({})
   const [saved, setSaved]   = useState(false)
+  const fileInputRef        = useRef<HTMLInputElement>(null)
+
+  function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => set("photoUrl", ev.target?.result as string)
+    reader.readAsDataURL(file)
+  }
 
   function set(field: keyof FormState, value: string) {
     setForm((f) => ({ ...f, [field]: value }))
@@ -116,6 +127,7 @@ export function Registration({ patients, editingPatient, onAddPatient, onUpdateP
       email:          form.email || undefined,
       preferredChannel: form.preferredChannel as Patient["preferredChannel"] | undefined,
       observations:   form.observations || undefined,
+      photoUrl:       form.photoUrl || undefined,
       status:         "Active",
       createdAt:      new Date().toISOString().split("T")[0],
       updatedAt:      new Date().toISOString().split("T")[0],
@@ -193,6 +205,33 @@ export function Registration({ patients, editingPatient, onAddPatient, onUpdateP
         {/* Step 1 — Dados pessoais */}
         {step === 1 && (
           <>
+            <div className={styles.photoSection}>
+              <div className={styles.photoContainer} onClick={() => fileInputRef.current?.click()}>
+                {form.photoUrl ? (
+                  <img src={form.photoUrl} alt="Foto do paciente" className={styles.photoPreview} />
+                ) : (
+                  <div className={styles.photoPlaceholder}>
+                    <svg width="32" height="32" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zM18.75 10.5h.008v.008h-.008V10.5z" />
+                    </svg>
+                    <span>Adicionar foto</span>
+                  </div>
+                )}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  style={{ display: "none" }}
+                  onChange={handlePhotoUpload}
+                />
+              </div>
+              {form.photoUrl && (
+                <button className={styles.photoRemoveBtn} onClick={() => set("photoUrl", "")}>
+                  Remover foto
+                </button>
+              )}
+            </div>
             <Section title="Identificação">
               <div className={`${styles.grid2} ${styles.marginTop}`}>
                 <Input label="Nome completo" required placeholder="Nome como no documento"

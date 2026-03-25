@@ -128,3 +128,20 @@
   display: flex;
   gap: 6px;
 }
+
+.clickableRow {
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.clickableRow:hover td {
+  background-color: var(--muted);
+}
+
+.patientPhoto {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}

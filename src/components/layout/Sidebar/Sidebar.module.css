@@ -233,3 +233,24 @@
   color: var(--muted-foreground);
   flex-shrink: 0;
 }
+
+.logoutBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+.logoutBtn:hover {
+  background-color: color-mix(in srgb, var(--destructive) 10%, transparent);
+  color: var(--destructive);
+  border-color: color-mix(in srgb, var(--destructive) 30%, transparent);
+}

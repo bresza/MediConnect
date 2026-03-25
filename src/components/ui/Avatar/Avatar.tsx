@@ -3,10 +3,10 @@ import styles from "./Avatar.module.css"
 
 interface AvatarProps {
   name: string
-  size?: "sm" | "md" | "lg"
+  size?: "sm" | "md" | "lg" | "xl"
 }
 
-const SIZE_STYLE = { sm: styles.sm, md: styles.md, lg: styles.lg }
+const SIZE_STYLE = { sm: styles.sm, md: styles.md, lg: styles.lg, xl: styles.xl }
 
 export function Avatar({ name, size = "md" }: AvatarProps) {
   return (
