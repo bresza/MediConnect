@@ -1,11 +1,11 @@
-import type { ReactNode, CSSProperties } from "react"
+import type { ReactNode, CSSProperties, MouseEvent } from "react"
 import styles from "./Card.module.css"
 
 interface CardProps {
   children: ReactNode
   className?: string
   style?: CSSProperties
-  onClick?: () => void
+  onClick?: (e: MouseEvent<HTMLDivElement>) => void
 }
 
 export function Card({ children, className = "", style, onClick }: CardProps) {

@@ -6,7 +6,28 @@ import type {
   MessageTemplate,
   FinancialRecord,
   MedicalRecord,
+  Prescription,
+  UserRole,
 } from "../types"
+
+// ─── MOCK USERS ───────────────────────────────────────────────────
+export interface MockUser {
+  id: number
+  name: string
+  role: UserRole
+  email: string
+  password: string
+  crm?: string
+  specialty?: string
+}
+
+export const MOCK_USERS: MockUser[] = [
+  { id: 10, name: "Dr. Roberto Farias",  role: "doctor",    email: "roberto@mediconnect.com",    password: "123456",   crm: "12345-SE", specialty: "Clínica Geral"    },
+  { id: 11, name: "Dra. Carla Nunes",    role: "doctor",    email: "carla@mediconnect.com",       password: "123456",   crm: "67890-SE", specialty: "Cardiologia"       },
+  { id: 12, name: "Ana Paula (Gestão)",  role: "manager",   email: "admin@mediconnect.com",       password: "admin123"                                                  },
+  { id: 13, name: "Carlos Financeiro",   role: "financial", email: "financeiro@mediconnect.com",  password: "fin123"                                                    },
+  { id: 14, name: "Juliana Secretaria",  role: "secretary", email: "secretaria@mediconnect.com",  password: "sec123"                                                    },
+]
 
 // ─── PATIENTS ─────────────────────────────────────────────────────
 export const PATIENTS: Patient[] = [
@@ -446,6 +467,47 @@ export const MEDICAL_RECORDS: MedicalRecord[] = [
     createdAt: "2026-03-12",
     updatedAt: "2026-03-12",
     updatedBy: "Dra. Carla Nunes",
+  },
+]
+
+// ─── PRESCRIPTIONS ────────────────────────────────────────────────
+export const PRESCRIPTIONS: Prescription[] = [
+  {
+    id: 1,
+    patientId: 1,
+    patientName: "Ana Souza",
+    patientDob: "1990-05-12",
+    doctorId: 10,
+    doctorName: "Dr. Roberto Farias",
+    doctorCrm: "12345-SE",
+    doctorSpecialty: "Clínica Geral",
+    date: "2026-03-10",
+    type: "simple",
+    medications: [
+      { id: 1, name: "Ibuprofeno", concentration: "400mg", form: "Comprimido", quantity: "30 comprimidos", posology: "Tomar 1 comprimido de 8 em 8 horas", duration: "10 dias", instructions: "Tomar após as refeições" },
+      { id: 2, name: "Omeprazol", concentration: "20mg", form: "Cápsula", quantity: "30 cápsulas", posology: "Tomar 1 cápsula em jejum 1 vez ao dia", duration: "30 dias" },
+    ],
+    cid10: "M54.5",
+    observations: "Retornar em caso de piora ou ausência de melhora em 72h.",
+    status: "emitted",
+  },
+  {
+    id: 2,
+    patientId: 4,
+    patientName: "João Pedro Alves",
+    patientDob: "1975-02-18",
+    doctorId: 11,
+    doctorName: "Dra. Carla Nunes",
+    doctorCrm: "67890-SE",
+    doctorSpecialty: "Cardiologia",
+    date: "2026-03-18",
+    type: "simple",
+    medications: [
+      { id: 1, name: "Losartana Potássica", concentration: "50mg", form: "Comprimido", quantity: "60 comprimidos", posology: "Tomar 1 comprimido de 12 em 12 horas", duration: "60 dias" },
+      { id: 2, name: "Atorvastatina", concentration: "20mg", form: "Comprimido", quantity: "30 comprimidos", posology: "Tomar 1 comprimido à noite", duration: "30 dias" },
+    ],
+    cid10: "I10",
+    status: "emitted",
   },
 ]
 

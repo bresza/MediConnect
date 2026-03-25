@@ -5,12 +5,13 @@ import { Badge } from "../../components/ui/Badge/Badge"
 import { Avatar } from "../../components/ui/Avatar/Avatar"
 import { Button } from "../../components/ui/Button/Button"
 import { formatDate, formatAppointmentType } from "../../utils"
-import type { PageId, Patient, Appointment } from "../../types"
+import type { PageId, Patient, Appointment, User } from "../../types"
 import styles from "./Dashboard.module.css"
 
 interface DashboardProps {
   patients: Patient[]
   appointments: Appointment[]
+  currentUser: User
   onNavigate: (page: PageId) => void
 }
 
@@ -52,15 +53,34 @@ const STATS = [
   },
 ]
 
-export function Dashboard({ patients, appointments, onNavigate }: DashboardProps) {
-  const confirmed = appointments.filter((a) => a.status === "confirmed").length
-  const total     = appointments.filter((a) => a.status !== "blocked").length
+export function Dashboard({ patients, appointments, currentUser, onNavigate }: DashboardProps) {
+  const isDoctor = currentUser.role === "doctor"
+
+  // Para médicos: mostrar apenas dados próprios
+  const visibleAppointments = isDoctor
+    ? appointments.filter((a) => a.doctorName === currentUser.name)
+    : appointments
+
+  // Pacientes que têm ao menos um agendamento com este médico
+  const visiblePatientIds = isDoctor
+    ? new Set(visibleAppointments.map((a) => a.patientId))
+    : null
+  const visiblePatients = isDoctor
+    ? patients.filter((p) => visiblePatientIds!.has(p.id))
+    : patients
+
+  const pendingReports = isDoctor
+    ? REPORTS.filter((r) => r.status === "Draft" && r.doctorName === currentUser.name)
+    : REPORTS.filter((r) => r.status === "Draft")
+
+  const confirmed = visibleAppointments.filter((a) => a.status === "confirmed").length
+  const total     = visibleAppointments.filter((a) => a.status !== "blocked").length
   const rate      = total > 0 ? Math.round((confirmed / total) * 100) : 0
 
   const statValues: Record<string, string | number> = {
-    "Pacientes":          patients.length,
-    "Agendamentos hoje":  appointments.length,
-    "Laudos pendentes":   REPORTS.filter((r) => r.status === "Draft").length,
+    "Pacientes":          visiblePatients.length,
+    "Agendamentos hoje":  visibleAppointments.length,
+    "Laudos pendentes":   pendingReports.length,
     "Taxa de presença":   `${rate}%`,
   }
 
@@ -109,7 +129,7 @@ export function Dashboard({ patients, appointments, onNavigate }: DashboardProps
               Ver tudo
             </Button>
           </div>
-          {appointments.slice(0, 5).map((a) => (
+          {visibleAppointments.slice(0, 5).map((a) => (
             <div key={a.id} className={styles.appointmentRow}>
               <span className={styles.appointmentTime}>{a.time}</span>
               <Avatar name={a.patientName} size="sm" />
@@ -132,7 +152,7 @@ export function Dashboard({ patients, appointments, onNavigate }: DashboardProps
               Ver todos
             </Button>
           </div>
-          {patients.map((p) => (
+          {visiblePatients.map((p) => (
             <div key={p.id} className={styles.patientRow}>
               <Avatar name={p.name} size="sm" />
               <div className={styles.patientInfo}>

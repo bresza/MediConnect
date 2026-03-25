@@ -8,7 +8,7 @@ import { Input } from "../../components/ui/Input/Input"
 import { Select } from "../../components/ui/Select/Select"
 import { Section } from "../../components/ui/Section/Section"
 import { formatDate } from "../../utils"
-import type { MedicalRecord, Patient, PageId } from "../../types"
+import type { MedicalRecord, Patient, PageId, User } from "../../types"
 import styles from "./Records.module.css"
 
 const DOCTORS = ["Dr. Roberto Farias", "Dra. Carla Nunes"]
@@ -80,13 +80,14 @@ interface RecordsProps {
   records: MedicalRecord[]
   patients: Patient[]
   filterPatientId?: number | null
+  currentUser: User
   onAddRecord: (r: MedicalRecord) => void
   onUpdateRecord: (r: MedicalRecord) => void
   onNavigate: (page: PageId) => void
 }
 
 export function Records({
-  records, patients, filterPatientId,
+  records, patients, filterPatientId, currentUser,
   onAddRecord, onUpdateRecord, onNavigate,
 }: RecordsProps) {
   const [view, setView]               = useState<"list" | "editor">("list")
@@ -99,6 +100,7 @@ export function Records({
   const [patientFilter, setPatientFilter] = useState<number | null>(filterPatientId ?? null)
 
   const isEditing = !!editingRecord
+  const isDoctor  = currentUser.role === "doctor"
 
   function set(field: keyof RecordForm, value: string) {
     setForm(f => ({ ...f, [field]: value }))
@@ -107,7 +109,11 @@ export function Records({
 
   function openNew() {
     setEditing(null)
-    setForm({ ...EMPTY_FORM, patientId: patientFilter ? String(patientFilter) : "" })
+    setForm({
+      ...EMPTY_FORM,
+      patientId:  patientFilter ? String(patientFilter) : "",
+      doctorName: isDoctor ? currentUser.name : "",
+    })
     setErrors({})
     setSaved(false)
     setView("editor")
@@ -239,13 +245,34 @@ export function Records({
                   set("patientId", p ? String(p.id) : "")
                 }}
               />
-              <Select
-                label="Médico responsável" required
-                options={DOCTORS}
-                placeholder="Selecione o médico"
-                value={form.doctorName}
-                onChange={e => set("doctorName", e.target.value)}
-              />
+              {isDoctor ? (
+                <div>
+                  <p style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, color: "var(--foreground)" }}>
+                    Médico responsável
+                  </p>
+                  <div style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    padding: "10px 12px", borderRadius: "var(--radius-lg)",
+                    border: "1px solid var(--border)", background: "var(--muted)",
+                    color: "var(--muted-foreground)", fontSize: 13,
+                  }}>
+                    <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2"
+                      viewBox="0 0 24 24" strokeLinecap="round">
+                      <rect x="3" y="11" width="18" height="11" rx="2" />
+                      <path d="M7 11V7a5 5 0 0110 0v4" />
+                    </svg>
+                    {currentUser.name}
+                  </div>
+                </div>
+              ) : (
+                <Select
+                  label="Médico responsável" required
+                  options={DOCTORS}
+                  placeholder="Selecione o médico"
+                  value={form.doctorName}
+                  onChange={e => set("doctorName", e.target.value)}
+                />
+              )}
               <Input
                 label="Data da consulta" type="date" required
                 value={form.date}

@@ -66,6 +66,37 @@
 
 .spacer { flex: 1; }
 
+/* Badge exibido na toolbar quando o usuário é médico */
+.doctorBadge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  white-space: nowrap;
+}
+
+/* Campo de profissional travado no modal */
+.modalDoctorLocked {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: 13px;
+  font-family: var(--font-sans);
+  cursor: not-allowed;
+}
+
 /* ── Day view ─────────────────────────────────────────────────── */
 .dayScroll {
   overflow-y: auto;
@@ -541,3 +572,390 @@
 :global(.dark) .summaryGreen { color: #34d399; }
 :global(.dark) .summaryAmber { color: #fbbf24; }
 :global(.dark) .summaryRed   { color: #f87171; }
+
+/* ── Calendar navigation controls ────────────────────────────── */
+.navControls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.navArrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.navArrow:hover {
+  background-color: var(--muted);
+  color: var(--foreground);
+}
+
+/* ── Period trigger button ────────────────────────────────────── */
+.pickerWrapper {
+  position: relative;
+}
+
+.periodTrigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease;
+  white-space: nowrap;
+}
+
+.periodTrigger:hover {
+  background-color: var(--muted);
+  border-color: var(--primary);
+}
+
+.periodTriggerActive {
+  border-color: var(--primary);
+  background-color: var(--accent);
+  color: var(--primary);
+}
+
+/* ── Mini calendar picker popup ──────────────────────────────── */
+.picker {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xl);
+  padding: 12px;
+  width: 256px;
+  animation: pickerFadeIn 120ms ease;
+}
+
+@keyframes pickerFadeIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(-4px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+.pickerHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.pickerArrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: background-color 120ms ease;
+  flex-shrink: 0;
+}
+
+.pickerArrow:hover {
+  background-color: var(--muted);
+  color: var(--foreground);
+}
+
+.pickerMonthYear {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: var(--font-sans);
+  color: var(--foreground);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--radius-md);
+  padding: 4px 8px;
+  transition: background-color 120ms ease;
+}
+
+.pickerMonthYear:hover {
+  background-color: var(--muted);
+}
+
+.pickerGrid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.pickerDayLabel {
+  padding: 4px 0;
+  text-align: center;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: var(--font-sans);
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+}
+
+.pickerDayCell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: var(--radius-md);
+  border: none;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 12px;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: background-color 100ms ease;
+  gap: 2px;
+  padding: 0;
+}
+
+.pickerDayCell:hover {
+  background-color: var(--muted);
+}
+
+.pickerDayCellSelected {
+  background-color: var(--primary) !important;
+  color: var(--primary-foreground);
+  font-weight: 700;
+}
+
+.pickerDayCellToday {
+  background-color: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.pickerDot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+.pickerDayCellSelected .pickerDot {
+  background: var(--primary-foreground);
+  opacity: 0.8;
+}
+
+/* ── Year range header (shown in year grid view) ─────────────── */
+.yearRangeLabel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+}
+
+.yearRangeText {
+  font-size: 14px;
+  font-weight: 700;
+  font-family: var(--font-sans);
+  color: var(--foreground);
+  letter-spacing: -0.2px;
+}
+
+.yearRangeBack {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  font-family: var(--font-sans);
+  color: var(--muted-foreground);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  transition: color 100ms ease, background-color 100ms ease;
+}
+
+.yearRangeBack:hover {
+  color: var(--foreground);
+  background: var(--muted);
+}
+
+/* ── Year pill for month header ───────────────────────────────── */
+.pickerYearBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 700;
+  font-family: var(--font-sans);
+  margin-left: 2px;
+}
+
+/* ── Year grid ────────────────────────────────────────────────── */
+.yearGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
+  padding: 4px 0;
+}
+
+.yearCell {
+  padding: 9px 4px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--muted);
+  color: var(--foreground);
+  font-size: 12px;
+  font-weight: 500;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: background-color 100ms ease, border-color 100ms ease, color 100ms ease;
+  text-align: center;
+}
+
+.yearCell:hover {
+  background-color: var(--accent);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.yearCellActive {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+  font-weight: 700;
+}
+
+.yearCellActive:hover {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  opacity: 0.9;
+}
+
+.yearCellOutside {
+  opacity: 0.45;
+}
+
+/* ── Modal date picker ────────────────────────────────────────── */
+.modalDateWrapper {
+  position: relative;
+}
+
+.datePickerBtn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  background: var(--input);
+}
+
+.datePickerBtnActive {
+  border-color: var(--primary);
+}
+
+.datePickerValue {
+  font-size: 13px;
+  color: var(--foreground);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.datePickerPlaceholder {
+  font-size: 13px;
+  color: var(--muted-foreground);
+  flex: 1;
+}
+
+/* Popup anchored to the left of the trigger (overrides centering) */
+.modalPickerPopup {
+  left: 0;
+  transform: none;
+  top: calc(100% + 4px);
+}
+
+/* ── Picker footer ────────────────────────────────────────────── */
+.pickerFooter {
+  border-top: 1px solid var(--border);
+  margin-top: 10px;
+  padding-top: 10px;
+  text-align: center;
+}
+
+.pickerTodayBtn {
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  color: var(--primary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px 12px;
+  border-radius: var(--radius-md);
+  transition: background-color 120ms ease;
+}
+
+.pickerTodayBtn:hover {
+  background-color: var(--accent);
+}
+
+/* ── Month view extras ────────────────────────────────────────── */
+.monthDayCellToday {
+  background-color: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+.monthDayNumToday {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.monthDotRow {
+  display: flex;
+  justify-content: center;
+  gap: 3px;
+  margin-top: 4px;
+}
+
+/* Week day header as button ────────────────────────────────────── */
+.weekDayHeader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--border);
+  background: var(--muted);
+  border: none;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+.weekDayHeader:hover { background-color: var(--accent); }

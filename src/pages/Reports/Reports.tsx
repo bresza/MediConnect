@@ -6,13 +6,18 @@ import { Badge } from "../../components/ui/Badge/Badge"
 import { Button } from "../../components/ui/Button/Button"
 import { Avatar } from "../../components/ui/Avatar/Avatar"
 import { formatDate } from "../../utils"
-import type { Report } from "../../types"
+import type { Report, User } from "../../types"
 import styles from "./Reports.module.css"
 
 const TOOLS = ["N", "I", "U", "—", "≡", "≣", "◀", "▶", "A+", "A-"]
 const INITIAL_CONTENT = "O paciente refere queixa de...\n\nExame físico:\n\nConduta:\n\nCID-10:"
 
-export function Reports() {
+interface ReportsProps { currentUser: User }
+
+export function Reports({ currentUser }: ReportsProps) {
+  const visibleReports = currentUser.role === "doctor"
+    ? REPORTS.filter(r => r.doctorName === currentUser.name)
+    : REPORTS
   const [editing, setEditing] = useState<Report | null>(null)
   const [content, setContent] = useState(INITIAL_CONTENT)
 
@@ -76,7 +81,7 @@ export function Reports() {
 
   return (
     <div>
-      <Topbar title="Laudos" subtitle={`${REPORTS.length} laudos registrados`}
+      <Topbar title="Laudos" subtitle={`${visibleReports.length} laudos registrados`}
         action={<Button>Novo laudo</Button>} />
       <Card>
         <div className={styles.tableScroll}>
@@ -89,8 +94,8 @@ export function Reports() {
               </tr>
             </thead>
             <tbody>
-              {REPORTS.map((r, i) => {
-                const isLast = i === REPORTS.length - 1
+              {visibleReports.map((r, i) => {
+                const isLast = i === visibleReports.length - 1
                 return (
                   <tr key={r.id}>
                     <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}>

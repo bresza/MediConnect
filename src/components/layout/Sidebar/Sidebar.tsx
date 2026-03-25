@@ -1,9 +1,11 @@
-import type { PageId } from "../../../types"
+import type { PageId, User } from "../../../types"
+import { ROLE_PAGES, ROLE_LABELS } from "../../../utils/permissions"
+import { getInitials } from "../../../utils"
 import styles from "./Sidebar.module.css"
 
 interface NavItem { id: PageId; label: string; icon: string }
 
-const NAV_ITEMS: NavItem[] = [
+const ALL_NAV_ITEMS: NavItem[] = [
   { id: "dashboard",    label: "Início",        icon: "M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" },
   { id: "patients",     label: "Pacientes",     icon: "M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" },
   { id: "register",     label: "Cadastro",      icon: "M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" },
@@ -29,13 +31,18 @@ function NavIcon({ path }: { path: string }) {
 interface SidebarProps {
   activePage: PageId
   onNavigate: (page: PageId) => void
+  currentUser: User
+  onLogout: () => void
   isOpen?: boolean
   onClose?: () => void
   darkMode?: boolean
   onToggleDark?: () => void
 }
 
-export function Sidebar({ activePage, onNavigate, isOpen = false, onClose, darkMode, onToggleDark }: SidebarProps) {
+export function Sidebar({ activePage, onNavigate, currentUser, onLogout, isOpen = false, onClose, darkMode, onToggleDark }: SidebarProps) {
+  const allowedPages = ROLE_PAGES[currentUser.role]
+  const navItems = ALL_NAV_ITEMS.filter((item) => allowedPages.includes(item.id))
+
   return (
     <aside className={`${styles.sidebar} ${isOpen ? styles.sidebarOpen : ""}`}>
 
@@ -64,7 +71,7 @@ export function Sidebar({ activePage, onNavigate, isOpen = false, onClose, darkM
       <nav className={styles.nav}>
         <span className={styles.navLabel}>Menu</span>
         <ul className={styles.navList}>
-          {NAV_ITEMS.map((item) => (
+          {navItems.map((item) => (
             <li key={item.id}>
               <button
                 onClick={() => onNavigate(item.id)}
@@ -81,11 +88,7 @@ export function Sidebar({ activePage, onNavigate, isOpen = false, onClose, darkM
       {/* Theme toggle */}
       <div className={styles.themeRow}>
         <span className={styles.themeLabel}>{darkMode ? "Modo noturno" : "Modo claro"}</span>
-        <button
-          onClick={onToggleDark}
-          className={styles.themeBtn}
-          aria-label="Alternar tema"
-        >
+        <button onClick={onToggleDark} className={styles.themeBtn} aria-label="Alternar tema">
           {darkMode ? (
             <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2"
               viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
@@ -104,15 +107,22 @@ export function Sidebar({ activePage, onNavigate, isOpen = false, onClose, darkM
       {/* User */}
       <div className={styles.user}>
         <div className={styles.userCard}>
-          <div className={styles.userAvatar}>DA</div>
+          <div className={styles.userAvatar}>{getInitials(currentUser.name)}</div>
           <div className={styles.userInfo}>
-            <p className={styles.userName}>Dr. Admin</p>
-            <p className={styles.userRole}>Gestão</p>
+            <p className={styles.userName}>{currentUser.name}</p>
+            <p className={styles.userRole}>{ROLE_LABELS[currentUser.role]}</p>
           </div>
-          <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2"
-            viewBox="0 0 24 24" strokeLinecap="round" className={styles.userChevron}>
-            <path d="M9 18l6-6-6-6" />
-          </svg>
+          <button
+            onClick={onLogout}
+            className={styles.logoutBtn}
+            title="Sair"
+            aria-label="Sair"
+          >
+            <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2"
+              viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
+            </svg>
+          </button>
         </div>
       </div>
 
