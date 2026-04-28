@@ -1,0 +1,53 @@
+.layout {
+  display: flex;
+  min-height: 100vh;
+  background-color: var(--background);
+}
+
+.backdrop {
+  position: fixed; inset: 0;
+  background-color: rgb(0 0 0 / 0.45);
+  z-index: 30;
+  backdrop-filter: blur(2px);
+}
+@media (min-width: 1024px) { .backdrop { display: none; } }
+
+.main { flex: 1; min-width: 0; overflow-y: auto; display: flex; flex-direction: column; }
+
+/* ── Mobile topbar ────────────────────────────────────────────── */
+.mobileTopbar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 0 16px; height: 56px;
+  border-bottom: 1px solid var(--border);
+  background-color: var(--card);
+  position: sticky; top: 0; z-index: 20;
+  box-shadow: var(--shadow-sm);
+}
+@media (min-width: 1024px) { .mobileTopbar { display: none; } }
+
+.hamburgerBtn {
+  display: flex; padding: 7px;
+  border-radius: var(--radius-md);
+  color: var(--muted-foreground);
+  background: transparent; border: none; cursor: pointer;
+  transition: background-color 150ms ease;
+}
+.hamburgerBtn:hover { background-color: var(--muted); }
+
+.mobileLogo    { display: flex; align-items: center; gap: 8px; }
+.mobileLogoIcon {
+  width: 24px; height: 24px;
+  border-radius: 6px; background-color: var(--primary);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.mobileLogoName { font-size: 14px; font-weight: 700; color: var(--foreground); }
+
+/* ── Content area ─────────────────────────────────────────────── */
+.content {
+  padding: 16px;
+  flex: 1;
+  width: 100%;
+  max-width: 1280px;
+}
+@media (min-width: 640px)  { .content { padding: 20px; } }
+@media (min-width: 1024px) { .content { padding: 28px 32px; } }
