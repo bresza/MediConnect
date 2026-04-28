@@ -28,8 +28,10 @@
 }
 
 .statGreen  { color: #059669; }
+:global(.dark) .statGreen { color: #34d399; }
 .statAmber  { color: #d97706; }
-.statRed    { color: #dc2626; }
+:global(.dark) .statAmber { color: #fbbf24; }
+.statRed    { color: var(--destructive); }
 
 /* ── Content layout ───────────────────────────────────────────── */
 .layout {

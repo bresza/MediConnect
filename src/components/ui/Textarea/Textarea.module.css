@@ -1,0 +1,40 @@
+.wrapper { display: flex; flex-direction: column; gap: 5px; }
+
+.label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--foreground);
+  letter-spacing: 0.01em;
+}
+
+.required { color: var(--destructive); margin-left: 2px; }
+
+.textarea {
+  width: 100%;
+  padding: 8px 11px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background-color: var(--input);
+  color: var(--foreground);
+  font-size: 13px;
+  font-family: var(--font-sans);
+  line-height: 1.6;
+  resize: vertical;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+  box-sizing: border-box;
+}
+
+.textarea::placeholder { color: var(--muted-foreground); }
+
+.textarea:hover   { background-color: var(--input-hover); }
+.textarea:focus   {
+  outline: none;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 15%, transparent);
+}
+
+.error    { border-color: var(--destructive) !important; }
+.disabled { opacity: 0.55; cursor: not-allowed; background-color: var(--muted); resize: none; }
+
+.hint     { font-size: 11px; color: var(--muted-foreground); }
+.errorMsg { font-size: 11px; color: var(--destructive); }

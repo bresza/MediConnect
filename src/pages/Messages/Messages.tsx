@@ -1,5 +1,7 @@
-import { useState } from "react"
-import { MESSAGES, MESSAGE_TEMPLATES, PATIENTS } from "../../data/mock"
+import { useState, useEffect } from "react"
+import { getMessages, getMessageTemplates } from "../../services/domain"
+import { getPatients } from "../../services/patients"
+import type { Message, MessageTemplate } from "../../types"
 import { Topbar } from "../../components/layout/Topbar/Topbar"
 import { Card } from "../../components/ui/Card/Card"
 import { Badge } from "../../components/ui/Badge/Badge"
@@ -9,12 +11,21 @@ import { Select } from "../../components/ui/Select/Select"
 import styles from "./Messages.module.css"
 
 export function Messages() {
-  const [showModal, setShowModal] = useState(false)
+  const [showModal,   setShowModal]   = useState(false)
+  const [messages,    setMessages]    = useState<Message[]>([])
+  const [templates,   setTemplates]   = useState<MessageTemplate[]>([])
+  const [patientNames, setPatientNames] = useState<string[]>([])
+
+  useEffect(() => {
+    getMessages().then(setMessages)
+    getMessageTemplates().then(setTemplates)
+    getPatients().then((ps) => setPatientNames(ps.map((p) => p.name)))
+  }, [])
 
   const stats = [
-    { label: "Entregues", value: MESSAGES.filter((m) => m.status === "Delivered").length, cls: styles.statGreen  },
-    { label: "Pendentes", value: MESSAGES.filter((m) => m.status === "Pending").length,   cls: styles.statAmber  },
-    { label: "Falhos",    value: MESSAGES.filter((m) => m.status === "Failed").length,    cls: styles.statRed    },
+    { label: "Entregues", value: messages.filter((m) => m.status === "Delivered").length, cls: styles.statGreen  },
+    { label: "Pendentes", value: messages.filter((m) => m.status === "Pending").length,   cls: styles.statAmber  },
+    { label: "Falhos",    value: messages.filter((m) => m.status === "Failed").length,    cls: styles.statRed    },
   ]
 
   return (
@@ -51,8 +62,8 @@ export function Messages() {
                 </tr>
               </thead>
               <tbody>
-                {MESSAGES.map((m, i) => {
-                  const isLast = i === MESSAGES.length - 1
+                {messages.map((m, i) => {
+                  const isLast = i === messages.length - 1
                   return (
                     <tr key={m.id}>
                       <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}>
@@ -77,7 +88,7 @@ export function Messages() {
         <Card className={styles.templatesCard}>
           <p className={styles.templatesTitle}>Templates</p>
           <div className={styles.templateList}>
-            {MESSAGE_TEMPLATES.map((tpl) => (
+            {templates.map((tpl) => (
               <div key={tpl.id} className={styles.templateItem}>
                 <div className={styles.templateItemHeader}>
                   <p className={styles.templateName}>{tpl.name}</p>
@@ -96,9 +107,9 @@ export function Messages() {
           <Card className={styles.modal} onClick={(e) => e.stopPropagation()}>
             <h2 className={styles.modalTitle}>Nova mensagem</h2>
             <div className={styles.modalFields}>
-              <Select label="Paciente" options={PATIENTS.map((p) => p.name)} />
+              <Select label="Paciente" options={patientNames} />
               <Select label="Canal" options={["WhatsApp", "Email", "SMS"]} />
-              <Select label="Template" options={MESSAGE_TEMPLATES.map((t) => t.name)} placeholder="Selecionar template" />
+              <Select label="Template" options={templates.map((t) => t.name)} placeholder="Selecionar template" />
               <textarea placeholder="Mensagem..." rows={4} className={styles.modalTextarea} />
             </div>
             <div className={styles.modalFooter}>

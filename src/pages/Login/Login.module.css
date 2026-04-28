@@ -1,7 +1,7 @@
 .root {
   min-height: 100vh;
   display: flex;
-  background: var(--bg);
+  background: var(--background);
 }
 
 /* ── Left panel – branding ─────────────────────────────────────── */
@@ -149,7 +149,7 @@
 
 .formSub {
   font-size: 13px;
-  color: var(--text-muted);
+  color: var(--muted-foreground);
   font-family: var(--font-sans);
 }
 
@@ -178,7 +178,7 @@
   padding: 10px 14px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
-  background: var(--surface);
+  background: var(--input);
   color: var(--foreground);
   font-size: 14px;
   font-family: var(--font-sans);
@@ -208,7 +208,7 @@
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--text-muted);
+  color: var(--muted-foreground);
   padding: 0;
   display: flex;
   align-items: center;
@@ -252,7 +252,7 @@
   font-size: 11px;
   font-weight: 700;
   font-family: var(--font-sans);
-  color: var(--text-muted);
+  color: var(--muted-foreground);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   margin-bottom: 12px;
@@ -272,7 +272,7 @@
   padding: 10px 12px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
-  background: var(--surface);
+  background: var(--input);
   cursor: pointer;
   transition: border-color 150ms ease, background-color 150ms ease;
   width: 100%;
@@ -317,13 +317,23 @@
 .demoRole {
   font-size: 11px;
   font-family: var(--font-sans);
-  color: var(--text-muted);
+  color: var(--muted-foreground);
+}
+
+:global(.dark) .demoRole {
+  color: var(--foreground);
+  opacity: 0.75;
+}
+
+:global(.dark) .demoCred {
+  color: var(--foreground);
+  opacity: 0.55;
 }
 
 .demoCred {
   font-size: 10px;
   font-family: var(--font-mono);
-  color: var(--text-muted);
+  color: var(--muted-foreground);
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -337,7 +347,7 @@
   height: 36px;
   border-radius: 50%;
   border: 1px solid var(--border);
-  background: var(--surface);
+  background: var(--input);
   color: var(--foreground);
   cursor: pointer;
   display: flex;

@@ -1,4 +1,6 @@
-import { REPORTS } from "../../data/mock"
+import { useState, useEffect } from "react"
+import { getReports } from "../../services/domain"
+import type { Report } from "../../types"
 import { Topbar } from "../../components/layout/Topbar/Topbar"
 import { Card } from "../../components/ui/Card/Card"
 import { Badge } from "../../components/ui/Badge/Badge"
@@ -16,52 +18,38 @@ interface DashboardProps {
 }
 
 const PlusIcon = () => (
-  <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2"
+  <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.2"
     viewBox="0 0 24 24" strokeLinecap="round">
     <path d="M12 5v14M5 12h14" />
   </svg>
 )
 
-const STATS = [
-  {
-    label:    "Pacientes",
-    icon:     "M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z",
-    valCls:   styles.statPrimary,
-    iconBg:   styles.statIconPrimary,
-    iconStroke: "var(--primary)",
-  },
-  {
-    label:    "Agendamentos hoje",
-    icon:     "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z",
-    valCls:   styles.statBlue,
-    iconBg:   styles.statIconBlue,
-    iconStroke: "#2563eb",
-  },
-  {
-    label:    "Laudos pendentes",
-    icon:     "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2",
-    valCls:   styles.statAmber,
-    iconBg:   styles.statIconAmber,
-    iconStroke: "#d97706",
-  },
-  {
-    label:    "Taxa de presença",
-    icon:     "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z",
-    valCls:   styles.statEmerald,
-    iconBg:   styles.statIconEmerald,
-    iconStroke: "#059669",
-  },
+interface StatConfig {
+  label: string
+  icon: string
+  valCls: string
+  iconBg: string
+  iconStroke: string
+  trend: string
+}
+
+const STATS: StatConfig[] = [
+  { label: "Pacientes",         icon: "M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z", valCls: styles.statPrimary,  iconBg: styles.statIconPrimary,  iconStroke: "var(--primary)", trend: "+3 mês" },
+  { label: "Agendamentos hoje", icon: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z",         valCls: styles.statBlue,    iconBg: styles.statIconBlue,    iconStroke: "#0284c7",         trend: "hoje"  },
+  { label: "Laudos pendentes",  icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2", valCls: styles.statAmber,   iconBg: styles.statIconAmber,   iconStroke: "#d97706",         trend: "abertos" },
+  { label: "Taxa de presença",  icon: "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z",                                                    valCls: styles.statEmerald, iconBg: styles.statIconEmerald, iconStroke: "#059669",         trend: "confirmados" },
 ]
 
 export function Dashboard({ patients, appointments, currentUser, onNavigate }: DashboardProps) {
   const isDoctor = currentUser.role === "doctor"
 
-  // Para médicos: mostrar apenas dados próprios
+  const [allReports, setAllReports] = useState<Report[]>([])
+  useEffect(() => { getReports().then(setAllReports).catch(() => setAllReports([])) }, [])
+
   const visibleAppointments = isDoctor
     ? appointments.filter((a) => a.doctorName === currentUser.name)
     : appointments
 
-  // Pacientes que têm ao menos um agendamento com este médico
   const visiblePatientIds = isDoctor
     ? new Set(visibleAppointments.map((a) => a.patientId))
     : null
@@ -70,8 +58,8 @@ export function Dashboard({ patients, appointments, currentUser, onNavigate }: D
     : patients
 
   const pendingReports = isDoctor
-    ? REPORTS.filter((r) => r.status === "Draft" && r.doctorName === currentUser.name)
-    : REPORTS.filter((r) => r.status === "Draft")
+    ? allReports.filter((r) => r.status === "Draft" && r.doctorName === currentUser.name)
+    : allReports.filter((r) => r.status === "Draft")
 
   const confirmed = visibleAppointments.filter((a) => a.status === "confirmed").length
   const total     = visibleAppointments.filter((a) => a.status !== "blocked").length
@@ -84,11 +72,13 @@ export function Dashboard({ patients, appointments, currentUser, onNavigate }: D
     "Taxa de presença":   `${rate}%`,
   }
 
+  const today = new Date().toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" })
+
   return (
     <div>
       <Topbar
-        title="Dashboard"
-        subtitle="Visão geral do sistema · 18 de março de 2026"
+        title={currentUser.role === "doctor" ? "Meu Painel" : currentUser.role === "secretary" ? "Recepção" : "Dashboard"}
+        subtitle={`Visão geral · ${today}`}
         action={
           <Button onClick={() => onNavigate("register")} icon={<PlusIcon />}>
             Novo paciente
@@ -100,36 +90,33 @@ export function Dashboard({ patients, appointments, currentUser, onNavigate }: D
       <div className={styles.statsGrid}>
         {STATS.map((s) => (
           <Card key={s.label} className={styles.statCard}>
-            <div className={styles.statRow}>
-              <div>
-                <p className={styles.statLabel}>{s.label}</p>
-                <p className={`${styles.statValue} ${s.valCls}`}>{statValues[s.label]}</p>
-              </div>
+            <div className={styles.statHeader}>
+              <p className={styles.statLabel}>{s.label}</p>
               <div className={`${styles.statIconBox} ${s.iconBg}`}>
-                <svg width="19" height="19" fill="none" stroke={s.iconStroke}
-                  strokeWidth="1.75" viewBox="0 0 24 24">
+                <svg width="17" height="17" fill="none" stroke={s.iconStroke}
+                  strokeWidth="1.8" viewBox="0 0 24 24">
                   {s.icon.split("M").filter(Boolean).map((d, i) => (
                     <path key={i} d={"M" + d} strokeLinecap="round" strokeLinejoin="round" />
                   ))}
                 </svg>
               </div>
             </div>
+            <p className={`${styles.statValue} ${s.valCls}`}>{statValues[s.label]}</p>
+            <span className={styles.statTrend}>{s.trend}</span>
           </Card>
         ))}
       </div>
 
       {/* Content columns */}
       <div className={styles.contentGrid}>
-
-        {/* Today's appointments */}
         <Card>
           <div className={styles.cardHeader}>
             <p className={styles.cardHeaderTitle}>Agenda de hoje</p>
-            <Button size="sm" variant="ghost" onClick={() => onNavigate("appointments")}>
-              Ver tudo
-            </Button>
+            <Button size="sm" variant="ghost" onClick={() => onNavigate("appointments")}>Ver tudo</Button>
           </div>
-          {visibleAppointments.slice(0, 5).map((a) => (
+          {visibleAppointments.length === 0 ? (
+            <p className={styles.emptyRow}>Nenhum agendamento para hoje.</p>
+          ) : visibleAppointments.slice(0, 5).map((a) => (
             <div key={a.id} className={styles.appointmentRow}>
               <span className={styles.appointmentTime}>{a.time}</span>
               <Avatar name={a.patientName} size="sm" />
@@ -144,28 +131,26 @@ export function Dashboard({ patients, appointments, currentUser, onNavigate }: D
           ))}
         </Card>
 
-        {/* Recent patients */}
         <Card>
           <div className={styles.cardHeader}>
             <p className={styles.cardHeaderTitle}>Pacientes recentes</p>
-            <Button size="sm" variant="ghost" onClick={() => onNavigate("patients")}>
-              Ver todos
-            </Button>
+            <Button size="sm" variant="ghost" onClick={() => onNavigate("patients")}>Ver todos</Button>
           </div>
-          {visiblePatients.map((p) => (
+          {visiblePatients.length === 0 ? (
+            <p className={styles.emptyRow}>Nenhum paciente encontrado.</p>
+          ) : visiblePatients.slice(0, 5).map((p) => (
             <div key={p.id} className={styles.patientRow}>
               <Avatar name={p.name} size="sm" />
               <div className={styles.patientInfo}>
                 <p className={styles.patientName}>{p.name}</p>
                 <p className={styles.patientSub}>
-                  {p.healthInsurance} · última visita {p.lastVisit ? formatDate(p.lastVisit) : "—"}
+                  {p.healthInsurance ?? "—"} · última visita {p.lastVisit ? formatDate(p.lastVisit) : "—"}
                 </p>
               </div>
               <Badge>{p.status}</Badge>
             </div>
           ))}
         </Card>
-
       </div>
     </div>
   )

@@ -1,13 +1,11 @@
 import { useState } from "react"
-import { MOCK_USERS } from "../../data/mock"
-import { ROLE_LABELS } from "../../utils/permissions"
-import { getInitials } from "../../utils"
-import type { User } from "../../types"
+import { login as authLogin } from "../../services/auth"
+import type { LoginResponse } from "../../services/auth"
 import styles from "./Login.module.css"
 
 interface LoginProps {
-  onLogin: (user: User) => void
-  darkMode: boolean
+  onLogin:      (res: LoginResponse) => void
+  darkMode:     boolean
   onToggleDark: () => void
 }
 
@@ -20,33 +18,39 @@ const FEATURE_LIST = [
 ]
 
 export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
-  const [email, setEmail]               = useState("")
-  const [password, setPassword]         = useState("")
+  const [email,        setEmail]        = useState("")
+  const [password,     setPassword]     = useState("")
   const [showPassword, setShowPassword] = useState(false)
-  const [error, setError]               = useState<string | null>(null)
+  const [error,        setError]        = useState<string | null>(null)
+  const [isLoading,    setIsLoading]    = useState(false)
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    const found = MOCK_USERS.find((u) => u.email === email && u.password === password)
-    if (!found) { setError("E-mail ou senha inválidos"); return }
-    onLogin({ id: found.id, name: found.name, role: found.role, email: found.email, crm: found.crm, specialty: found.specialty })
+    if (!email.trim() || !password.trim()) { setError("Preencha e-mail e senha."); return }
+    setError(null); setIsLoading(true)
+    try { onLogin(await authLogin({ email, password })) }
+    catch (err) { setError(err instanceof Error ? err.message : "E-mail ou senha inválidos.") }
+    finally { setIsLoading(false) }
   }
 
-  function quickLogin(mu: typeof MOCK_USERS[0]) {
-    onLogin({ id: mu.id, name: mu.name, role: mu.role, email: mu.email, crm: mu.crm, specialty: mu.specialty })
+  async function handleGestorClick() {
+    setError(null); setIsLoading(true)
+    setEmail("hugo@popcode.com.br"); setPassword("hdoria")
+    try { onLogin(await authLogin({ email: "hugo@popcode.com.br", password: "hdoria" })) }
+    catch (err) { setError(err instanceof Error ? err.message : "Erro ao fazer login") }
+    finally { setIsLoading(false) }
   }
 
   return (
     <div className={styles.root}>
 
-      {/* Left – branding */}
+      {/* Painel esquerdo — branding */}
       <div className={styles.brand}>
         <div className={styles.brandLogoRow}>
           <div className={styles.brandLogoIcon}>
             <svg width="22" height="22" fill="none" stroke="white" strokeWidth="2.2"
               viewBox="0 0 24 24" strokeLinecap="round">
-              <path d="M12 2a10 10 0 100 20A10 10 0 0012 2z" />
-              <path d="M12 8v8M8 12h8" />
+              <path d="M12 2a10 10 0 100 20A10 10 0 0012 2z" /><path d="M12 8v8M8 12h8" />
             </svg>
           </div>
           <div>
@@ -54,33 +58,27 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
             <p className={styles.brandClinic}>Clínica Central</p>
           </div>
         </div>
-
         <p className={styles.brandHeadline}>Gestão clínica moderna e eficiente</p>
         <p className={styles.brandSub}>
           Uma plataforma completa para médicos, gestores e equipe administrativa gerenciarem pacientes, agendamentos e muito mais.
         </p>
-
         <div className={styles.features}>
           {FEATURE_LIST.map((f) => (
-            <div key={f} className={styles.featureItem}>
-              <div className={styles.featureDot} />
-              {f}
-            </div>
+            <div key={f} className={styles.featureItem}><div className={styles.featureDot} />{f}</div>
           ))}
         </div>
       </div>
 
-      {/* Right – form */}
+      {/* Painel direito — formulário */}
       <div className={styles.formPanel}>
         <div className={styles.formCard}>
 
-          {/* Mobile logo */}
+          {/* Logo mobile */}
           <div className={styles.mobileLogo}>
             <div className={styles.mobileLogoIcon}>
               <svg width="18" height="18" fill="none" stroke="white" strokeWidth="2.2"
                 viewBox="0 0 24 24" strokeLinecap="round">
-                <path d="M12 2a10 10 0 100 20A10 10 0 0012 2z" />
-                <path d="M12 8v8M8 12h8" />
+                <path d="M12 2a10 10 0 100 20A10 10 0 0012 2z" /><path d="M12 8v8M8 12h8" />
               </svg>
             </div>
             <span className={styles.mobileLogoName}>Mediconnect</span>
@@ -91,47 +89,34 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
             <p className={styles.formSub}>Faça login para acessar o sistema</p>
           </div>
 
+          {/* Formulário */}
           <form onSubmit={handleSubmit} className={styles.form}>
             <div className={styles.fieldGroup}>
               <label className={styles.label}>E-mail</label>
               <input
-                type="email"
-                placeholder="seu@email.com"
-                value={email}
+                type="email" placeholder="seu@email.com" value={email}
                 onChange={(e) => { setEmail(e.target.value); setError(null) }}
-                className={styles.input}
-                autoComplete="username"
+                className={styles.input} autoComplete="username"
               />
             </div>
-
             <div className={styles.fieldGroup}>
               <label className={styles.label}>Senha</label>
               <div className={styles.passwordWrapper}>
                 <input
-                  type={showPassword ? "text" : "password"}
-                  placeholder="••••••••"
-                  value={password}
+                  type={showPassword ? "text" : "password"} placeholder="••••••••" value={password}
                   onChange={(e) => { setPassword(e.target.value); setError(null) }}
-                  className={styles.input}
-                  autoComplete="current-password"
+                  className={styles.input} autoComplete="current-password"
                 />
-                <button
-                  type="button"
-                  className={styles.showPasswordBtn}
-                  onClick={() => setShowPassword((v) => !v)}
-                  tabIndex={-1}
-                >
+                <button type="button" className={styles.showPasswordBtn}
+                  onClick={() => setShowPassword((v) => !v)} tabIndex={-1}>
                   {showPassword ? (
-                    <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2"
-                      viewBox="0 0 24 24" strokeLinecap="round">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round">
                       <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24" />
                       <path d="M1 1l22 22" />
                     </svg>
                   ) : (
-                    <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2"
-                      viewBox="0 0 24 24" strokeLinecap="round">
-                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                      <circle cx="12" cy="12" r="3" />
+                    <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
                     </svg>
                   )}
                 </button>
@@ -140,43 +125,59 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
 
             {error && <p className={styles.errorMsg}>{error}</p>}
 
-            <button type="submit" className={styles.submitBtn}>Entrar</button>
+            <button type="submit" className={styles.submitBtn} disabled={isLoading}>
+              {isLoading ? "Entrando..." : "Entrar"}
+            </button>
           </form>
 
-          {/* Demo accounts */}
+          {/* Card gestor */}
           <div className={styles.demoSection}>
-            <p className={styles.demoTitle}>Perfis de demonstração — clique para entrar</p>
+            <p className={styles.demoTitle}>Acesso rápido</p>
             <div className={styles.demoGrid}>
-              {MOCK_USERS.map((mu) => (
-                <button key={mu.id} className={styles.demoCard} onClick={() => quickLogin(mu)}>
-                  <div className={styles.demoAvatar}>{getInitials(mu.name)}</div>
-                  <div className={styles.demoInfo}>
-                    <p className={styles.demoName}>{mu.name}</p>
-                    <p className={styles.demoRole}>{ROLE_LABELS[mu.role]}</p>
-                  </div>
-                  <span className={styles.demoCred}>{mu.password}</span>
-                </button>
-              ))}
+              <button
+                className={styles.demoCard}
+                onClick={handleGestorClick}
+                disabled={isLoading}
+                title="Entrar como Gestor"
+              >
+                <div className={styles.demoAvatar} style={{ background: "#6366f1" }}>
+                  {isLoading ? (
+                    <svg width="14" height="14" fill="none" stroke="white" strokeWidth="2.5"
+                      viewBox="0 0 24 24" strokeLinecap="round"
+                      style={{ animation: "spin 0.8s linear infinite" }}>
+                      <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+                    </svg>
+                  ) : "HD"}
+                </div>
+                <div className={styles.demoInfo}>
+                  <p className={styles.demoName}>Hugo Doria</p>
+                  <p className={styles.demoRole}>Gestão — Acesso completo</p>
+                </div>
+                <span className={styles.demoCred}>hugo@popcode.com.br</span>
+              </button>
             </div>
+            <p style={{ fontSize: 11, color: "var(--muted-foreground)", marginTop: 10, textAlign: "center" }}>
+              Outros perfis (médico, secretária) são criados pelo gestor em <strong>Equipe</strong>.
+            </p>
           </div>
         </div>
       </div>
 
-      {/* Theme toggle */}
+      {/* Botão de tema */}
       <button className={styles.themeBtn} onClick={onToggleDark} aria-label="Alternar tema">
         {darkMode ? (
-          <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2"
-            viewBox="0 0 24 24" strokeLinecap="round">
+          <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round">
             <circle cx="12" cy="12" r="5" />
             <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
           </svg>
         ) : (
-          <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2"
-            viewBox="0 0 24 24" strokeLinecap="round">
+          <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round">
             <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />
           </svg>
         )}
       </button>
+
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   )
 }

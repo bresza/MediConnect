@@ -5,24 +5,26 @@
   align-items: flex-start;
   gap: 12px;
   padding-bottom: 20px;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
   border-bottom: 1px solid var(--border);
 }
 
 .info { min-width: 0; }
 
 .title {
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 700;
   color: var(--foreground);
-  letter-spacing: -0.025em;
-  line-height: 1;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
 }
 
+@media (min-width: 640px) { .title { font-size: 22px; } }
+
 .subtitle {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--muted-foreground);
-  margin-top: 6px;
+  margin-top: 4px;
 }
 
 .actions {
