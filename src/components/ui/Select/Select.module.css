@@ -1,38 +1,43 @@
-.wrapper {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
+.wrapper { display: flex; flex-direction: column; gap: 5px; }
+.label { font-size: 12px; font-weight: 600; color: var(--foreground); letter-spacing: 0.01em; }
+.required { color: var(--destructive); margin-left: 2px; }
 
-.label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--foreground);
-}
-
-.required {
-  color: var(--destructive);
-  margin-left: 2px;
-}
+.selectWrapper { position: relative; }
 
 .select {
   width: 100%;
-  padding: 10px 12px;
+  padding: 9px 32px 9px 12px;
   border-radius: var(--radius-lg);
   border: 1px solid var(--border);
   background-color: var(--input);
   color: var(--foreground);
-  font-size: 14px;
+  font-size: 13px;
   font-family: var(--font-sans);
   outline: none;
   cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
   transition: border-color 150ms ease, box-shadow 150ms ease;
-  appearance: auto;
 }
-
+.select:hover { background-color: var(--input-hover); }
 .select:focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgb(124 144 130 / 0.2);
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 15%, transparent);
 }
 
 :global(.dark) .select { color-scheme: dark; }
+
+.selectError   { border-color: var(--destructive) !important; }
+.selectDisabled { opacity: 0.55; cursor: not-allowed; background-color: var(--muted); }
+
+.chevron {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted-foreground);
+  pointer-events: none;
+}
+
+.hint     { font-size: 11px; color: var(--muted-foreground); }
+.errorMsg { font-size: 11px; color: var(--destructive); }

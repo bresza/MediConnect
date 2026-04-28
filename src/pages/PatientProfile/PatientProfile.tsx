@@ -40,7 +40,7 @@ const RX_TYPE_MAP: Record<string, string> = {
   simple: "Simples", special: "Controle Especial", antimicrobial: "Antimicrobiana",
 }
 const APPT_STATUS_COLOR: Record<string, string> = {
-  confirmed: "#059669", completed: "#059669", scheduled: "#2563eb",
+  confirmed: "#059669", completed: "#059669", scheduled: "#0284c7",
   cancelled: "#dc2626", absent: "#dc2626", blocked: "#6b7280", pending: "#d97706",
 }
 
@@ -691,7 +691,7 @@ export function PatientProfile({
                 {patientRx.map((rx, i) => (
                   <div key={rx.id} className={`${styles.timelineItem} ${i === patientRx.length - 1 ? styles.timelineItemLast : ""}`}>
                     <div className={styles.timelineDotWrap}>
-                      <div className={styles.timelineDot} style={{ background: "#2563eb" }} />
+                      <div className={styles.timelineDot} style={{ background: "#0284c7" }} />
                       {i < patientRx.length - 1 && <div className={styles.timelineLine} />}
                     </div>
                     <div className={styles.timelineCard}>

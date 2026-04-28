@@ -344,9 +344,9 @@
 }
 
 .removeMedBtn:hover {
-  background: #fee2e2;
-  color: #dc2626;
-  border-color: #fca5a5;
+  background: rgb(220 38 38 / 0.08);
+  color: var(--destructive);
+  border-color: rgb(220 38 38 / 0.3);
 }
 
 /* ── Footer ───────────────────────────────────────────────────── */
@@ -506,19 +506,19 @@
 
 /* ── Prescription document ────────────────────────────────────── */
 .rxDocument {
-  background: #ffffff;
-  border: 1px solid #d1d5db;
+  background: var(--card);
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 40px 48px;
   width: 100%;
   max-width: 720px;
   box-shadow: 0 4px 24px rgb(0 0 0 / 0.08);
-  color: #111827;
+  color: var(--foreground);
 }
 
 :global(.dark) .rxDocument {
-  background: #f9fafb;
-  color: #111827;
+  background: var(--muted);
+  color: var(--foreground);
 }
 
 @media print {
@@ -537,12 +537,12 @@
 .rxClinicName {
   font-size: 16px;
   font-weight: 700;
-  color: #1f2937;
+  color: var(--foreground);
 }
 
 .rxClinicInfo {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--muted-foreground);
   margin-top: 2px;
 }
 
@@ -553,26 +553,26 @@
 .rxDateLabel {
   font-size: 10px;
   font-weight: 700;
-  color: #6b7280;
+  color: var(--muted-foreground);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
 
 .rxDateValue {
   font-size: 13px;
-  color: #1f2937;
+  color: var(--foreground);
   margin-top: 2px;
 }
 
 .rxDividerTop {
   height: 2px;
-  background: #1f2937;
+  background: var(--muted);
   margin-bottom: 20px;
 }
 
 .rxDivider {
   height: 1px;
-  background: #e5e7eb;
+  background: var(--border);
   margin: 18px 0;
 }
 
@@ -581,7 +581,7 @@
   font-weight: 800;
   letter-spacing: 0.08em;
   text-align: center;
-  color: #1f2937;
+  color: var(--foreground);
   margin-bottom: 20px;
 }
 
@@ -589,7 +589,7 @@
   display: flex;
   flex-direction: column;
   gap: 5px;
-  background: #f9fafb;
+  background: var(--muted);
   border-radius: 6px;
   padding: 12px 16px;
 }
@@ -602,12 +602,12 @@
 
 .rxFieldLabel {
   font-weight: 600;
-  color: #4b5563;
+  color: var(--muted-foreground);
   flex-shrink: 0;
 }
 
 .rxFieldValue {
-  color: #1f2937;
+  color: var(--foreground);
 }
 
 .rxMeds {
@@ -618,7 +618,7 @@
 
 .rxEmpty {
   font-size: 13px;
-  color: #6b7280;
+  color: var(--muted-foreground);
   font-style: italic;
 }
 
@@ -631,38 +631,38 @@
 .rxMedName {
   font-size: 14px;
   font-weight: 700;
-  color: #1f2937;
+  color: var(--foreground);
 }
 
 .rxMedLine {
   font-size: 13px;
-  color: #374151;
+  color: var(--foreground);
   padding-left: 18px;
 }
 
 .rxMedInstructions {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--muted-foreground);
   padding-left: 18px;
   font-style: italic;
 }
 
 .rxCid {
   font-size: 12px;
-  color: #4b5563;
+  color: var(--muted-foreground);
   font-weight: 600;
 }
 
 .rxObsTitle {
   font-size: 12px;
   font-weight: 700;
-  color: #4b5563;
+  color: var(--muted-foreground);
   margin-bottom: 4px;
 }
 
 .rxObs {
   font-size: 12px;
-  color: #4b5563;
+  color: var(--muted-foreground);
   white-space: pre-wrap;
 }
 
@@ -677,17 +677,17 @@
 .rxSignatureLine {
   width: 200px;
   height: 1px;
-  background: #1f2937;
+  background: var(--muted);
   margin-bottom: 8px;
 }
 
 .rxDoctorName {
   font-size: 13px;
   font-weight: 700;
-  color: #1f2937;
+  color: var(--foreground);
 }
 
 .rxDoctorInfo {
   font-size: 12px;
-  color: #4b5563;
+  color: var(--muted-foreground);
 }

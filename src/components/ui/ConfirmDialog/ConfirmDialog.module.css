@@ -1,0 +1,17 @@
+.iconWrap { display: flex; justify-content: center; margin-bottom: 16px; }
+
+.icon {
+  width: 52px; height: 52px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+}
+
+.iconDanger { background-color: rgb(220 38 38 / 0.1); color: var(--destructive); }
+.iconWarn   { background-color: rgb(217 119 6 / 0.12); color: #d97706; }
+
+:global(.dark) .iconWarn { color: #fbbf24; }
+
+.message {
+  font-size: 14px; color: var(--muted-foreground);
+  text-align: center; line-height: 1.6;
+}

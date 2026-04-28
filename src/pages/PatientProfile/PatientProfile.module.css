@@ -223,8 +223,8 @@
   gap: 6px;
   padding: 8px 16px;
   border-radius: var(--radius-lg);
-  background: #ffffff;
-  color: #3d5045;
+  background-color: var(--card);
+  color: var(--foreground);
   font-size: 13px;
   font-weight: 700;
   font-family: var(--font-sans);
@@ -438,7 +438,7 @@
 
 /* ── Alert card ───────────────────────────────────────────────── */
 .alertCard {
-  background: #fff5f5;
+  background-color: rgb(239 68 68 / 0.06);
   border: 1.5px solid #fecaca;
   border-radius: var(--radius-xl);
   padding: 16px 20px;
@@ -462,13 +462,13 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: #dc2626;
+  color: var(--destructive);
 }
 
 .alertCardSub {
   margin-left: auto;
   font-size: 11px;
-  color: #ef4444;
+  color: var(--destructive);
   opacity: 0.7;
 }
 
@@ -484,7 +484,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: #9b1c1c;
+  color: var(--destructive);
   margin-bottom: 6px;
 }
 
@@ -506,14 +506,17 @@
   border-radius: 99px;
 }
 
-.chipRed    { background: #fee2e2; color: #b91c1c; }
-.chipAmber  { background: #fef3c7; color: #92400e; }
-.chipBlue   { background: #dbeafe; color: #1e40af; }
-.chipGreen  { background: #d1fae5; color: #065f46; }
+.chipRed    { background-color: #fee2e2; color: #9b1c1c; }
+:global(.dark) .chipRed    { background-color: rgb(239 68 68 / 0.15); color: #fca5a5; }
+.chipAmber  { background-color: #fef3c7; color: #92400e; }
+:global(.dark) .chipAmber  { background-color: rgb(245 158 11 / 0.15); color: #fcd34d; }
+.chipBlue   { background-color: #dbeafe; color: #1e40af; }
+:global(.dark) .chipBlue   { background-color: rgb(59 130 246 / 0.15); color: #93c5fd; }
+.chipGreen  { background-color: #d1fae5; color: #065f46; }
+:global(.dark) .chipGreen  { background-color: rgb(16 185 129 / 0.15); color: #6ee7b7; }
 .chipNeutral { background: var(--muted); color: var(--muted-foreground); }
 
 :global(.dark) .chipRed    { background: rgba(239,68,68,0.15);  color: #fca5a5; }
-:global(.dark) .chipAmber  { background: rgba(245,158,11,0.15); color: #fcd34d; }
 :global(.dark) .chipBlue   { background: rgba(59,130,246,0.15); color: #93c5fd; }
 :global(.dark) .chipGreen  { background: rgba(16,185,129,0.15); color: #6ee7b7; }
 
@@ -892,10 +895,11 @@
   border-radius: 99px;
 }
 
-.statusTagGreen { background: #d1fae5; color: #065f46; }
-.statusTagAmber { background: #fef3c7; color: #92400e; }
+.statusTagGreen { background-color: #d1fae5; color: #065f46; }
+:global(.dark) .statusTagGreen { background-color: rgb(16 185 129 / 0.15); color: #6ee7b7; }
+.statusTagAmber { background-color: #fef3c7; color: #92400e; }
+:global(.dark) .statusTagAmber { background-color: rgb(245 158 11 / 0.15); color: #fcd34d; }
 :global(.dark) .statusTagGreen { background: rgba(16,185,129,0.15); color: #6ee7b7; }
-:global(.dark) .statusTagAmber { background: rgba(245,158,11,0.15); color: #fcd34d; }
 
 .timelineComplaint {
   font-size: 14px;

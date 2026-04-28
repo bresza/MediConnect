@@ -3,65 +3,54 @@
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 12px;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
+@media (min-width: 768px) { .statsGrid { grid-template-columns: repeat(4, 1fr); } }
 
-@media (min-width: 768px) {
-  .statsGrid { grid-template-columns: repeat(4, 1fr); }
-}
+.statCard { padding: 16px 18px; }
 
-.statCard {
-  padding: 16px 18px;
-}
-
-.statRow {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-}
+.statHeader { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
 
 .statLabel {
-  font-size: 10px;
-  font-weight: 600;
+  font-size: 11px; font-weight: 600;
   color: var(--muted-foreground);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  line-height: 1;
+  text-transform: uppercase; letter-spacing: 0.06em;
 }
-
-@media (min-width: 640px) { .statLabel { font-size: 11px; } }
 
 .statValue {
-  font-size: 26px;
-  font-weight: 700;
-  margin-top: 8px;
-  line-height: 1;
+  font-size: 28px; font-weight: 700;
+  margin-top: 6px; line-height: 1;
+  letter-spacing: -0.03em;
+}
+@media (min-width: 640px) { .statValue { font-size: 32px; } }
+
+.statTrend {
+  display: inline-flex; align-items: center; gap: 3px;
+  margin-top: 6px;
+  font-size: 11px; font-weight: 600;
+  padding: 2px 7px; border-radius: 20px;
+  background-color: var(--accent);
+  color: var(--accent-foreground);
 }
 
-@media (min-width: 640px) { .statValue { font-size: 30px; } }
-
 .statPrimary  { color: var(--primary); }
-.statBlue     { color: #2563eb; }
+.statBlue     { color: #0284c7; }
 .statAmber    { color: #d97706; }
 .statEmerald  { color: #059669; }
 
+:global(.dark) .statBlue    { color: #38bdf8; }
+:global(.dark) .statAmber   { color: #fbbf24; }
+:global(.dark) .statEmerald { color: #34d399; }
+
 .statIconBox {
-  width: 40px;
-  height: 40px;
+  width: 38px; height: 38px;
   border-radius: var(--radius-lg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
 }
 
-@media (min-width: 640px) {
-  .statIconBox { width: 44px; height: 44px; }
-}
-
 .statIconPrimary { background-color: rgb(124 144 130 / 0.12); }
-.statIconBlue    { background-color: #eff6ff; }
+.statIconBlue    { background-color: #e0f2fe; }
 .statIconAmber   { background-color: #fffbeb; }
 .statIconEmerald { background-color: #ecfdf5; }
 
@@ -75,83 +64,58 @@
   grid-template-columns: 1fr;
   gap: 16px;
 }
+@media (min-width: 1024px) { .contentGrid { grid-template-columns: repeat(2, 1fr); } }
 
-@media (min-width: 1024px) {
-  .contentGrid { grid-template-columns: repeat(2, 1fr); }
-}
-
-/* ── Card header (title + action) ────────────────────────────── */
+/* ── Card header ──────────────────────────────────────────────── */
 .cardHeader {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 14px 20px;
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 14px 18px;
   border-bottom: 1px solid var(--border);
 }
-
-.cardHeaderTitle {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--foreground);
-}
+.cardHeaderTitle { font-size: 13px; font-weight: 700; color: var(--foreground); }
 
 /* ── Appointment row ──────────────────────────────────────────── */
 .appointmentRow {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 20px;
+  display: flex; align-items: center; gap: 11px;
+  padding: 11px 18px;
   border-bottom: 1px solid var(--border);
 }
-
 .appointmentRow:last-child { border-bottom: none; }
 
 .appointmentTime {
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 11px; font-weight: 700;
   color: var(--primary);
-  width: 40px;
-  flex-shrink: 0;
+  width: 38px; flex-shrink: 0;
 }
 
 .appointmentInfo { flex: 1; min-width: 0; }
 
 .appointmentName {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 13px; font-weight: 600;
   color: var(--foreground);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-.appointmentSub {
-  font-size: 11px;
-  color: var(--muted-foreground);
-  margin-top: 1px;
-}
+.appointmentSub { font-size: 11px; color: var(--muted-foreground); margin-top: 1px; }
 
 /* ── Patient row ──────────────────────────────────────────────── */
 .patientRow {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 11px 20px;
+  display: flex; align-items: center; gap: 11px;
+  padding: 10px 18px;
   border-bottom: 1px solid var(--border);
 }
-
 .patientRow:last-child { border-bottom: none; }
 
 .patientInfo { flex: 1; min-width: 0; }
+.patientName { font-size: 13px; font-weight: 600; color: var(--foreground); }
+.patientSub { font-size: 11px; color: var(--muted-foreground); margin-top: 1px; }
 
-.patientName {
+/* ── Empty ────────────────────────────────────────────────────── */
+.emptyRow {
+  padding: 32px 18px;
+  text-align: center;
   font-size: 13px;
-  font-weight: 600;
-  color: var(--foreground);
+  color: var(--muted-foreground);
 }
 
-.patientSub {
-  font-size: 11px;
-  color: var(--muted-foreground);
-  margin-top: 1px;
-}
+:global(.dark) .statIconAmber { background-color: rgb(245 158 11 / 0.15); }
