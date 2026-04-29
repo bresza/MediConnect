@@ -1,8 +1,9 @@
-import { apiRequest, getApiUserId } from "./api"
-import { MEDICAL_RECORDS, PRESCRIPTIONS, MESSAGES, MESSAGE_TEMPLATES } from "../data/mock"
+import { ApiError, apiRequest, getApiUserId } from "./api"
+import { MESSAGES, MESSAGE_TEMPLATES } from "../data/mock"
 import type {
   MedicalRecord, Prescription, Report, ReportStatus,
   Message, MessageTemplate, StaffMember, StaffRole, StaffStatus,
+  MedicalRecordStatus, PrescriptionMedication, PrescriptionType,
 } from "../types"
 
 // ─────────────────────────────────────────────────────────────────
@@ -33,13 +34,11 @@ interface ApiReport {
 }
 
 function statusToFrontend(s?: string): ReportStatus {
-  if (s === "finalized") return "Finalized"
-  if (s === "sent")      return "Sent"
+  if (s === "delivered") return "Finalized"
   return "Draft"
 }
 function statusToApi(s: ReportStatus): string {
-  if (s === "Finalized") return "finalized"
-  if (s === "Sent")      return "sent"
+  if (s === "Finalized" || s === "Sent") return "delivered"
   return "draft"
 }
 
@@ -48,7 +47,7 @@ function apiToReport(api: ApiReport): Report {
     id:            api.id,
     patientId:     api.patient_id,
     patientName:   api.patients?.full_name  ?? "",
-    doctorId:      api.created_by           ?? "",
+    doctorId:      api.created_by           ?? api.requested_by ?? "",
     doctorName:    api.profiles?.full_name  ?? "",  // populated when available
     type:          api.exam                 ?? "Laudo Médico",
     exam:          api.exam,
@@ -69,7 +68,7 @@ function apiToReport(api: ApiReport): Report {
 // ReportInput exato conforme schema da API
 function reportToApi(r: Partial<Report> & { patientId: string }): Record<string, unknown> {
   const uid = getApiUserId()
-  return {
+  return compactPayload({
     patient_id:     r.patientId,
     status:         statusToApi(r.status ?? "Draft"),
     exam:           r.type   ?? r.exam ?? "Laudo Médico",
@@ -81,16 +80,33 @@ function reportToApi(r: Partial<Report> & { patientId: string }): Record<string,
     content_json:   {},
     hide_date:      r.hideDate      ?? false,
     hide_signature: r.hideSignature ?? false,
-  }
+  })
 }
 
-const REPORT_SELECT = "select=*,patients(full_name)"
-
 export async function getReports(): Promise<Report[]> {
-  const data = await apiRequest<ApiReport[]>(
-    `/rest/v1/reports?${REPORT_SELECT}&order=created_at.desc`,
-  )
-  return (data ?? []).map(apiToReport)
+  const [reports, patients, doctors, profiles] = await Promise.all([
+    apiRequest<ApiReport[]>("/rest/v1/reports?select=*&order=created_at.desc"),
+    apiRequest<ApiPatientName[]>("/rest/v1/patients?select=id,full_name"),
+    apiRequest<ApiDoctorName[]>("/rest/v1/doctors?select=id,full_name"),
+    apiRequest<ApiProfile[]>("/rest/v1/profiles?select=id,full_name"),
+  ])
+
+  const patientMap = new Map((patients ?? []).map((p) => [p.id, p.full_name]))
+  const doctorMap = new Map([
+    ...(doctors ?? []).map((d) => [d.id, d.full_name] as const),
+    ...(profiles ?? []).map((p) => [p.id, p.full_name] as const),
+  ])
+
+  return (reports ?? [])
+    .filter((report) =>
+      report.exam !== MEDICAL_RECORD_EXAM &&
+      report.exam !== PRESCRIPTION_EXAM &&
+      report.exam !== FINANCIAL_RECORD_EXAM)
+    .map((report) => ({
+      ...apiToReport(report),
+      patientName: patientMap.get(report.patient_id) ?? "",
+      doctorName: doctorMap.get(report.created_by ?? report.requested_by ?? "") ?? "",
+    }))
 }
 
 export async function createReport(
@@ -102,10 +118,11 @@ export async function createReport(
     body: reportToApi(data),
   })
   const raw  = Array.isArray(created) ? created[0] : (created as ApiReport)
-  const full = await apiRequest<ApiReport[]>(
-    `/rest/v1/reports?id=eq.${raw.id}&${REPORT_SELECT}`,
-  )
-  return apiToReport(full[0] ?? raw)
+  return {
+    ...apiToReport(raw),
+    patientName: data.patientName ?? "",
+    doctorName: data.doctorName ?? "",
+  }
 }
 
 export async function updateReport(report: Report): Promise<Report> {
@@ -122,13 +139,27 @@ export async function updateReport(report: Report): Promise<Report> {
 // ─────────────────────────────────────────────────────────────────
 interface ApiDoctor {
   id: string; full_name: string; email?: string; phone?: string
-  crm?: string; crm_state?: string; specialty?: string
+  crm?: string; crm_uf?: string; crm_state?: string; specialty?: string
   active?: boolean; created_at?: string
 }
 interface ApiProfile {
   id: string; full_name: string; email?: string
   phone?: string; role?: string; created_at?: string
 }
+
+function compactPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(payload).filter(([, value]) =>
+      value !== undefined &&
+      value !== null &&
+      value !== "",
+    ),
+  )
+}
+
+const MEDICAL_RECORD_EXAM = "Prontuário Médico"
+const PRESCRIPTION_EXAM = "Receita Médica"
+const FINANCIAL_RECORD_EXAM = "Registro Financeiro"
 
 function apiDoctorToStaff(api: ApiDoctor): StaffMember {
   return {
@@ -138,14 +169,16 @@ function apiDoctorToStaff(api: ApiDoctor): StaffMember {
     email:     api.email   ?? "",
     phone:     api.phone   ?? "",
     status:    (api.active !== false ? "Active" : "Inactive") as StaffStatus,
-    crm:       api.crm ? `${api.crm}-${api.crm_state ?? ""}` : undefined,
+    crm:       api.crm ? `${api.crm}-${api.crm_uf ?? api.crm_state ?? ""}` : undefined,
     specialty: api.specialty,
     createdAt: api.created_at ?? new Date().toISOString().slice(0, 10),
   }
 }
 function apiProfileToStaff(api: ApiProfile): StaffMember {
   const roleMap: Record<string, StaffRole> = {
-    medico: "doctor", gestor: "manager", secretaria: "secretary",
+    medico: "doctor", doctor: "doctor",
+    gestor: "manager", manager: "manager",
+    secretaria: "secretary", secretary: "secretary",
   }
   return {
     id:        api.id,
@@ -198,58 +231,25 @@ export async function createStaffMember(
   }
 
   // Payload exato conforme curl da API fornecido
-const payload = {
-  email: data.email.trim(),
-  password: password.trim(),
-  full_name: data.name.trim(),
-  phone: data.phone?.trim(),
-  role: roleMap[data.role] ?? "secretaria",
-  cpf: (doctorExtra?.cpf || data.cpf || "")
-    .replace(/\D/g, "")
-    .trim(),
-}
+  const payload = {
+    email:     data.email.trim(),
+    password:  password.trim(),
+    full_name: data.name.trim(),
+    phone:     data.phone?.trim() || undefined,
+    phone_mobile: data.phone?.trim() || undefined,
+    role:      roleMap[data.role] ?? "secretaria",
+    cpf:       (doctorExtra?.cpf || data.cpf || "").replace(/\D/g, "") || undefined,
+    create_patient_record: false,
+  }
 
-console.log(
-  "PAYLOAD JSON:",
-  JSON.stringify(payload, null, 2)
-)
+  if (!payload.email)     throw new Error("E-mail obrigatório")
+  if (!payload.password)  throw new Error("Senha obrigatória")
+  if (!payload.full_name) throw new Error("Nome obrigatório")
+  if (!payload.phone)     throw new Error("Telefone obrigatório")
+  if (!payload.cpf)       throw new Error("CPF obrigatório")
 
-if (!payload.email) throw new Error("E-mail obrigatório")
-if (!payload.password) throw new Error("Senha obrigatória")
-if (!payload.full_name) throw new Error("Nome obrigatório")
-if (!payload.phone) throw new Error("Telefone obrigatório")
-if (!payload.cpf) throw new Error("CPF obrigatório")
-
-// ─── VALIDAÇÃO OBRIGATÓRIA ─────────────────────
-
-if (!payload.email) {
-  throw new Error("E-mail obrigatório")
-}
-
-if (!payload.password) {
-  throw new Error("Senha obrigatória")
-}
-
-if (!payload.full_name) {
-  throw new Error("Nome obrigatório")
-}
-
-if (!payload.phone) {
-  throw new Error("Telefone obrigatório")
-}
-
-if (!payload.cpf) {
-  throw new Error("CPF obrigatório")
-}
-
-console.log(
-  "PAYLOAD JSON:",
-  JSON.stringify(payload, null, 2)
-)
-
-// ─── CHAMADA DA API  // Passo 1: criar usuário auth com senha
-
-const res = await apiRequest<{
+  // Passo 1: criar usuário auth com senha
+  const res = await apiRequest<{
   success?: boolean
   user?: {
     id: string
@@ -271,6 +271,22 @@ const res = await apiRequest<{
 }
 
   const userId = res?.user?.id ?? ""
+
+  try {
+    await apiRequest("/rest/v1/profiles", {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: {
+        id: userId,
+        full_name: data.name.trim(),
+        email: data.email.trim(),
+        phone: data.phone?.trim() || null,
+        role: payload.role,
+      },
+    })
+  } catch (e) {
+    console.warn("[profiles] sincronizacao apos create-user falhou:", e)
+  }
 
   // Passo 2: se médico, criar registro na tabela doctors
   if (data.role === "doctor" && doctorExtra) {
@@ -312,19 +328,374 @@ export async function updateStaffMember(member: StaffMember): Promise<StaffMembe
     headers: { Prefer: "return=minimal" },
     body: { full_name: member.name, email: member.email, phone: member.phone },
   })
+  if (member.role === "doctor") {
+    const [crm = "", crmUf = ""] = (member.crm ?? "").split("-")
+    try {
+      await apiRequest(`/rest/v1/doctors?id=eq.${member.id}`, {
+        method: "PATCH",
+        headers: { Prefer: "return=minimal" },
+        body: {
+          full_name: member.name,
+          email: member.email,
+          phone: member.phone,
+          crm: crm || undefined,
+          crm_uf: crmUf || undefined,
+          specialty: member.specialty,
+          active: member.status !== "Inactive",
+        },
+      })
+    } catch (err) {
+      console.warn("[doctors] sincronizacao de medico falhou:", err)
+    }
+  }
   return member
 }
 
 export async function deleteStaffMember(id: string): Promise<void> {
+  try {
+    await apiRequest("/delete-user", {
+      method: "POST",
+      body: { userId: id },
+    })
+    return
+  } catch (err) {
+    if (!(err instanceof ApiError) || err.status !== 404) throw err
+    console.warn("[delete-user] endpoint documentado nao encontrado, tentando Edge Function:", err)
+  }
+
+  try {
+    await apiRequest("/functions/v1/delete-user", {
+      method: "POST",
+      body: { userId: id },
+    })
+    return
+  } catch (err) {
+    if (!(err instanceof ApiError) || err.status !== 404) throw err
+    console.warn("[functions/v1/delete-user] endpoint nao encontrado, usando fallback REST:", err)
+  }
+
+  try {
+    await apiRequest(`/rest/v1/doctors?id=eq.${id}`, { method: "DELETE" })
+  } catch (err) {
+    console.warn("[doctors] remocao de medico falhou ou registro inexistente:", err)
+  }
   await apiRequest(`/rest/v1/profiles?id=eq.${id}`, { method: "DELETE" })
 }
 
-// ─── MOCK — módulos sem API ────────────────────────────────────────
-export async function getMedicalRecords(): Promise<MedicalRecord[]> { return MEDICAL_RECORDS }
-export async function createMedicalRecord(d: Omit<MedicalRecord, "id">): Promise<MedicalRecord> { return { ...d, id: Date.now() } }
-export async function updateMedicalRecord(r: MedicalRecord): Promise<MedicalRecord> { return r }
-export async function getPrescriptions(): Promise<Prescription[]> { return PRESCRIPTIONS }
-export async function createPrescription(d: Omit<Prescription, "id">): Promise<Prescription> { return { ...d, id: Date.now() } }
+// ─── MEDICAL RECORDS ──────────────────────────────────────────────
+interface ApiPatientName { id: string; full_name: string }
+interface ApiDoctorName { id: string; full_name: string }
+
+type MedicalRecordJson = Partial<{
+  doctor_id: string
+  appointment_id: string
+  record_date: string
+  chief_complaint: string
+  current_history: string
+  allergies: string
+  medications: string
+  personal_history: string
+  family_history: string
+  vital_signs: MedicalRecord["vitalSigns"]
+  physical_exam: string
+  treatment_plan: string
+  prescriptions: string
+  exam_requests: string
+  return_date: string
+  observations: string
+  status: MedicalRecordStatus
+  updated_by: string
+}>
+
+function medicalRecordContent(record: Omit<MedicalRecord, "id">): string {
+  return [
+    `Queixa principal: ${record.chiefComplaint}`,
+    record.currentHistory ? `História atual: ${record.currentHistory}` : "",
+    record.physicalExam ? `Exame físico: ${record.physicalExam}` : "",
+    record.diagnosis ? `Diagnóstico: ${record.diagnosis}` : "",
+    record.treatmentPlan ? `Conduta: ${record.treatmentPlan}` : "",
+    record.prescriptions ? `Prescrição: ${record.prescriptions}` : "",
+    record.examRequests ? `Exames solicitados: ${record.examRequests}` : "",
+    record.observations ? `Observações: ${record.observations}` : "",
+  ].filter(Boolean).join("\n\n")
+}
+
+function medicalRecordJson(record: Omit<MedicalRecord, "id">, uid: string | null): MedicalRecordJson {
+  return compactPayload({
+    doctor_id: record.doctorId || uid,
+    appointment_id: record.appointmentId,
+    record_date: record.date,
+    chief_complaint: record.chiefComplaint,
+    current_history: record.currentHistory,
+    allergies: record.allergies,
+    medications: record.medications,
+    personal_history: record.personalHistory,
+    family_history: record.familyHistory,
+    vital_signs: record.vitalSigns,
+    physical_exam: record.physicalExam,
+    treatment_plan: record.treatmentPlan,
+    prescriptions: record.prescriptions,
+    exam_requests: record.examRequests,
+    return_date: record.returnDate,
+    observations: record.observations,
+    status: record.status,
+    updated_by: uid ?? undefined,
+  }) as MedicalRecordJson
+}
+
+function medicalRecordToReport(record: Omit<MedicalRecord, "id">): Record<string, unknown> {
+  const uid = getApiUserId()
+  const content = medicalRecordContent(record)
+  return compactPayload({
+    patient_id: record.patientId,
+    status: record.status === "finalized" ? "delivered" : "draft",
+    exam: MEDICAL_RECORD_EXAM,
+    requested_by: uid ?? record.doctorId,
+    cid_code: record.cid10,
+    diagnosis: record.diagnosis ?? record.chiefComplaint,
+    conclusion: record.treatmentPlan,
+    content_html: content,
+    content_json: medicalRecordJson(record, uid),
+    hide_date: false,
+    hide_signature: false,
+  })
+}
+
+function asMedicalRecordJson(value: unknown): MedicalRecordJson {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {}
+  return value as MedicalRecordJson
+}
+
+function reportToMedicalRecord(
+  api: ApiReport,
+  patientName = "",
+  doctorName = "",
+): MedicalRecord {
+  const json = asMedicalRecordJson(api.content_json)
+  const doctorId = json.doctor_id ?? api.created_by ?? api.requested_by ?? ""
+  return {
+    id: String(api.id),
+    patientId: api.patient_id,
+    patientName,
+    doctorId,
+    doctorName,
+    appointmentId: json.appointment_id,
+    date: json.record_date ?? api.created_at?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
+    chiefComplaint: json.chief_complaint ?? api.diagnosis ?? "Atendimento clínico",
+    currentHistory: json.current_history,
+    allergies: json.allergies,
+    medications: json.medications,
+    personalHistory: json.personal_history,
+    familyHistory: json.family_history,
+    vitalSigns: json.vital_signs,
+    physicalExam: json.physical_exam,
+    diagnosis: api.diagnosis,
+    cid10: api.cid_code,
+    treatmentPlan: json.treatment_plan ?? api.conclusion,
+    prescriptions: json.prescriptions,
+    examRequests: json.exam_requests,
+    returnDate: json.return_date,
+    observations: json.observations,
+    status: json.status ?? (api.status === "delivered" ? "finalized" : "open"),
+    createdAt: api.created_at ?? new Date().toISOString(),
+    updatedAt: api.updated_at,
+    updatedBy: json.updated_by ?? api.updated_by,
+  }
+}
+
+export async function getMedicalRecords(): Promise<MedicalRecord[]> {
+  const [records, patients, doctors, profiles] = await Promise.all([
+    apiRequest<ApiReport[]>(`/rest/v1/reports?select=*&exam=eq.${encodeURIComponent(MEDICAL_RECORD_EXAM)}&order=created_at.desc`),
+    apiRequest<ApiPatientName[]>("/rest/v1/patients?select=id,full_name"),
+    apiRequest<ApiDoctorName[]>("/rest/v1/doctors?select=id,full_name"),
+    apiRequest<ApiProfile[]>("/rest/v1/profiles?select=id,full_name"),
+  ])
+  const patientMap = new Map((patients ?? []).map((p) => [p.id, p.full_name]))
+  const doctorMap = new Map([
+    ...(doctors ?? []).map((d) => [d.id, d.full_name] as const),
+    ...(profiles ?? []).map((p) => [p.id, p.full_name] as const),
+  ])
+  return (records ?? []).map((record) => {
+    const json = asMedicalRecordJson(record.content_json)
+    const doctorId = json.doctor_id ?? record.created_by ?? record.requested_by ?? ""
+    return reportToMedicalRecord(
+      record,
+      patientMap.get(record.patient_id) ?? "",
+      doctorMap.get(doctorId) ?? "",
+    )
+  })
+}
+
+export async function createMedicalRecord(data: Omit<MedicalRecord, "id">): Promise<MedicalRecord> {
+  const created = await apiRequest<ApiReport[]>("/rest/v1/reports", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: medicalRecordToReport(data),
+  })
+  const raw = Array.isArray(created) ? created[0] : (created as ApiReport)
+  return reportToMedicalRecord(raw, data.patientName, data.doctorName)
+}
+
+export async function updateMedicalRecord(record: MedicalRecord): Promise<MedicalRecord> {
+  await apiRequest(`/rest/v1/reports?id=eq.${record.id}`, {
+    method: "PATCH",
+    headers: { Prefer: "return=minimal" },
+    body: medicalRecordToReport(record),
+  })
+  return record
+}
+
+// ─── PRESCRIPTIONS ────────────────────────────────────────────────
+type PrescriptionJson = Partial<{
+  patient_name: string
+  patient_dob: string
+  doctor_id: string
+  doctor_name: string
+  doctor_crm: string
+  doctor_specialty: string
+  issued_at: string
+  prescription_type: PrescriptionType
+  medications: PrescriptionMedication[]
+  observations: string
+  status: Prescription["status"]
+}>
+
+function prescriptionContent(prescription: Omit<Prescription, "id">): string {
+  const meds = prescription.medications.map((med, index) => [
+    `${index + 1}. ${med.name} ${med.concentration} - ${med.form}`,
+    med.posology ? `Posologia: ${med.posology}` : "",
+    med.duration ? `Duração: ${med.duration}` : "",
+    med.quantity ? `Quantidade: ${med.quantity}` : "",
+    med.instructions ? `Obs.: ${med.instructions}` : "",
+  ].filter(Boolean).join("\n")).join("\n\n")
+
+  return [
+    meds,
+    prescription.cid10 ? `CID-10: ${prescription.cid10}` : "",
+    prescription.observations ? `Observações: ${prescription.observations}` : "",
+  ].filter(Boolean).join("\n\n")
+}
+
+function prescriptionJson(prescription: Omit<Prescription, "id">, uid: string | null): PrescriptionJson {
+  return compactPayload({
+    patient_name: prescription.patientName,
+    patient_dob: prescription.patientDob,
+    doctor_id: prescription.doctorId || uid,
+    doctor_name: prescription.doctorName,
+    doctor_crm: prescription.doctorCrm,
+    doctor_specialty: prescription.doctorSpecialty,
+    issued_at: prescription.date,
+    prescription_type: prescription.type,
+    medications: prescription.medications,
+    observations: prescription.observations,
+    status: prescription.status,
+  }) as PrescriptionJson
+}
+
+function prescriptionToReport(prescription: Omit<Prescription, "id">): Record<string, unknown> {
+  const uid = getApiUserId()
+  const content = prescriptionContent(prescription)
+  return compactPayload({
+    patient_id: prescription.patientId,
+    status: prescription.status === "emitted" ? "delivered" : "draft",
+    exam: PRESCRIPTION_EXAM,
+    requested_by: uid ?? prescription.doctorId,
+    cid_code: prescription.cid10,
+    diagnosis: "Receita médica",
+    conclusion: prescription.observations,
+    content_html: content,
+    content_json: prescriptionJson(prescription, uid),
+    hide_date: false,
+    hide_signature: false,
+  })
+}
+
+function asPrescriptionJson(value: unknown): PrescriptionJson {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {}
+  return value as PrescriptionJson
+}
+
+function reportToPrescription(api: ApiReport, patientName = "", doctorName = ""): Prescription {
+  const json = asPrescriptionJson(api.content_json)
+  const doctorId = json.doctor_id ?? api.created_by ?? api.requested_by ?? ""
+  return {
+    id: String(api.id),
+    patientId: api.patient_id,
+    patientName: json.patient_name ?? patientName,
+    patientDob: json.patient_dob,
+    doctorId,
+    doctorName: json.doctor_name ?? doctorName,
+    doctorCrm: json.doctor_crm,
+    doctorSpecialty: json.doctor_specialty,
+    date: json.issued_at ?? api.created_at?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
+    type: json.prescription_type ?? "simple",
+    medications: json.medications ?? [],
+    cid10: api.cid_code,
+    observations: json.observations ?? api.conclusion,
+    status: json.status ?? (api.status === "delivered" ? "emitted" : "draft"),
+  }
+}
+
+export async function getPrescriptions(): Promise<Prescription[]> {
+  const [prescriptions, patients, doctors, profiles] = await Promise.all([
+    apiRequest<ApiReport[]>(`/rest/v1/reports?select=*&exam=eq.${encodeURIComponent(PRESCRIPTION_EXAM)}&order=created_at.desc`),
+    apiRequest<ApiPatientName[]>("/rest/v1/patients?select=id,full_name"),
+    apiRequest<ApiDoctorName[]>("/rest/v1/doctors?select=id,full_name"),
+    apiRequest<ApiProfile[]>("/rest/v1/profiles?select=id,full_name"),
+  ])
+  const patientMap = new Map((patients ?? []).map((p) => [p.id, p.full_name]))
+  const doctorMap = new Map([
+    ...(doctors ?? []).map((d) => [d.id, d.full_name] as const),
+    ...(profiles ?? []).map((p) => [p.id, p.full_name] as const),
+  ])
+
+  return (prescriptions ?? []).map((prescription) => {
+    const json = asPrescriptionJson(prescription.content_json)
+    const doctorId = json.doctor_id ?? prescription.created_by ?? prescription.requested_by ?? ""
+    return reportToPrescription(
+      prescription,
+      patientMap.get(prescription.patient_id) ?? "",
+      doctorMap.get(doctorId) ?? "",
+    )
+  })
+}
+
+export async function createPrescription(data: Omit<Prescription, "id">): Promise<Prescription> {
+  const created = await apiRequest<ApiReport[]>("/rest/v1/reports", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: prescriptionToReport(data),
+  })
+  const raw = Array.isArray(created) ? created[0] : (created as ApiReport)
+  return reportToPrescription(raw, data.patientName, data.doctorName)
+}
+
+// ─── MOCK — módulos ainda sem contrato de persistência ────────────
 export async function getMessages(): Promise<Message[]> { return MESSAGES }
 export async function getMessageTemplates(): Promise<MessageTemplate[]> { return MESSAGE_TEMPLATES }
-export async function sendMessage(d: Omit<Message, "id">): Promise<Message> { return { ...d, id: Date.now() } }
+
+function toE164BR(phone: string): string {
+  const digits = phone.replace(/\D/g, "")
+  if (digits.startsWith("55")) return `+${digits}`
+  return `+55${digits}`
+}
+
+export async function sendMessage(
+  d: Omit<Message, "id"> & { phoneNumber: string },
+): Promise<Message> {
+  await apiRequest<{ success?: boolean; message_sid?: string }>("/functions/v1/send-sms", {
+    method: "POST",
+    body: {
+      phone_number: toE164BR(d.phoneNumber),
+      message: d.content,
+      patient_id: String(d.patientId),
+    },
+  })
+
+  return {
+    ...d,
+    id: Date.now(),
+    channel: "SMS",
+    status: "Delivered",
+  }
+}

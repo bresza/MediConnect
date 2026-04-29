@@ -44,6 +44,31 @@
 .tdActions {
   display: flex;
   gap: 6px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 640px) {
+  .table {
+    min-width: 720px;
+  }
+
+  .tableScroll {
+    margin-inline: -12px;
+    padding-inline: 12px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .tdActions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .patientName {
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 /* ── Editor layout ────────────────────────────────────────────── */

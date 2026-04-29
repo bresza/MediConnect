@@ -202,8 +202,8 @@ function toForm(p: Patient): FormState {
     alternativePhone: p.alternativePhone ?? "",
     email: p.email ?? "",
 
-    preferredChannel: p.preferredChannel ?? "",
-    communicationFrequency: p.communicationFrequency ?? "",
+    preferredChannel: fromChannel(p.preferredChannel),
+    communicationFrequency: fromFrequency(p.communicationFrequency),
     optIn: p.optIn ?? false,
 
     motherName: p.motherName ?? "",
@@ -250,6 +250,39 @@ function toEthnicity(v: string): Patient["ethnicity"] | undefined {
   }
   return m[v]
 }
+function toChannel(v: string): Patient["preferredChannel"] | undefined {
+  const m: Record<string, Patient["preferredChannel"]> = {
+    WhatsApp: "WhatsApp",
+    Email: "Email",
+    SMS: "SMS",
+    Telefone: "Phone",
+    Phone: "Phone",
+  }
+  return m[v]
+}
+function fromChannel(v?: Patient["preferredChannel"]): string {
+  if (v === "Phone") return "Telefone"
+  return v ?? ""
+}
+function toFrequency(v: string): Patient["communicationFrequency"] | undefined {
+  const m: Record<string, Patient["communicationFrequency"]> = {
+    "Somente essencial": "EssentialOnly",
+    "Lembretes e confirmações": "RemindersAndConfirmations",
+    Todos: "All",
+    EssentialOnly: "EssentialOnly",
+    RemindersAndConfirmations: "RemindersAndConfirmations",
+    All: "All",
+  }
+  return m[v]
+}
+function fromFrequency(v?: Patient["communicationFrequency"]): string {
+  const m: Record<string, string> = {
+    EssentialOnly: "Somente essencial",
+    RemindersAndConfirmations: "Lembretes e confirmações",
+    All: "Todos",
+  }
+  return v ? (m[v] ?? v) : ""
+}
 
 // ─── Options ──────────────────────────────────────────────────────
 const GENDERS        = ["Masculino","Feminino","Outro","Não informado"]
@@ -266,6 +299,8 @@ const HEALTH_INS     = ["Nenhum (Particular)","SUS","Unimed","Bradesco Saúde","
 const BR_STATES      = ["AC","AL","AM","AP","BA","CE","DF","ES","GO","MA","MG","MS","MT","PA","PB","PE","PI","PR","RJ","RN","RO","RR","RS","SC","SE","SP","TO"]
 const RELATIONS      = ["Cônjuge","Pai","Mãe","Filho(a)","Irmão/Irmã","Avô/Avó","Amigo(a)","Outro"]
 const RELIGIONS      = ["Católico","Evangélico","Espírita","Budista","Sem religião","Outro"]
+const TODAY = new Date().toISOString().slice(0, 10)
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 // ─── Component ────────────────────────────────────────────────────
 export function Registration({
@@ -277,6 +312,7 @@ export function Registration({
   const [form, setForm]       = useState<FormState>(editingPatient ? toForm(editingPatient) : EMPTY)
   const [errors, setErrors]   = useState<Partial<Record<keyof FormState, string>>>({})
   const [isSaving, setIsSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [saved, setSaved]     = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -289,6 +325,7 @@ export function Registration({
   function set(field: keyof FormState, value: string | boolean) {
     setForm((f) => ({ ...f, [field]: value }))
     setErrors((e) => ({ ...e, [field]: undefined }))
+    setSaveError(null)
   }
 
   // CEP auto-fill
@@ -313,14 +350,22 @@ export function Registration({
       if (!form.name.trim()) e.name   = "Nome completo é obrigatório"
       if (!form.gender)      e.gender = "Sexo é obrigatório"
       if (!form.dob)         e.dob    = "Data de nascimento é obrigatória"
+      else if (form.dob > TODAY) e.dob = "Data de nascimento deve estar no passado"
     }
     if (step === 2) {
-      if (!form.cpf.trim())  e.cpf = "CPF é obrigatório"
-      else if (patients.some((p) => p.cpf.replace(/\D/g,"") === form.cpf.replace(/\D/g,"") && p.id !== editingPatient?.id))
+      const cpf = form.cpf.replace(/\D/g, "")
+      if (!cpf)  e.cpf = "CPF é obrigatório"
+      else if (cpf.length !== 11) e.cpf = "CPF deve ter 11 dígitos"
+      else if (patients.some((p) => p.cpf.replace(/\D/g,"") === cpf && p.id !== editingPatient?.id))
         e.cpf = "CPF já cadastrado no sistema"
     }
     if (step === 4) {
-      if (!form.phone.trim())        e.phone        = "Celular é obrigatório"
+      const phone = form.phone.replace(/\D/g, "")
+      const email = form.email.trim()
+      if (!phone)        e.phone = "Celular é obrigatório"
+      else if (phone.length < 10 || phone.length > 11) e.phone = "Celular deve ter DDD e número"
+      if (!email) e.email = "E-mail é obrigatório"
+      else if (!EMAIL_RE.test(email)) e.email = "E-mail inválido"
       if (form.emergencyPhone && !form.emergencyName)
         e.emergencyName = "Informe o nome do contato de emergência"
     }
@@ -329,6 +374,7 @@ export function Registration({
   }
 
   async function handleNext() {
+    setSaveError(null)
     if (!validateStep()) return
     if (step < totalSteps) { setStep((s) => s + 1); return }
     // Salvar
@@ -350,12 +396,12 @@ export function Registration({
         rg:                     form.rg || undefined,
         healthInsurance:        form.healthInsurance && form.healthInsurance !== "Nenhum (Particular)" ? form.healthInsurance : undefined,
         healthInsuranceNumber:  form.healthInsuranceNumber || undefined,
-        phone:                  form.phone.trim(),
+        phone:                  form.phone.replace(/\D/g, ""),
         landline:               form.landline || undefined,
         alternativePhone:       form.alternativePhone || undefined,
-        email:                  form.email || undefined,
-        preferredChannel:       form.preferredChannel as Patient["preferredChannel"] | undefined,
-        communicationFrequency: form.communicationFrequency as Patient["communicationFrequency"] | undefined,
+        email:                  form.email.trim(),
+        preferredChannel:       toChannel(form.preferredChannel),
+        communicationFrequency: toFrequency(form.communicationFrequency),
         optIn:                  form.optIn,
         motherName:             form.motherName || undefined,
         motherOccupation:       form.motherOccupation || undefined,
@@ -390,6 +436,8 @@ export function Registration({
         await onAddPatient(data)
       }
       setSaved(true)
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Não foi possível salvar o paciente.")
     } finally { setIsSaving(false) }
   }
 
@@ -516,7 +564,7 @@ export function Registration({
               <div className={`${styles.grid3} ${styles.marginTop}`}>
                 <Select label="Sexo biológico" required options={GENDERS}
                   value={form.gender} onChange={(e) => set("gender", e.target.value)} />
-                <Input label="Data de nascimento" type="date" required
+                <Input label="Data de nascimento" type="date" required max={TODAY}
                   value={form.dob} onChange={(e) => set("dob", e.target.value)} error={errors.dob} />
                 <Select label="Estado civil" options={MARITAL}
                   value={form.maritalStatus} onChange={(e) => set("maritalStatus", e.target.value)} />
@@ -622,8 +670,8 @@ export function Registration({
                   value={form.landline} onChange={(e) => set("landline", e.target.value)} />
                 <Input label="Telefone alternativo" placeholder="(00) 00000-0000"
                   value={form.alternativePhone} onChange={(e) => set("alternativePhone", e.target.value)} />
-                <Input label="E-mail" type="email" placeholder="exemplo@email.com"
-                  value={form.email} onChange={(e) => set("email", e.target.value)} />
+                <Input label="E-mail" type="email" required placeholder="exemplo@email.com"
+                  value={form.email} onChange={(e) => set("email", e.target.value)} error={errors.email} />
                 <Select label="Canal de comunicação preferido" options={CHANNELS}
                   value={form.preferredChannel} onChange={(e) => set("preferredChannel", e.target.value)} />
                 <Select label="Frequência de comunicação" options={FREQUENCIES}
@@ -707,6 +755,7 @@ export function Registration({
             {step > 1 ? "← Anterior" : "Cancelar"}
           </Button>
           <div className={styles.formFooterRight}>
+            {saveError && <span className={styles.saveError}>{saveError}</span>}
             <span className={styles.stepCount}>Etapa {step} de {totalSteps}</span>
             <Button onClick={handleNext} disabled={isSaving}>
               {isSaving ? "Salvando..." : step < totalSteps ? "Próximo →" : isEditing ? "Salvar alterações" : "Cadastrar paciente"}

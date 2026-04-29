@@ -63,19 +63,22 @@ export async function apiRequest<T>(
     body: body !== undefined ? JSON.stringify(body) : undefined,
   })
 
-if (!res.ok) {
-  const errorText = await res.text()
-
-  console.error(
-    "ERRO COMPLETO SUPABASE:",
-    errorText
-  )
-
-  throw new ApiError(
-    res.status,
-    `Erro ${res.status}: ${errorText}`
-  )
-}
+  if (!res.ok) {
+    const raw = await res.text().catch(() => res.statusText)
+    if (res.status === 401 && _onUnauthorized) _onUnauthorized()
+    let errorMsg = raw
+    try {
+      const parsed = JSON.parse(raw)
+      errorMsg = parsed?.message ?? parsed?.error_description ?? parsed?.msg ?? raw
+    } catch { /* not json */ }
+    console.error("[apiRequest]", {
+      status: res.status,
+      path,
+      raw,
+      message: errorMsg,
+    })
+    throw new ApiError(res.status, friendlyMessage(res.status, errorMsg))
+  }
   if (res.status === 204) return undefined as T
   return res.json() as Promise<T>
 }

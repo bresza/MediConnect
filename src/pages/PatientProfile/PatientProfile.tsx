@@ -14,8 +14,8 @@ interface PatientProfileProps {
   currentUser: User
   onNavigate: (page: PageId) => void
   onEditPatient: (p: Patient) => void
-  onViewRecords: (p: Patient) => void
-  onAddPrescription: (p: Prescription) => void
+  onViewRecords?: (p: Patient) => void
+  onAddPrescription: (p: Omit<Prescription, "id">) => void | Promise<void>
 }
 
 type Tab = "overview" | "personal" | "medical" | "records" | "prescriptions"
@@ -124,7 +124,7 @@ export function PatientProfile({
         patient={patient}
         currentUser={currentUser}
         onClose={() => setPrescribing(false)}
-        onSave={p => { onAddPrescription(p); setPrescribing(false) }}
+        onSave={async p => { await onAddPrescription(p); setPrescribing(false) }}
       />
     )
   }
@@ -626,7 +626,7 @@ export function PatientProfile({
           <div>
             <div className={styles.listHeader}>
               <p className={styles.listHeaderTitle}>{patientRecords.length} prontuário{patientRecords.length !== 1 ? "s" : ""}</p>
-              <Button size="sm" onClick={() => onViewRecords(patient)}>Abrir editor</Button>
+              {onViewRecords && <Button size="sm" onClick={() => onViewRecords(patient)}>Abrir editor</Button>}
             </div>
             {patientRecords.length === 0 ? (
               <div className={styles.emptyState}>

@@ -1,9 +1,7 @@
 import type {
   Message,
   MessageTemplate,
-  FinancialRecord,
-  MedicalRecord,
-  Prescription,
+  StaffMember,
 } from "../types"
 
 // ─── MESSAGES ─────────────────────────────────────────────────────
@@ -60,7 +58,7 @@ export const MESSAGE_TEMPLATES: MessageTemplate[] = [
 ]
 
 // ─── MEDICAL RECORDS ──────────────────────────────────────────────
-export const MEDICAL_RECORDS: MedicalRecord[] = [
+export const MEDICAL_RECORDS = [
   {
     id: 1,
     patientId: 1,
@@ -171,7 +169,7 @@ export const MEDICAL_RECORDS: MedicalRecord[] = [
 ]
 
 // ─── PRESCRIPTIONS ────────────────────────────────────────────────
-export const PRESCRIPTIONS: Prescription[] = [
+export const PRESCRIPTIONS = [
   {
     id: 1,
     patientId: 1,
@@ -212,7 +210,7 @@ export const PRESCRIPTIONS: Prescription[] = [
 ]
 
 // ─── FINANCIAL ────────────────────────────────────────────────────
-export const FINANCIAL_RECORDS: FinancialRecord[] = [
+export const FINANCIAL_RECORDS = [
   { id: 1,  patientId: 1, patientName: "Ana Souza",        appointmentId: 1,  value: 250, paymentMethod: "Pix",      healthInsurance: "Unimed",   dueDate: "2025-11-10", status: "Paid"      },
   { id: 2,  patientId: 2, patientName: "Carlos Mendes",    appointmentId: 2,  value: 180, paymentMethod: "Insurance", healthInsurance: "SUS",      dueDate: "2025-11-18", status: "Paid"      },
   { id: 3,  patientId: 3, patientName: "Maria Oliveira",   appointmentId: 3,  value: 420, paymentMethod: "Card",     healthInsurance: "Bradesco", dueDate: "2025-12-05", status: "Paid"      },
@@ -236,7 +234,7 @@ export const FINANCIAL_RECORDS: FinancialRecord[] = [
 
 export const STAFF_MEMBERS: StaffMember[] = [
   {
-    id: 10,
+    id: "10",
     name: "Dr. Roberto Farias",
     role: "doctor",
     email: "roberto@mediconnect.com",
@@ -247,7 +245,7 @@ export const STAFF_MEMBERS: StaffMember[] = [
     createdAt: "2023-01-10",
   },
   {
-    id: 11,
+    id: "11",
     name: "Dra. Carla Nunes",
     role: "doctor",
     email: "carla@mediconnect.com",
@@ -258,7 +256,7 @@ export const STAFF_MEMBERS: StaffMember[] = [
     createdAt: "2023-02-15",
   },
   {
-    id: 12,
+    id: "12",
     name: "Ana Paula (Gestão)",
     role: "manager",
     email: "admin@mediconnect.com",
@@ -268,7 +266,7 @@ export const STAFF_MEMBERS: StaffMember[] = [
     createdAt: "2023-01-05",
   },
   {
-    id: 14,
+    id: "14",
     name: "Juliana Secretaria",
     role: "secretary",
     email: "secretaria@mediconnect.com",
@@ -282,7 +280,7 @@ export const STAFF_MEMBERS: StaffMember[] = [
 // ─── FINANCIAL RECORDS (expanded) ────────────────────────────────
 // NOTE: The original 3 records above are replaced by this richer set.
 // We export an alias so Financial.tsx can import FINANCIAL_RECORDS_FULL
-export const FINANCIAL_RECORDS_FULL: FinancialRecord[] = [
+export const FINANCIAL_RECORDS_FULL = [
   { id: 1,  patientId: 1, patientName: "Ana Souza",        appointmentId: 1,  value: 250, paymentMethod: "Pix",      healthInsurance: "Unimed",   dueDate: "2026-03-18", status: "Paid"      },
   { id: 2,  patientId: 2, patientName: "Carlos Mendes",    appointmentId: 2,  value: 180, paymentMethod: "Insurance", healthInsurance: "SUS",      dueDate: "2026-03-20", status: "Pending"   },
   { id: 3,  patientId: 4, patientName: "João Pedro Alves", appointmentId: 4,  value: 300, discount: 30, paymentMethod: "Card", healthInsurance: "Amil", dueDate: "2026-03-05", status: "Overdue"   },
