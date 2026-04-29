@@ -150,13 +150,136 @@ interface PrescriptionEditorProps {
   currentUser: User
   existingPrescription?: Prescription | null
   onClose: () => void
-  onSave: (p: Prescription) => void
+  onSave: (p: Omit<Prescription, "id">) => void | Promise<void>
 }
 
 type MedRow = Omit<PrescriptionMedication, "id"> & { _key: number }
 
 const EMPTY_MED: Omit<MedRow, "_key"> = {
   name: "", concentration: "", form: "", quantity: "", posology: "", duration: "", instructions: "",
+}
+
+interface AiPrescriptionResult {
+  type: "simple" | "special" | "antimicrobial"
+  cid10?: string
+  observations: string
+  medications: Omit<MedRow, "_key">[]
+}
+
+async function aiCompletePrescription(
+  patient: Patient,
+  clinicalContext: string,
+  currentCid10: string,
+): Promise<AiPrescriptionResult> {
+  await new Promise((resolve) => setTimeout(resolve, 300))
+  const source = [
+    clinicalContext,
+    currentCid10,
+    patient.observations,
+    patient.healthInsurance,
+  ].filter(Boolean).join(" ").toLowerCase()
+
+  if (source.includes("i10") || source.includes("hipertens")) {
+    return {
+      type: "simple",
+      cid10: currentCid10 || "I10",
+      observations: "Rascunho gerado por IA para revisão médica. Orientar aferição pressórica e retorno conforme evolução.",
+      medications: [
+        {
+          name: "Losartana Potássica",
+          concentration: "50mg",
+          form: "Comprimido",
+          quantity: "30 comprimidos",
+          posology: "Tomar 1 comprimido uma vez ao dia (manhã)",
+          duration: "30 dias",
+          instructions: "Reavaliar pressão arterial e função renal conforme critério médico.",
+        },
+      ],
+    }
+  }
+
+  if (source.includes("e11") || source.includes("diabet")) {
+    return {
+      type: "simple",
+      cid10: currentCid10 || "E11",
+      observations: "Rascunho gerado por IA para revisão médica. Reforçar dieta, hidratação e monitorização glicêmica.",
+      medications: [
+        {
+          name: "Metformina",
+          concentration: "500mg",
+          form: "Comprimido",
+          quantity: "60 comprimidos",
+          posology: "Tomar 1 comprimido duas vezes ao dia",
+          duration: "30 dias",
+          instructions: "Tomar após as refeições.",
+        },
+      ],
+    }
+  }
+
+  if (source.includes("j") || source.includes("tosse") || source.includes("resfri") || source.includes("febre")) {
+    return {
+      type: "simple",
+      cid10: currentCid10 || "J06.9",
+      observations: "Rascunho gerado por IA para revisão médica. Orientar hidratação, repouso e retorno se sinais de alarme.",
+      medications: [
+        {
+          name: "Paracetamol",
+          concentration: "750mg",
+          form: "Comprimido",
+          quantity: "12 comprimidos",
+          posology: "Tomar 1 comprimido a cada 8 horas",
+          duration: "3 dias",
+          instructions: "Usar se dor ou febre.",
+        },
+        {
+          name: "Loratadina",
+          concentration: "10mg",
+          form: "Comprimido",
+          quantity: "10 comprimidos",
+          posology: "Tomar 1 comprimido uma vez ao dia (manhã)",
+          duration: "10 dias",
+          instructions: "Usar se sintomas alérgicos ou coriza.",
+        },
+      ],
+    }
+  }
+
+  if (source.includes("dor") || source.includes("m54") || source.includes("lomb")) {
+    return {
+      type: "simple",
+      cid10: currentCid10 || "M54.5",
+      observations: "Rascunho gerado por IA para revisão médica. Orientar repouso relativo e reavaliação se piora ou déficit neurológico.",
+      medications: [
+        {
+          name: "Ibuprofeno",
+          concentration: "400mg",
+          form: "Comprimido",
+          quantity: "15 comprimidos",
+          posology: "Tomar 1 comprimido a cada 8 horas",
+          duration: "5 dias",
+          instructions: "Tomar após as refeições.",
+        },
+      ],
+    }
+  }
+
+  return {
+    type: "simple",
+    cid10: currentCid10 || undefined,
+    observations: "Rascunho gerado por IA para revisão médica. Ajustar medicamentos, dose e duração conforme avaliação clínica.",
+    medications: [
+      {
+        name: "Paracetamol",
+        concentration: "500mg",
+        form: "Comprimido",
+        quantity: "12 comprimidos",
+        posology: "Tomar 1 comprimido a cada 8 horas",
+        duration: "3 dias",
+        instructions: "Usar se dor ou febre.",
+      },
+    ],
+  }
 }
 
 // ─── PrescriptionEditor ───────────────────────────────────────────
@@ -166,10 +289,14 @@ export function PrescriptionEditor({ patient, currentUser, onClose, onSave }: Pr
   const [date, setDate]       = useState(today)
   const [cid10, setCid10]     = useState("")
   const [obs, setObs]         = useState("")
-  const [meds, setMeds]       = useState<MedRow[]>([{ ...EMPTY_MED, _key: Date.now() }])
+  const [meds, setMeds]       = useState<MedRow[]>([{ ...EMPTY_MED, _key: 1 }])
   const [search, setSearch]   = useState("")
   const [activeCat, setActiveCat] = useState(DRUG_CATALOG[0].category)
   const [preview, setPreview] = useState(false)
+  const [clinicalContext, setClinicalContext] = useState("")
+  const [isAiLoading, setIsAiLoading] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const keyRef = useRef(1)
 
   function addMed(drugName: string, concentration: string, form: string) {
@@ -185,9 +312,32 @@ export function PrescriptionEditor({ patient, currentUser, onClose, onSave }: Pr
     setMeds(prev => prev.filter(m => m._key !== key))
   }
 
-  function handleSave(emitNow: boolean) {
-    const rx: Prescription = {
-      id:               Date.now(),
+  async function handleAiComplete() {
+    setIsAiLoading(true)
+    setError(null)
+    try {
+      const result = await aiCompletePrescription(patient, clinicalContext, cid10)
+      setRxType(result.type)
+      if (result.cid10) setCid10(result.cid10)
+      setObs((current) => current.trim() ? current : result.observations)
+      setMeds(result.medications.map((med) => {
+        keyRef.current++
+        return { ...med, _key: keyRef.current }
+      }))
+    } catch {
+      setError("IA indisponível no momento. Continue preenchendo manualmente.")
+    } finally {
+      setIsAiLoading(false)
+    }
+  }
+
+  async function handleSave(emitNow: boolean) {
+    const medications = meds.filter(m => m.name).map((m, i) => ({ ...m, id: String(i + 1) }))
+    if (medications.length === 0) {
+      setError("Inclua ao menos um medicamento.")
+      return false
+    }
+    const rx: Omit<Prescription, "id"> = {
       patientId:        patient.id,
       patientName:      patient.name,
       patientDob:       patient.dob,
@@ -197,12 +347,22 @@ export function PrescriptionEditor({ patient, currentUser, onClose, onSave }: Pr
       doctorSpecialty:  currentUser.specialty,
       date,
       type:             rxType,
-      medications:      meds.filter(m => m.name).map((m, i) => ({ ...m, id: i + 1 })),
+      medications,
       cid10:            cid10 || undefined,
       observations:     obs || undefined,
       status:           emitNow ? "emitted" : "draft",
     }
-    onSave(rx)
+    setIsSaving(true)
+    setError(null)
+    try {
+      await onSave(rx)
+      return true
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao salvar receita.")
+      return false
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   // Filtered drugs for catalog
@@ -220,7 +380,7 @@ export function PrescriptionEditor({ patient, currentUser, onClose, onSave }: Pr
       cid10={cid10}
       obs={obs}
       onBack={() => setPreview(false)}
-      onEmit={() => { handleSave(true); onClose() }}
+      onEmit={async () => { if (await handleSave(true)) onClose() }}
     />
   }
 
@@ -240,9 +400,14 @@ export function PrescriptionEditor({ patient, currentUser, onClose, onSave }: Pr
           </div>
         </div>
         <div className={styles.headerActions}>
-          <Button variant="ghost" onClick={() => handleSave(false)}>Salvar rascunho</Button>
+          <Button variant="outline" onClick={handleAiComplete} disabled={isAiLoading || isSaving}>
+            {isAiLoading ? "Completando..." : "Completar com IA"}
+          </Button>
+          <Button variant="ghost" onClick={() => handleSave(false)} disabled={isSaving}>Salvar rascunho</Button>
           <Button variant="ghost" onClick={() => setPreview(true)}>Pré-visualizar</Button>
-          <Button onClick={() => { handleSave(true); onClose() }}>Emitir receita</Button>
+          <Button onClick={async () => { if (await handleSave(true)) onClose() }} disabled={isSaving}>
+            {isSaving ? "Salvando..." : "Emitir receita"}
+          </Button>
         </div>
       </div>
 
@@ -269,6 +434,28 @@ export function PrescriptionEditor({ patient, currentUser, onClose, onSave }: Pr
                 {currentUser.specialty ? ` · ${currentUser.specialty}` : ""}
               </p>
             </div>
+          </div>
+
+          <div className={styles.aiCard}>
+            <div className={styles.aiCardHeader}>
+              <div>
+                <p className={styles.aiTitle}>Assistente IA</p>
+                <p className={styles.aiSub}>Gera um rascunho para revisão do médico antes da emissão.</p>
+              </div>
+              <Button variant="outline" onClick={handleAiComplete} disabled={isAiLoading || isSaving}>
+                {isAiLoading ? "Completando..." : "Preencher receita"}
+              </Button>
+            </div>
+            <textarea
+              className={styles.textarea}
+              rows={3}
+              placeholder="Informe hipótese diagnóstica, sintomas, alergias relevantes ou objetivo terapêutico..."
+              value={clinicalContext}
+              onChange={(e) => {
+                setClinicalContext(e.target.value)
+                setError(null)
+              }}
+            />
           </div>
 
           {/* Prescription type + date */}
@@ -420,6 +607,7 @@ export function PrescriptionEditor({ patient, currentUser, onClose, onSave }: Pr
               />
             </div>
           </div>
+          {error && <p className={styles.errorMsg}>{error}</p>}
         </div>
 
         {/* ── Right column — Drug catalog ────────────────────── */}

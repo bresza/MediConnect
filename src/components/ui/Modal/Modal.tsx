@@ -9,6 +9,7 @@ interface ModalProps {
   children: ReactNode
   footer?: ReactNode
   size?: "sm" | "md" | "lg"
+  topLayer?: boolean
 }
 
 export function Modal({
@@ -19,6 +20,7 @@ export function Modal({
   children,
   footer,
   size = "md",
+  topLayer = false,
 }: ModalProps) {
   // Fecha com ESC
   useEffect(() => {
@@ -39,7 +41,12 @@ export function Modal({
   if (!isOpen) return null
 
   return (
-    <div className={styles.overlay} onClick={onClose} role="dialog" aria-modal>
+    <div
+      className={`${styles.overlay} ${topLayer ? styles.topLayer : ""}`}
+      onClick={onClose}
+      role="dialog"
+      aria-modal
+    >
       <div
         className={`${styles.modal} ${styles[size]}`}
         onClick={(e) => e.stopPropagation()}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import { Topbar } from "../../components/layout/Topbar/Topbar"
 import { Card } from "../../components/ui/Card/Card"
 import { Badge } from "../../components/ui/Badge/Badge"
@@ -7,6 +7,7 @@ import { Button } from "../../components/ui/Button/Button"
 import { Select } from "../../components/ui/Select/Select"
 import { formatAppointmentType, checkConflict, timeToMinutes } from "../../utils"
 import { useStaff } from "../../hooks/useStaff"
+import { getAvailableSlots } from "../../services/appointments"
 import type { Appointment, Patient, User } from "../../types"
 import styles from "./Appointments.module.css"
 
@@ -22,6 +23,12 @@ const TYPE_MAP: Record<string, Appointment["type"]> = {
   "Retorno":     "return",
   "Exame":       "exam",
   "Procedimento":"procedure",
+}
+const TYPE_LABEL: Record<Appointment["type"], string> = {
+  consultation: "Consulta",
+  return: "Retorno",
+  exam: "Exame",
+  procedure: "Procedimento",
 }
 
 const PlusIcon = () => (
@@ -145,9 +152,10 @@ interface AppointmentsProps {
   patients:        Patient[]
   currentUser:     User
   onAddAppointment: (a: Omit<Appointment, "id">) => Promise<void>
+  onUpdateAppointment: (a: Appointment) => Promise<void>
 }
 
-export function Appointments({ appointments, patients, currentUser, onAddAppointment }: AppointmentsProps) {
+export function Appointments({ appointments, patients, currentUser, onAddAppointment, onUpdateAppointment }: AppointmentsProps) {
   const isDoctor = currentUser.role === "doctor"
 
   // ── Médicos via hook (API) ────────────────────────────────────
@@ -163,11 +171,14 @@ export function Appointments({ appointments, patients, currentUser, onAddAppoint
   const [showModalPicker, setShowModalPicker] = useState(false)
   const [filterDoctor, setFilterDoctor] = useState("")
   const [modal, setModal]             = useState<ModalForm>(() => emptyModal(toDateStr(new Date())))
-  const [conflict, setConflict]       = useState<string | null>(null)
   const [modalError, setModalError]   = useState<string | null>(null)
+  const [availableSlots, setAvailableSlots] = useState<string[]>([])
+  const [isLoadingSlots, setIsLoadingSlots] = useState(false)
+  const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null)
 
   const pickerRef      = useRef<HTMLDivElement>(null)
   const modalPickerRef = useRef<HTMLDivElement>(null)
+  const slotRequestRef = useRef(0)
   const currentDateStr = toDateStr(currentDate)
 
   function parseDateStr(s: string): Date {
@@ -194,6 +205,31 @@ export function Appointments({ appointments, patients, currentUser, onAddAppoint
     return () => document.removeEventListener("mousedown", h)
   }, [showModalPicker])
 
+  async function loadSlots(doctorId: string, date: string, keepTime?: string) {
+    if (!doctorId || !date) {
+      setAvailableSlots([])
+      setIsLoadingSlots(false)
+      return
+    }
+
+    const requestId = slotRequestRef.current + 1
+    slotRequestRef.current = requestId
+    setIsLoadingSlots(true)
+    try {
+      const slots = await getAvailableSlots(doctorId, date)
+      if (slotRequestRef.current !== requestId) return
+      setAvailableSlots(
+        keepTime && !slots.includes(keepTime)
+          ? [keepTime, ...slots].sort()
+          : slots,
+      )
+    } catch {
+      if (slotRequestRef.current === requestId) setAvailableSlots([])
+    } finally {
+      if (slotRequestRef.current === requestId) setIsLoadingSlots(false)
+    }
+  }
+
   function formatPeriodLabel(): string {
     const y = currentDate.getFullYear(); const m = currentDate.getMonth()
     if (view === "day") return `${currentDate.getDate()} de ${MONTHS_PT[m]} de ${y}`
@@ -219,8 +255,13 @@ export function Appointments({ appointments, patients, currentUser, onAddAppoint
   function goToToday() { setCurrentDate(new Date()); setSelected(null); setShowPicker(false) }
   function handlePickerSelect(d: Date) { setCurrentDate(d); setView("day"); setSelected(null); setShowPicker(false) }
 
+  const sameDoctor = (a: Pick<Appointment, "doctorId" | "doctorName">) =>
+    a.doctorId === currentUser.id ||
+    a.doctorName === currentUser.name ||
+    a.doctorName.toLowerCase().trim() === currentUser.name.toLowerCase().trim()
+
   const allFiltered = isDoctor
-    ? appointments.filter((a) => a.doctorName === currentUser.name)
+    ? appointments.filter(sameDoctor)
     : filterDoctor ? appointments.filter((a) => a.doctorName === filterDoctor) : appointments
   const dayAppointments = allFiltered.filter((a) => a.date === currentDateStr)
 
@@ -230,24 +271,58 @@ export function Appointments({ appointments, patients, currentUser, onAddAppoint
     { label: "Ausentes",    value: dayAppointments.filter((a) => a.status === "absent").length,    cls: styles.summaryRed   },
   ]
 
-  useEffect(() => {
-    if (!modal.doctorName || !modal.time || !modal.date) { setConflict(null); return }
-    const result = checkConflict(appointments, modal.doctorName, modal.date, modal.time, Number(modal.duration) || 30)
-    setConflict(result ? result.message : null)
-  }, [modal.doctorName, modal.date, modal.time, modal.duration, appointments])
+  const conflict = useMemo(() => {
+    if (!modal.doctorName || !modal.time || !modal.date) return null
+    const appointmentsForConflict = editingAppointment
+      ? appointments.filter((a) => a.id !== editingAppointment.id)
+      : appointments
+    const result = checkConflict(appointmentsForConflict, modal.doctorName, modal.date, modal.time, Number(modal.duration) || 30)
+    return result ? result.message : null
+  }, [modal.doctorName, modal.date, modal.time, modal.duration, appointments, editingAppointment])
 
   function setModalField(field: keyof ModalForm, value: string) {
+    if (field === "date") setAvailableSlots([])
     setModal((m) => ({ ...m, [field]: value })); setModalError(null)
+    if (field === "date" && modal.doctorId) void loadSlots(modal.doctorId, value, editingAppointment?.time)
   }
 
-  function openModal(time?: string) {
-    const doctorId   = isDoctor ? (staff.find((s) => s.name === currentUser.name)?.id ?? "") : ""
+  function openModal(time?: string, appointment?: Appointment) {
+    const currentDoctor = staff.find((s) =>
+      s.id === currentUser.id ||
+      s.email === currentUser.email ||
+      s.name === currentUser.name
+    )
+    const doctorId   = isDoctor ? (currentDoctor?.id ?? currentUser.id) : ""
     const doctorName = isDoctor ? currentUser.name : ""
-    setModal({ ...emptyModal(currentDateStr), doctorId, doctorName, ...(time ? { time } : {}) })
-    setConflict(null); setModalError(null); setShowModal(true)
+    setEditingAppointment(appointment ?? null)
+    setModal(appointment ? {
+      date: appointment.date,
+      time: appointment.time,
+      patientName: appointment.patientName,
+      doctorName: appointment.doctorName || doctorName,
+      doctorId: appointment.doctorId || doctorId,
+      type: TYPE_LABEL[appointment.type] ?? "Consulta",
+      duration: String(appointment.duration),
+      channel: appointment.preferredChannel ?? "",
+      observations: appointment.observations ?? "",
+    } : { ...emptyModal(currentDateStr), doctorId, doctorName, ...(time ? { time } : {}) })
+    setModalError(null); setShowModal(true)
+    setAvailableSlots([])
+    setIsLoadingSlots(false)
+    if ((appointment?.doctorId || doctorId) && (appointment?.date || currentDateStr)) {
+      void loadSlots(appointment?.doctorId || doctorId, appointment?.date || currentDateStr, appointment?.time)
+    }
   }
 
-  function closeModal() { setShowModal(false); setModal(emptyModal(currentDateStr)); setConflict(null); setModalError(null); setShowModalPicker(false) }
+  function closeModal() {
+    setShowModal(false)
+    setModal(emptyModal(currentDateStr))
+    setEditingAppointment(null)
+    setModalError(null)
+    setShowModalPicker(false)
+    setAvailableSlots([])
+    setIsLoadingSlots(false)
+  }
 
   async function handleSaveAppointment() {
     if (!modal.patientName) { setModalError("Selecione o paciente"); return }
@@ -255,30 +330,51 @@ export function Appointments({ appointments, patients, currentUser, onAddAppoint
     if (!modal.time)        { setModalError("Selecione o horário"); return }
     if (!modal.type)        { setModalError("Selecione o tipo"); return }
     if (conflict)           { setModalError("Resolva o conflito de horário antes de salvar"); return }
+    if (modal.doctorId && modal.date && !isLoadingSlots && availableSlots.length === 0) {
+      setModalError("A API não retornou slots disponíveis para este médico/data")
+      return
+    }
+    if (modal.doctorId && modal.date && availableSlots.length > 0 && !availableSlots.includes(modal.time)) {
+      setModalError("Selecione um horário disponível retornado pela API")
+      return
+    }
 
     const patient = patients.find((p) => p.name === modal.patientName)
     const doctor  = doctors.find((d) => d.name === modal.doctorName)
+    const doctorId = modal.doctorId || doctor?.id || (isDoctor ? currentUser.id : "")
+    if (!patient?.id) { setModalError("Paciente inválido"); return }
+    if (!doctorId)    { setModalError("Médico inválido"); return }
 
-    await onAddAppointment({
+    const payload = {
       patientId:        patient?.id ?? "",
       patientName:      modal.patientName,
-      doctorId:         modal.doctorId || doctor?.id || "",
+      doctorId,
       doctorName:       modal.doctorName,
       date:             modal.date,
       time:             modal.time,
       duration:         Number(modal.duration) || 30,
       type:             TYPE_MAP[modal.type] ?? "consultation",
-      status:           "confirmed",
+      status:           editingAppointment?.status ?? "confirmed",
       preferredChannel: modal.channel as Appointment["preferredChannel"] | undefined,
       observations:     modal.observations || undefined,
-    })
+    }
+
+    if (editingAppointment) await onUpdateAppointment({ ...payload, id: editingAppointment.id })
+    else await onAddAppointment(payload)
     closeModal()
+  }
+
+  async function handleStatus(appointment: Appointment, status: Appointment["status"]) {
+    await onUpdateAppointment({ ...appointment, status })
+    setSelected((current) => current?.id === appointment.id ? { ...current, status } : current)
   }
 
   function handleDoctorSelect(name: string) {
     const doctor = doctors.find((d) => d.name === name)
+    setAvailableSlots([])
     setModal((m) => ({ ...m, doctorName: name, doctorId: doctor?.id ?? "" }))
     setModalError(null)
+    if (doctor?.id && modal.date) void loadSlots(doctor.id, modal.date, editingAppointment?.time)
   }
 
   const monthYear = currentDate.getFullYear(); const monthMonth = currentDate.getMonth()
@@ -288,6 +384,7 @@ export function Appointments({ appointments, patients, currentUser, onAddAppoint
   function monthDayDateStr(day: number) { return `${monthYear}-${String(monthMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}` }
 
   const VIEW_LABELS: Record<CalendarView, string> = { day: "Dia", week: "Semana", month: "Mês" }
+  const modalSlotOptions = modal.doctorId && modal.date ? availableSlots : HOURS
 
   return (
     <div>
@@ -434,7 +531,15 @@ export function Appointments({ appointments, patients, currentUser, onAddAppoint
                   <div key={k} className={styles.detailField}><span className={styles.detailFieldKey}>{k}</span><span className={styles.detailFieldVal}>{v}</span></div>
                 ))}
               </div>
-              <div className={styles.detailActions}><Button size="sm" variant="outline">Editar</Button><Button size="sm" variant="danger">Cancelar</Button></div>
+              <div className={styles.detailActions}>
+                <Button size="sm" variant="outline" onClick={() => openModal(undefined, selected)}>Editar</Button>
+                {selected.status !== "completed" && (
+                  <Button size="sm" variant="ghost" onClick={() => handleStatus(selected, "completed")}>Concluir</Button>
+                )}
+                {selected.status !== "cancelled" && (
+                  <Button size="sm" variant="danger" onClick={() => handleStatus(selected, "cancelled")}>Cancelar</Button>
+                )}
+              </div>
             </Card>
           ) : (
             <Card className={styles.summaryCard}>
@@ -459,7 +564,7 @@ export function Appointments({ appointments, patients, currentUser, onAddAppoint
       {showModal && (
         <div className={styles.modalOverlay} onClick={closeModal}>
           <Card className={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <h2 className={styles.modalTitle}>Novo agendamento</h2>
+            <h2 className={styles.modalTitle}>{editingAppointment ? "Editar agendamento" : "Novo agendamento"}</h2>
             <div className={styles.modalGrid}>
               <div className={styles.modalDateWrapper} ref={modalPickerRef}>
                 <button type="button" className={`${styles.dateInput} ${styles.datePickerBtn} ${showModalPicker ? styles.datePickerBtnActive : ""}`}
@@ -478,8 +583,10 @@ export function Appointments({ appointments, patients, currentUser, onAddAppoint
                 )}
               </div>
               <select className={styles.dateInput} value={modal.time} onChange={(e) => setModalField("time", e.target.value)}>
-                <option value="">Horário</option>
-                {HOURS.map((h) => <option key={h} value={h}>{h}</option>)}
+                <option value="">
+                  {isLoadingSlots ? "Carregando horários..." : modalSlotOptions.length === 0 ? "Sem slots disponíveis" : "Horário"}
+                </option>
+                {modalSlotOptions.map((h) => <option key={h} value={h}>{h}</option>)}
               </select>
               <div className={styles.colSpan2}>
                 <Select options={patients.map((p) => p.name)} placeholder="Paciente"
@@ -509,10 +616,20 @@ export function Appointments({ appointments, patients, currentUser, onAddAppoint
             {conflict && (
               <div className={styles.conflictWarning}><span style={{ fontSize: 16, lineHeight: 1.2 }}>⚠️</span><p className={styles.conflictText}>{conflict}</p></div>
             )}
+            {showModal && modal.doctorId && modal.date && !isLoadingSlots && availableSlots.length === 0 && (
+              <div className={styles.conflictWarning}>
+                <span style={{ fontSize: 16, lineHeight: 1.2 }}>ℹ️</span>
+                <p className={styles.conflictText}>
+                  A API não retornou slots disponíveis para este médico/data. Confira a disponibilidade cadastrada antes de salvar.
+                </p>
+              </div>
+            )}
             {modalError && !conflict && <p style={{ marginTop: 10, fontSize: 12, color: "var(--destructive)" }}>{modalError}</p>}
             <div className={styles.modalFooter}>
               <Button variant="ghost" onClick={closeModal}>Cancelar</Button>
-              <Button onClick={handleSaveAppointment} disabled={!!conflict}>Confirmar agendamento</Button>
+              <Button onClick={handleSaveAppointment} disabled={!!conflict}>
+                {editingAppointment ? "Salvar alterações" : "Confirmar agendamento"}
+              </Button>
             </div>
           </Card>
         </div>

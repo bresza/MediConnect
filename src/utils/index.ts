@@ -24,7 +24,7 @@ export function checkConflict(
   date: string,
   time: string,
   duration: number,
-  excludeId?: number,
+  excludeId?: string,
 ): ConflictInfo | null {
   const newStart = timeToMinutes(time)
   const newEnd   = newStart + duration

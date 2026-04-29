@@ -126,6 +126,31 @@
 
 .colSpan2 { grid-column: span 2; }
 
+@media (max-width: 639px) {
+  .formCard {
+    padding: 16px;
+    max-width: none;
+  }
+
+  .colSpan2 {
+    grid-column: auto;
+  }
+
+  .stepper {
+    padding-bottom: 6px;
+    align-items: flex-start;
+  }
+
+  .step.flex1 {
+    flex: 0 0 auto;
+  }
+
+  .stepLine {
+    width: 28px;
+    flex: 0 0 28px;
+  }
+}
+
 .marginTop { margin-top: 14px; }
 
 .docBox {
@@ -204,9 +229,36 @@
   gap: 12px;
 }
 
+@media (max-width: 560px) {
+  .formFooter,
+  .formFooterRight {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .stepCount {
+    text-align: center;
+  }
+}
+
 .stepCount {
   font-size: 12px;
   color: var(--muted-foreground);
+}
+
+.saveError {
+  max-width: 320px;
+  color: var(--destructive);
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: right;
+}
+
+@media (max-width: 560px) {
+  .saveError {
+    max-width: none;
+    text-align: center;
+  }
 }
 
 /* ── Photo upload ─────────────────────────────────────────────── */

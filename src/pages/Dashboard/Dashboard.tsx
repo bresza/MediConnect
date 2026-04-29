@@ -40,15 +40,31 @@ const STATS: StatConfig[] = [
   { label: "Taxa de presença",  icon: "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z",                                                    valCls: styles.statEmerald, iconBg: styles.statIconEmerald, iconStroke: "#059669",         trend: "confirmados" },
 ]
 
+function todayKey() {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, "0")
+  const day = String(now.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
 export function Dashboard({ patients, appointments, currentUser, onNavigate }: DashboardProps) {
   const isDoctor = currentUser.role === "doctor"
 
   const [allReports, setAllReports] = useState<Report[]>([])
   useEffect(() => { getReports().then(setAllReports).catch(() => setAllReports([])) }, [])
 
+  const isCurrentDoctor = (doctorId?: string, doctorName?: string) =>
+    doctorId === currentUser.id ||
+    doctorName === currentUser.name ||
+    doctorName?.toLowerCase().trim() === currentUser.name.toLowerCase().trim()
+
   const visibleAppointments = isDoctor
-    ? appointments.filter((a) => a.doctorName === currentUser.name)
+    ? appointments.filter((a) => isCurrentDoctor(a.doctorId, a.doctorName))
     : appointments
+  const todayAppointments = visibleAppointments
+    .filter((a) => a.date === todayKey())
+    .sort((a, b) => a.time.localeCompare(b.time))
 
   const visiblePatientIds = isDoctor
     ? new Set(visibleAppointments.map((a) => a.patientId))
@@ -58,7 +74,7 @@ export function Dashboard({ patients, appointments, currentUser, onNavigate }: D
     : patients
 
   const pendingReports = isDoctor
-    ? allReports.filter((r) => r.status === "Draft" && r.doctorName === currentUser.name)
+    ? allReports.filter((r) => r.status === "Draft" && isCurrentDoctor(r.doctorId, r.doctorName))
     : allReports.filter((r) => r.status === "Draft")
 
   const confirmed = visibleAppointments.filter((a) => a.status === "confirmed").length
@@ -67,7 +83,7 @@ export function Dashboard({ patients, appointments, currentUser, onNavigate }: D
 
   const statValues: Record<string, string | number> = {
     "Pacientes":          visiblePatients.length,
-    "Agendamentos hoje":  visibleAppointments.length,
+    "Agendamentos hoje":  todayAppointments.length,
     "Laudos pendentes":   pendingReports.length,
     "Taxa de presença":   `${rate}%`,
   }
@@ -79,11 +95,11 @@ export function Dashboard({ patients, appointments, currentUser, onNavigate }: D
       <Topbar
         title={currentUser.role === "doctor" ? "Meu Painel" : currentUser.role === "secretary" ? "Recepção" : "Dashboard"}
         subtitle={`Visão geral · ${today}`}
-        action={
+        action={!isDoctor ? (
           <Button onClick={() => onNavigate("register")} icon={<PlusIcon />}>
             Novo paciente
           </Button>
-        }
+        ) : undefined}
       />
 
       {/* Stats */}
@@ -114,9 +130,9 @@ export function Dashboard({ patients, appointments, currentUser, onNavigate }: D
             <p className={styles.cardHeaderTitle}>Agenda de hoje</p>
             <Button size="sm" variant="ghost" onClick={() => onNavigate("appointments")}>Ver tudo</Button>
           </div>
-          {visibleAppointments.length === 0 ? (
+          {todayAppointments.length === 0 ? (
             <p className={styles.emptyRow}>Nenhum agendamento para hoje.</p>
-          ) : visibleAppointments.slice(0, 5).map((a) => (
+          ) : todayAppointments.slice(0, 5).map((a) => (
             <div key={a.id} className={styles.appointmentRow}>
               <span className={styles.appointmentTime}>{a.time}</span>
               <Avatar name={a.patientName} size="sm" />

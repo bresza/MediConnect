@@ -13,7 +13,7 @@ export interface UseFinancialReturn {
   error:         string | null
   addRecord:     (r: Omit<FinancialRecord, "id">) => Promise<FinancialRecord>
   updateRecord:  (r: FinancialRecord) => Promise<void>
-  deleteRecord:  (id: number) => Promise<void>
+  deleteRecord:  (id: string) => Promise<void>
   reload:        () => Promise<void>
 }
 
@@ -48,7 +48,7 @@ export function useFinancial(): UseFinancialReturn {
     setRecords((prev) => prev.map((x) => (x.id === saved.id ? saved : x)))
   }, [])
 
-  const deleteRecord = useCallback(async (id: number) => {
+  const deleteRecord = useCallback(async (id: string) => {
     await deleteFinancialRecord(id)
     setRecords((prev) => prev.filter((r) => r.id !== id))
   }, [])
