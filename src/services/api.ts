@@ -33,7 +33,7 @@ export class ApiError extends Error {
 
 function friendlyMessage(status: number, raw: string): string {
   switch (status) {
-    case 400: return "Dados inválidos. Verifique os campos e tente novamente."
+    case 400: return raw || "Dados inválidos. Verifique os campos e tente novamente."
     case 401: return "Sessão expirada. Faça login novamente."
     case 403: return "Você não tem permissão para realizar esta ação."
     case 404: return "Recurso não encontrado."

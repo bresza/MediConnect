@@ -14,7 +14,6 @@ interface ApiProfile {
   full_name?: string
   email?: string
   phone?: string
-  role?: string
 }
 
 function apiToSettings(api: ApiProfile, fallback: User): ProfileSettings {
@@ -23,7 +22,7 @@ function apiToSettings(api: ApiProfile, fallback: User): ProfileSettings {
     fullName: api.full_name ?? fallback.name,
     email: api.email ?? fallback.email,
     phone: api.phone ?? "",
-    role: api.role ?? fallback.role,
+    role: fallback.role,
   }
 }
 
@@ -34,7 +33,6 @@ export async function getProfileSettings(user: User): Promise<ProfileSettings> {
     id: user.id,
     full_name: user.name,
     email: user.email,
-    role: user.role,
   }
   return apiToSettings(profile, user)
 }
@@ -45,7 +43,6 @@ export async function updateProfileSettings(settings: ProfileSettings): Promise<
     headers: { Prefer: "return=minimal" },
     body: {
       full_name: settings.fullName.trim(),
-      email: settings.email.trim(),
       phone: settings.phone.trim() || null,
     },
   })

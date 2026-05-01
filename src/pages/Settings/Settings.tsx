@@ -50,7 +50,6 @@ export function Settings({ currentUser }: SettingsProps) {
 
   async function handleSave() {
     if (!form.fullName.trim()) { setError("Nome obrigatório"); return }
-    if (!form.email.trim()) { setError("E-mail obrigatório"); return }
     setIsSaving(true)
     setError(null)
     setMessage(null)
@@ -106,10 +105,9 @@ export function Settings({ currentUser }: SettingsProps) {
                   />
                   <Input
                     label="E-mail"
-                    required
                     type="email"
                     value={form.email}
-                    onChange={(e) => setField("email", e.target.value)}
+                    disabled
                   />
                   <Input
                     label="Telefone"
