@@ -27,8 +27,10 @@ interface ApiProfile {
   full_name: string
 }
 interface ApiAvailableSlot {
-  time: string
-  available: boolean
+  time?: string
+  start_time?: string
+  start?: string
+  available?: boolean
 }
 
 /*
@@ -239,18 +241,44 @@ export async function getAvailableSlots(
 ): Promise<string[]> {
   if (!doctorId || !date) return []
 
-  const data = await apiRequest<{ slots?: ApiAvailableSlot[] }>(
-    "/functions/v1/get-available-slots",
+  const params = new URLSearchParams({
+    doctor_id: doctorId,
+    doctorId,
+    date,
+  })
+
+  const data = await apiRequest<
+    | ApiAvailableSlot[]
+    | string[]
+    | {
+        slots?: ApiAvailableSlot[] | string[]
+        available_slots?: ApiAvailableSlot[] | string[]
+        availableSlots?: ApiAvailableSlot[] | string[]
+      }
+  >(
+    `/functions/v1/get-available-slots?${params.toString()}`,
     {
       method: "POST",
       body: {
         doctor_id: doctorId,
+        doctorId,
         date,
       },
     },
   )
 
-  return (data.slots ?? [])
-    .filter((slot) => slot.available)
-    .map((slot) => slot.time.slice(0, 5))
+  const slots = Array.isArray(data)
+    ? data
+    : data.slots ?? data.available_slots ?? data.availableSlots ?? []
+
+  return slots
+    .map((slot) => {
+      if (typeof slot === "string") return slot
+      if (slot.available === false) return null
+      return slot.time ?? slot.start_time ?? slot.start ?? null
+    })
+    .filter((time): time is string => Boolean(time))
+    .map((time) => time.slice(0, 5))
+    .filter((time, index, all) => all.indexOf(time) === index)
+    .sort()
 }

@@ -174,6 +174,7 @@ export function Appointments({ appointments, patients, currentUser, onAddAppoint
   const [modalError, setModalError]   = useState<string | null>(null)
   const [availableSlots, setAvailableSlots] = useState<string[]>([])
   const [isLoadingSlots, setIsLoadingSlots] = useState(false)
+  const [slotsError, setSlotsError] = useState<string | null>(null)
   const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null)
 
   const pickerRef      = useRef<HTMLDivElement>(null)
@@ -209,12 +210,14 @@ export function Appointments({ appointments, patients, currentUser, onAddAppoint
     if (!doctorId || !date) {
       setAvailableSlots([])
       setIsLoadingSlots(false)
+      setSlotsError(null)
       return
     }
 
     const requestId = slotRequestRef.current + 1
     slotRequestRef.current = requestId
     setIsLoadingSlots(true)
+    setSlotsError(null)
     try {
       const slots = await getAvailableSlots(doctorId, date)
       if (slotRequestRef.current !== requestId) return
@@ -223,8 +226,11 @@ export function Appointments({ appointments, patients, currentUser, onAddAppoint
           ? [keepTime, ...slots].sort()
           : slots,
       )
-    } catch {
-      if (slotRequestRef.current === requestId) setAvailableSlots([])
+    } catch (err) {
+      if (slotRequestRef.current === requestId) {
+        setAvailableSlots([])
+        setSlotsError(err instanceof Error ? err.message : "Erro ao consultar horários disponíveis")
+      }
     } finally {
       if (slotRequestRef.current === requestId) setIsLoadingSlots(false)
     }
@@ -282,6 +288,7 @@ export function Appointments({ appointments, patients, currentUser, onAddAppoint
 
   function setModalField(field: keyof ModalForm, value: string) {
     if (field === "date") setAvailableSlots([])
+    if (field === "date") setSlotsError(null)
     setModal((m) => ({ ...m, [field]: value })); setModalError(null)
     if (field === "date" && modal.doctorId) void loadSlots(modal.doctorId, value, editingAppointment?.time)
   }
@@ -309,6 +316,7 @@ export function Appointments({ appointments, patients, currentUser, onAddAppoint
     setModalError(null); setShowModal(true)
     setAvailableSlots([])
     setIsLoadingSlots(false)
+    setSlotsError(null)
     if ((appointment?.doctorId || doctorId) && (appointment?.date || currentDateStr)) {
       void loadSlots(appointment?.doctorId || doctorId, appointment?.date || currentDateStr, appointment?.time)
     }
@@ -322,6 +330,7 @@ export function Appointments({ appointments, patients, currentUser, onAddAppoint
     setShowModalPicker(false)
     setAvailableSlots([])
     setIsLoadingSlots(false)
+    setSlotsError(null)
   }
 
   async function handleSaveAppointment() {
@@ -330,6 +339,10 @@ export function Appointments({ appointments, patients, currentUser, onAddAppoint
     if (!modal.time)        { setModalError("Selecione o horário"); return }
     if (!modal.type)        { setModalError("Selecione o tipo"); return }
     if (conflict)           { setModalError("Resolva o conflito de horário antes de salvar"); return }
+    if (slotsError) {
+      setModalError("Não foi possível confirmar a disponibilidade pela API")
+      return
+    }
     if (modal.doctorId && modal.date && !isLoadingSlots && availableSlots.length === 0) {
       setModalError("A API não retornou slots disponíveis para este médico/data")
       return
@@ -372,6 +385,7 @@ export function Appointments({ appointments, patients, currentUser, onAddAppoint
   function handleDoctorSelect(name: string) {
     const doctor = doctors.find((d) => d.name === name)
     setAvailableSlots([])
+    setSlotsError(null)
     setModal((m) => ({ ...m, doctorName: name, doctorId: doctor?.id ?? "" }))
     setModalError(null)
     if (doctor?.id && modal.date) void loadSlots(doctor.id, modal.date, editingAppointment?.time)
@@ -616,7 +630,15 @@ export function Appointments({ appointments, patients, currentUser, onAddAppoint
             {conflict && (
               <div className={styles.conflictWarning}><span style={{ fontSize: 16, lineHeight: 1.2 }}>⚠️</span><p className={styles.conflictText}>{conflict}</p></div>
             )}
-            {showModal && modal.doctorId && modal.date && !isLoadingSlots && availableSlots.length === 0 && (
+            {showModal && modal.doctorId && modal.date && !isLoadingSlots && slotsError && (
+              <div className={styles.conflictWarning}>
+                <span style={{ fontSize: 16, lineHeight: 1.2 }}>ℹ️</span>
+                <p className={styles.conflictText}>
+                  Não foi possível consultar os slots na API: {slotsError}
+                </p>
+              </div>
+            )}
+            {showModal && modal.doctorId && modal.date && !isLoadingSlots && !slotsError && availableSlots.length === 0 && (
               <div className={styles.conflictWarning}>
                 <span style={{ fontSize: 16, lineHeight: 1.2 }}>ℹ️</span>
                 <p className={styles.conflictText}>
