@@ -31,6 +31,11 @@ interface ApiAvailableSlot {
   available: boolean
 }
 
+export interface AppointmentDoctor {
+  id: string
+  name: string
+}
+
 function apiToAppointment(
   api: ApiAppointment,
   doctorName = ""
@@ -220,4 +225,15 @@ export async function getAvailableSlots(
     .map((slot) => slot.time.slice(0, 5))
     .filter((time, index, all) => all.indexOf(time) === index)
     .sort()
+}
+
+export async function getAppointmentDoctors(): Promise<AppointmentDoctor[]> {
+  const doctors = await apiRequest<ApiDoctor[]>(
+    "/rest/v1/doctors?select=id,full_name&active=eq.true&order=full_name.asc"
+  )
+
+  return (doctors ?? []).map((doctor) => ({
+    id: doctor.id,
+    name: doctor.full_name,
+  }))
 }

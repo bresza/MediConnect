@@ -6,8 +6,7 @@ import { Avatar } from "../../components/ui/Avatar/Avatar"
 import { Button } from "../../components/ui/Button/Button"
 import { Select } from "../../components/ui/Select/Select"
 import { formatAppointmentType, checkConflict, timeToMinutes } from "../../utils"
-import { useStaff } from "../../hooks/useStaff"
-import { getAvailableSlots } from "../../services/appointments"
+import { getAppointmentDoctors, getAvailableSlots } from "../../services/appointments"
 import type { Appointment, Patient, User } from "../../types"
 import styles from "./Appointments.module.css"
 
@@ -158,11 +157,6 @@ interface AppointmentsProps {
 export function Appointments({ appointments, patients, currentUser, onAddAppointment, onUpdateAppointment }: AppointmentsProps) {
   const isDoctor = currentUser.role === "doctor"
 
-  // ── Médicos via hook (API) ────────────────────────────────────
-  const { staff } = useStaff()
-  const doctors   = staff.filter((s) => s.role === "doctor")
-  const doctorNames = doctors.map((d) => d.name)
-
   const [view, setView]               = useState<CalendarView>("day")
   const [currentDate, setCurrentDate] = useState<Date>(() => new Date())
   const [selected, setSelected]       = useState<Appointment | null>(null)
@@ -175,12 +169,16 @@ export function Appointments({ appointments, patients, currentUser, onAddAppoint
   const [availableSlots, setAvailableSlots] = useState<string[]>([])
   const [isLoadingSlots, setIsLoadingSlots] = useState(false)
   const [slotsError, setSlotsError] = useState<string | null>(null)
+  const [doctors, setDoctors] = useState<{ id: string; name: string }[]>([])
+  const [isLoadingDoctors, setIsLoadingDoctors] = useState(true)
+  const [doctorsError, setDoctorsError] = useState<string | null>(null)
   const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null)
 
   const pickerRef      = useRef<HTMLDivElement>(null)
   const modalPickerRef = useRef<HTMLDivElement>(null)
   const slotRequestRef = useRef(0)
   const currentDateStr = toDateStr(currentDate)
+  const doctorNames = doctors.map((d) => d.name)
 
   function parseDateStr(s: string): Date {
     const [y, mo, d] = s.split("-").map(Number)
@@ -205,6 +203,19 @@ export function Appointments({ appointments, patients, currentUser, onAddAppoint
     document.addEventListener("mousedown", h)
     return () => document.removeEventListener("mousedown", h)
   }, [showModalPicker])
+
+  useEffect(() => {
+    let active = true
+    setIsLoadingDoctors(true)
+    setDoctorsError(null)
+    getAppointmentDoctors()
+      .then((items) => { if (active) setDoctors(items) })
+      .catch((err) => {
+        if (active) setDoctorsError(err instanceof Error ? err.message : "Erro ao carregar médicos")
+      })
+      .finally(() => { if (active) setIsLoadingDoctors(false) })
+    return () => { active = false }
+  }, [])
 
   async function loadSlots(doctorId: string, date: string, keepTime?: string) {
     if (!doctorId || !date) {
@@ -294,12 +305,11 @@ export function Appointments({ appointments, patients, currentUser, onAddAppoint
   }
 
   function openModal(time?: string, appointment?: Appointment) {
-    const currentDoctor = staff.find((s) =>
+    const currentDoctor = doctors.find((s) =>
       s.id === currentUser.id ||
-      s.email === currentUser.email ||
       s.name === currentUser.name
     )
-    const doctorId   = isDoctor ? (currentDoctor?.id ?? currentUser.id) : ""
+    const doctorId   = isDoctor ? (currentDoctor?.id ?? "") : ""
     const doctorName = isDoctor ? currentUser.name : ""
     setEditingAppointment(appointment ?? null)
     setModal(appointment ? {
@@ -339,6 +349,11 @@ export function Appointments({ appointments, patients, currentUser, onAddAppoint
     if (!modal.time)        { setModalError("Selecione o horário"); return }
     if (!modal.type)        { setModalError("Selecione o tipo"); return }
     if (conflict)           { setModalError("Resolva o conflito de horário antes de salvar"); return }
+    if (doctorsError)       { setModalError("Não foi possível carregar médicos da API"); return }
+    if (doctorNames.length === 0) {
+      setModalError("Nenhum médico ativo encontrado na API")
+      return
+    }
     if (slotsError) {
       setModalError("Não foi possível confirmar a disponibilidade pela API")
       return
@@ -629,6 +644,22 @@ export function Appointments({ appointments, patients, currentUser, onAddAppoint
               onChange={(e) => setModalField("observations", e.target.value)} className={styles.modalTextarea} />
             {conflict && (
               <div className={styles.conflictWarning}><span style={{ fontSize: 16, lineHeight: 1.2 }}>⚠️</span><p className={styles.conflictText}>{conflict}</p></div>
+            )}
+            {showModal && !isLoadingDoctors && doctorsError && (
+              <div className={styles.conflictWarning}>
+                <span style={{ fontSize: 16, lineHeight: 1.2 }}>ℹ️</span>
+                <p className={styles.conflictText}>
+                  Não foi possível carregar médicos da API: {doctorsError}
+                </p>
+              </div>
+            )}
+            {showModal && !isLoadingDoctors && !doctorsError && doctorNames.length === 0 && (
+              <div className={styles.conflictWarning}>
+                <span style={{ fontSize: 16, lineHeight: 1.2 }}>ℹ️</span>
+                <p className={styles.conflictText}>
+                  Nenhum médico ativo foi encontrado em doctors. Cadastre o médico pela API antes de buscar slots.
+                </p>
+              </div>
             )}
             {showModal && modal.doctorId && modal.date && !isLoadingSlots && slotsError && (
               <div className={styles.conflictWarning}>
