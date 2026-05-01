@@ -27,33 +27,8 @@ interface ApiProfile {
   full_name: string
 }
 interface ApiAvailableSlot {
-  time?: string
-  start_time?: string
-  start?: string
-  available?: boolean
-}
-
-/*
-IMPORTANTE:
-
-Como você não tem acesso ao Supabase, o frontend NÃO deve inventar
-valores para o enum appointment_type.
-
-Agora usamos exatamente o valor vindo do backend.
-
-Se existir appointment_type salvo no banco, ele será reutilizado.
-Se for criação nova e não houver certeza do enum correto,
-enviamos null para evitar erro de enum inválido.
-
-Depois que você descobrir o valor real do enum aceito pelo backend,
-basta substituir no map abaixo.
-*/
-
-const appointmentTypeMap: Record<string, string | null> = {
-  consultation: null,
-  evaluation: null,
-  return: null,
-  procedure: null,
+  time: string
+  available: boolean
 }
 
 function apiToAppointment(
@@ -103,23 +78,11 @@ function appointmentToApi(
       ? `${a.date}T${a.time}:00`
       : a.date
 
-  /*
-  Só envia appointment_type se houver valor real conhecido.
-  Isso evita erro:
-  invalid input value for enum appointment_type
-  */
-  const mappedType =
-    appointmentTypeMap[a.type] ?? null
-
   const payload: Record<string, unknown> = {
     patient_id: a.patientId,
     doctor_id: a.doctorId,
     scheduled_at: scheduledAt,
     duration_minutes: a.duration,
-  }
-
-  if (mappedType) {
-    payload.appointment_type = mappedType
   }
 
   if (!isCreate) {
@@ -241,44 +204,20 @@ export async function getAvailableSlots(
 ): Promise<string[]> {
   if (!doctorId || !date) return []
 
-  const params = new URLSearchParams({
-    doctor_id: doctorId,
-    doctorId,
-    date,
-  })
-
-  const data = await apiRequest<
-    | ApiAvailableSlot[]
-    | string[]
-    | {
-        slots?: ApiAvailableSlot[] | string[]
-        available_slots?: ApiAvailableSlot[] | string[]
-        availableSlots?: ApiAvailableSlot[] | string[]
-      }
-  >(
-    `/functions/v1/get-available-slots?${params.toString()}`,
+  const data = await apiRequest<{ slots?: ApiAvailableSlot[] }>(
+    "/functions/v1/get-available-slots",
     {
       method: "POST",
       body: {
         doctor_id: doctorId,
-        doctorId,
         date,
       },
     },
   )
 
-  const slots = Array.isArray(data)
-    ? data
-    : data.slots ?? data.available_slots ?? data.availableSlots ?? []
-
-  return slots
-    .map((slot) => {
-      if (typeof slot === "string") return slot
-      if (slot.available === false) return null
-      return slot.time ?? slot.start_time ?? slot.start ?? null
-    })
-    .filter((time): time is string => Boolean(time))
-    .map((time) => time.slice(0, 5))
+  return (data.slots ?? [])
+    .filter((slot) => slot.available)
+    .map((slot) => slot.time.slice(0, 5))
     .filter((time, index, all) => all.indexOf(time) === index)
     .sort()
 }
