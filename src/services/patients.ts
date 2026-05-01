@@ -166,7 +166,7 @@ export async function createPatient(
   )
 
   if (found[0]) return apiToPatient(found[0])
-  return { ...data, id: crypto.randomUUID() }
+  throw new Error("A API não retornou o paciente criado e o registro não foi encontrado no banco.")
 }
 
 export async function updatePatient(patient: Patient): Promise<Patient> {

@@ -19,8 +19,8 @@ function normalizeRole(value?: string | null): string {
 }
 
 // Mapeamento tolerante de roles da API → frontend
-function mapRole(roles: unknown[], profileRole?: string | null): UserRole {
-  const normalized = [...roles, profileRole]
+function mapRole(roles: unknown[]): UserRole {
+  const normalized = roles
     .flatMap((role) => {
       if (!role) return []
       if (typeof role === "string") return [normalizeRole(role)]
@@ -45,7 +45,7 @@ interface SupabaseAuthResponse {
 
 interface UserInfoResponse {
   user:    { id: string; email: string }
-  profile?: { id?: string; full_name?: string; email?: string; phone?: string; role?: string; crm?: string; specialty?: string }
+  profile?: { id?: string; full_name?: string; email?: string; phone?: string; crm?: string; specialty?: string }
   roles?:   unknown[]
 }
 
@@ -54,9 +54,12 @@ interface ProfileResponse {
   full_name?: string
   email?: string
   phone?: string
-  role?: string
   crm?: string
   specialty?: string
+}
+
+interface UserRoleResponse {
+  role?: string
 }
 
 async function fetchProfileFallback(token: string, userId: string, email: string): Promise<ProfileResponse | null> {
@@ -71,6 +74,20 @@ async function fetchProfileFallback(token: string, userId: string, email: string
   if (!res.ok) return null
   const data = await res.json().catch(() => [])
   return Array.isArray(data) ? data[0] ?? null : null
+}
+
+async function fetchRolesFallback(token: string, userId: string): Promise<unknown[]> {
+  const query = `user_id=eq.${encodeURIComponent(userId)}&select=role`
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/user_roles?${query}`, {
+    headers: {
+      "Content-Type":  "application/json",
+      "apikey":        SUPABASE_ANON_KEY,
+      "Authorization": `Bearer ${token}`,
+    },
+  })
+  if (!res.ok) return []
+  const data = await res.json().catch(() => [])
+  return Array.isArray(data) ? data.map((item: UserRoleResponse) => item.role).filter(Boolean) : []
 }
 
 export async function login(payload: LoginPayload): Promise<LoginResponse> {
@@ -102,11 +119,14 @@ export async function login(payload: LoginPayload): Promise<LoginResponse> {
   })
 
   if (!infoRes.ok) {
-    const profile = await fetchProfileFallback(authData.access_token, authData.user.id, authData.user.email)
+    const [profile, roles] = await Promise.all([
+      fetchProfileFallback(authData.access_token, authData.user.id, authData.user.email),
+      fetchRolesFallback(authData.access_token, authData.user.id),
+    ])
     const user: User = {
       id: authData.user.id,
       name: profile?.full_name ?? authData.user.email,
-      role: mapRole([], profile?.role),
+      role: mapRole(roles),
       email: profile?.email ?? authData.user.email,
       crm: profile?.crm,
       specialty: profile?.specialty,
@@ -118,7 +138,7 @@ export async function login(payload: LoginPayload): Promise<LoginResponse> {
   const user: User = {
     id:        authData.user.id,
     name:      info.profile?.full_name ?? authData.user.email,
-    role:      mapRole(info.roles ?? [], info.profile?.role),
+    role:      mapRole(info.roles ?? []),
     email:     info.profile?.email     ?? authData.user.email,
     crm:       info.profile?.crm,
     specialty: info.profile?.specialty,

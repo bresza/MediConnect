@@ -27,10 +27,22 @@ interface AppRouterProps { darkMode: boolean; onToggleDark: () => void }
 export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
   const { user, logout } = useAuth()
 
-  const { patients,     addPatient,    updatePatient,  deletePatient }                 = usePatients()
-  const { appointments, addAppointment, updateAppointment }                             = useAppointments()
-  const { records,      prescriptions, addRecord,      updateRecord, addPrescription } = useMedicalData()
-  const { staff,        addStaff,      updateStaff,    deleteStaff }                  = useStaff()
+  const {
+    patients, addPatient, updatePatient, deletePatient,
+    error: patientsError,
+  } = usePatients()
+  const {
+    appointments, addAppointment, updateAppointment,
+    error: appointmentsError,
+  } = useAppointments()
+  const {
+    records, prescriptions, addRecord, updateRecord, addPrescription,
+    error: medicalDataError,
+  } = useMedicalData()
+  const {
+    staff, addStaff, updateStaff, deleteStaff,
+    error: staffError,
+  } = useStaff()
   const { toasts,       toast,         dismiss }                                       = useToast()
 
   const [activePage,       setActivePage]       = useState<PageId>(() => getDefaultPage(user?.role ?? "secretary"))
@@ -62,6 +74,12 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
   const visibleAppointments  = doctorAppts
   const visibleRecords       = isDoctor ? records.filter((r) => doctorPatientIds!.has(r.patientId)) : records
   const visiblePrescriptions = isDoctor ? prescriptions.filter((p) => doctorPatientIds!.has(p.patientId)) : prescriptions
+  const dataErrors = [
+    patientsError && `Pacientes: ${patientsError}`,
+    appointmentsError && `Agenda: ${appointmentsError}`,
+    medicalDataError && `Prontuários/laudos: ${medicalDataError}`,
+    staffError && `Equipe: ${staffError}`,
+  ].filter(Boolean)
 
   // ── Navegação ────────────────────────────────────────────────────
   function handleNavigate(page: PageId) {
@@ -298,7 +316,15 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
             <p className={styles.mobileLogoName}>Mediconnect</p>
           </div>
         </div>
-        <div className={styles.content}>{renderPage()}</div>
+        <div className={styles.content}>
+          {dataErrors.length > 0 && (
+            <div className={styles.dataAlert} role="alert">
+              <strong>Falha ao carregar dados da API.</strong>
+              <span>{dataErrors.join(" | ")}</span>
+            </div>
+          )}
+          {renderPage()}
+        </div>
       </main>
       <ToastContainer toasts={toasts} onDismiss={dismiss} />
     </div>

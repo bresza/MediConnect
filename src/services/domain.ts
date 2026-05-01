@@ -144,7 +144,10 @@ interface ApiDoctor {
 }
 interface ApiProfile {
   id: string; full_name: string; email?: string
-  phone?: string; role?: string; created_at?: string
+  phone?: string; disabled?: boolean; created_at?: string
+}
+interface ApiUserRole {
+  user_id: string; role: string
 }
 
 function compactPayload(payload: Record<string, unknown>): Record<string, unknown> {
@@ -174,32 +177,50 @@ function apiDoctorToStaff(api: ApiDoctor): StaffMember {
     createdAt: api.created_at ?? new Date().toISOString().slice(0, 10),
   }
 }
-function apiProfileToStaff(api: ApiProfile): StaffMember {
+function roleToStaffRole(role?: string | null): StaffRole | null {
+  const normalized = (role ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
   const roleMap: Record<string, StaffRole> = {
     medico: "doctor", doctor: "doctor",
     gestor: "manager", manager: "manager",
     secretaria: "secretary", secretary: "secretary",
   }
+  return roleMap[normalized] ?? null
+}
+
+function apiProfileToStaff(api: ApiProfile, role: StaffRole): StaffMember {
   return {
     id:        api.id,
     name:      api.full_name,
-    role:      roleMap[api.role ?? ""] ?? "secretary",
+    role,
     email:     api.email ?? "",
     phone:     api.phone ?? "",
-    status:    "Active",
+    status:    (api.disabled ? "Inactive" : "Active") as StaffStatus,
     createdAt: api.created_at ?? new Date().toISOString().slice(0, 10),
   }
 }
 
 export async function getStaff(): Promise<StaffMember[]> {
-  const [doctors, profiles] = await Promise.all([
-    apiRequest<ApiDoctor[]>("/rest/v1/doctors?select=*&active=eq.true&order=full_name.asc"),
-    apiRequest<ApiProfile[]>("/rest/v1/profiles?select=*&order=full_name.asc"),
+  const [doctors, profiles, userRoles] = await Promise.all([
+    apiRequest<ApiDoctor[]>("/rest/v1/doctors?select=*&order=full_name.asc"),
+    apiRequest<ApiProfile[]>("/rest/v1/profiles?select=id,full_name,email,phone,disabled,created_at&order=full_name.asc"),
+    apiRequest<ApiUserRole[]>("/rest/v1/user_roles?select=user_id,role"),
   ])
   const doctorStaff  = (doctors  ?? []).map(apiDoctorToStaff)
+  const roleByUserId = new Map(
+    (userRoles ?? [])
+      .map((item) => [item.user_id, roleToStaffRole(item.role)] as const)
+      .filter(([, role]) => role !== null) as Array<[string, StaffRole]>,
+  )
   const profileStaff = (profiles ?? [])
-    .filter((p) => p.role !== "paciente" && p.role !== "admin")
-    .map(apiProfileToStaff)
+    .map((profile) => {
+      const role = roleByUserId.get(profile.id)
+      return role ? apiProfileToStaff(profile, role) : null
+    })
+    .filter((member): member is StaffMember => member !== null)
 
   const ids = new Set(doctorStaff.map((d) => d.id))
   return [...doctorStaff, ...profileStaff.filter((p) => !ids.has(p.id))]
@@ -248,7 +269,7 @@ export async function createStaffMember(
   if (!payload.phone)     throw new Error("Telefone obrigatório")
   if (!payload.cpf)       throw new Error("CPF obrigatório")
 
-  // Passo 1: criar usuário auth com senha
+  // Passo 1: criar usuário auth com senha/role no endpoint documentado da API
   const res = await apiRequest<{
   success?: boolean
   user?: {
@@ -272,46 +293,25 @@ export async function createStaffMember(
 
   const userId = res?.user?.id ?? ""
 
-  try {
-    await apiRequest("/rest/v1/profiles", {
-      method: "POST",
-      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-      body: {
-        id: userId,
-        full_name: data.name.trim(),
-        email: data.email.trim(),
-        phone: data.phone?.trim() || null,
-        role: payload.role,
-      },
-    })
-  } catch (e) {
-    console.warn("[profiles] sincronizacao apos create-user falhou:", e)
-  }
-
   // Passo 2: se médico, criar registro na tabela doctors
   if (data.role === "doctor" && doctorExtra) {
-    try {
-      await apiRequest("/functions/v1/create-doctor", {
-        method: "POST",
-        body: {
-          email:        data.email,
-          full_name:    data.name,
-          cpf:          doctorExtra.cpf.replace(/\D/g, ""),
-          crm:          doctorExtra.crmNum,
-          crm_uf:       doctorExtra.crmUf.toUpperCase(),
-          specialty:    doctorExtra.specialty,
-          phone_mobile: data.phone || undefined,
-        },
-      })
-    } catch (e) {
-      // Usuário auth já foi criado — loga o erro mas não falha
-      console.warn("[create-doctor] falhou após create-user-with-password:", e)
-    }
+    await apiRequest("/functions/v1/create-doctor", {
+      method: "POST",
+      body: {
+        email:        data.email,
+        full_name:    data.name,
+        cpf:          doctorExtra.cpf.replace(/\D/g, ""),
+        crm:          doctorExtra.crmNum,
+        crm_uf:       doctorExtra.crmUf.toUpperCase(),
+        specialty:    doctorExtra.specialty,
+        phone_mobile: data.phone || undefined,
+      },
+    })
   }
 
   return {
     ...data,
-    id:        userId || crypto.randomUUID(),
+    id:        userId,
     crm:       data.role === "doctor" && doctorExtra
       ? `${doctorExtra.crmNum}-${doctorExtra.crmUf}`
       : data.crm,
@@ -326,7 +326,7 @@ export async function updateStaffMember(member: StaffMember): Promise<StaffMembe
   await apiRequest(`/rest/v1/profiles?id=eq.${member.id}`, {
     method: "PATCH",
     headers: { Prefer: "return=minimal" },
-    body: { full_name: member.name, email: member.email, phone: member.phone },
+    body: { full_name: member.name, phone: member.phone },
   })
   if (member.role === "doctor") {
     const [crm = "", crmUf = ""] = (member.crm ?? "").split("-")
@@ -363,23 +363,10 @@ export async function deleteStaffMember(id: string): Promise<void> {
     console.warn("[delete-user] endpoint documentado nao encontrado, tentando Edge Function:", err)
   }
 
-  try {
-    await apiRequest("/functions/v1/delete-user", {
-      method: "POST",
-      body: { userId: id },
-    })
-    return
-  } catch (err) {
-    if (!(err instanceof ApiError) || err.status !== 404) throw err
-    console.warn("[functions/v1/delete-user] endpoint nao encontrado, usando fallback REST:", err)
-  }
-
-  try {
-    await apiRequest(`/rest/v1/doctors?id=eq.${id}`, { method: "DELETE" })
-  } catch (err) {
-    console.warn("[doctors] remocao de medico falhou ou registro inexistente:", err)
-  }
-  await apiRequest(`/rest/v1/profiles?id=eq.${id}`, { method: "DELETE" })
+  await apiRequest("/functions/v1/delete-user", {
+    method: "POST",
+    body: { userId: id },
+  })
 }
 
 // ─── MEDICAL RECORDS ──────────────────────────────────────────────
