@@ -48,9 +48,10 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, undefined, load)
 
-  // injeta token + userId no cliente HTTP sempre que o estado mudar
+  // Mantem o cliente HTTP sincronizado antes dos hooks das telas carregarem dados.
+  setApiContext(state.token, state.clinicId, state.user?.id ?? null)
+
   useEffect(() => {
-    setApiContext(state.token, state.clinicId, state.user?.id ?? null)
     save(state)
   }, [state])
 
