@@ -17,6 +17,11 @@ export {
 } from "./appointments"
 
 export {
+  getDoctorAvailability, createDoctorAvailability,
+} from "./availability"
+export type { DoctorAvailability, CreateDoctorAvailabilityInput } from "./availability"
+
+export {
   getMedicalRecords, createMedicalRecord, updateMedicalRecord,
   getPrescriptions,  createPrescription,
   getReports,        createReport,        updateReport,

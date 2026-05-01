@@ -8,12 +8,15 @@ import { Select } from "../../components/ui/Select/Select"
 import { formatAppointmentType, checkConflict, timeToMinutes } from "../../utils"
 import { useStaff } from "../../hooks/useStaff"
 import { getAvailableSlots } from "../../services/appointments"
+import { createDoctorAvailability } from "../../services/availability"
 import type { Appointment, Patient, User } from "../../types"
 import styles from "./Appointments.module.css"
 
 type CalendarView = "day" | "week" | "month"
 
 const HOURS       = ["08:00","08:30","09:00","09:30","10:00","10:30","11:00","11:30","12:00","14:00","14:30","15:00","15:30","16:00","16:30","17:00"]
+const AVAILABILITY_STARTS = ["06:00","07:00","08:00","09:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00"]
+const AVAILABILITY_ENDS = ["10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00","18:00","19:00","20:00","21:00","22:00"]
 const DAYS_SHORT  = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"]
 const MONTHS_PT   = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"]
 const MONTHS_SHORT = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"]
@@ -175,6 +178,9 @@ export function Appointments({ appointments, patients, currentUser, onAddAppoint
   const [availableSlots, setAvailableSlots] = useState<string[]>([])
   const [isLoadingSlots, setIsLoadingSlots] = useState(false)
   const [slotsError, setSlotsError] = useState<string | null>(null)
+  const [isSavingAvailability, setIsSavingAvailability] = useState(false)
+  const [availabilityStart, setAvailabilityStart] = useState("08:00")
+  const [availabilityEnd, setAvailabilityEnd] = useState("18:00")
   const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null)
 
   const pickerRef      = useRef<HTMLDivElement>(null)
@@ -389,6 +395,32 @@ export function Appointments({ appointments, patients, currentUser, onAddAppoint
     setModal((m) => ({ ...m, doctorName: name, doctorId: doctor?.id ?? "" }))
     setModalError(null)
     if (doctor?.id && modal.date) void loadSlots(doctor.id, modal.date, editingAppointment?.time)
+  }
+
+  async function handleCreateAvailability() {
+    if (!modal.doctorId || !modal.date) return
+    if (timeToMinutes(availabilityStart) >= timeToMinutes(availabilityEnd)) {
+      setModalError("Horário inicial da disponibilidade deve ser menor que o final")
+      return
+    }
+
+    setIsSavingAvailability(true)
+    setModalError(null)
+    try {
+      await createDoctorAvailability({
+        doctorId: modal.doctorId,
+        weekday: parseDateStr(modal.date).getDay(),
+        startTime: availabilityStart,
+        endTime: availabilityEnd,
+        slotMinutes: Number(modal.duration) || 30,
+        appointmentType: "presencial",
+      })
+      await loadSlots(modal.doctorId, modal.date, modal.time)
+    } catch (err) {
+      setModalError(err instanceof Error ? err.message : "Erro ao cadastrar disponibilidade")
+    } finally {
+      setIsSavingAvailability(false)
+    }
   }
 
   const monthYear = currentDate.getFullYear(); const monthMonth = currentDate.getMonth()
@@ -644,6 +676,21 @@ export function Appointments({ appointments, patients, currentUser, onAddAppoint
                 <p className={styles.conflictText}>
                   A API não retornou slots disponíveis para este médico/data. Confira a disponibilidade cadastrada antes de salvar.
                 </p>
+              </div>
+            )}
+            {showModal && modal.doctorId && modal.date && !isLoadingSlots && !slotsError && availableSlots.length === 0 && (
+              <div className={styles.availabilityPanel}>
+                <div className={styles.availabilityFields}>
+                  <select className={styles.availabilitySelect} value={availabilityStart} onChange={(e) => setAvailabilityStart(e.target.value)}>
+                    {AVAILABILITY_STARTS.map((time) => <option key={time} value={time}>{time}</option>)}
+                  </select>
+                  <select className={styles.availabilitySelect} value={availabilityEnd} onChange={(e) => setAvailabilityEnd(e.target.value)}>
+                    {AVAILABILITY_ENDS.map((time) => <option key={time} value={time}>{time}</option>)}
+                  </select>
+                  <Button variant="outline" onClick={handleCreateAvailability} disabled={isSavingAvailability}>
+                    {isSavingAvailability ? "Cadastrando..." : "Cadastrar disponibilidade"}
+                  </Button>
+                </div>
               </div>
             )}
             {modalError && !conflict && <p style={{ marginTop: 10, fontSize: 12, color: "var(--destructive)" }}>{modalError}</p>}
