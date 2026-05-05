@@ -11,7 +11,7 @@ import { Input } from "../../components/ui/Input/Input"
 import { Select } from "../../components/ui/Select/Select"
 import { Section } from "../../components/ui/Section/Section"
 import { formatDate, formatPaymentMethod } from "../../utils"
-import type { FinancialRecord, PaymentMethod, PaymentStatus } from "../../types"
+import type { FinancialRecord, Patient, PaymentMethod, PaymentStatus } from "../../types"
 import styles from "./Financial.module.css"
 
 // ─── helpers ──────────────────────────────────────────────────────
@@ -25,18 +25,19 @@ type FilterStatus = "all" | PaymentStatus
 type PeriodKey    = "month" | "quarter" | "year" | "all"
 
 interface RecordForm {
-  patientName: string; value: string; discount: string
+  patientId: string; patientName: string; value: string; discount: string
   paymentMethod: string; healthInsurance: string
   dueDate: string; status: string; observations: string
 }
 
 const EMPTY_FORM: RecordForm = {
-  patientName: "", value: "", discount: "", paymentMethod: "Pix",
+  patientId: "", patientName: "", value: "", discount: "", paymentMethod: "Pix",
   healthInsurance: "", dueDate: todayStr(), status: "Pending", observations: "",
 }
 
 function recordToForm(r: FinancialRecord): RecordForm {
   return {
+    patientId:       r.patientId ?? "",
     patientName:     r.patientName,
     value:           String(r.value),
     discount:        r.discount ? String(r.discount) : "",
@@ -227,7 +228,11 @@ function StatCard({ label, value, sub, iconPath, iconBg, iconColor, valueCls, pr
 }
 
 // ─── main component ───────────────────────────────────────────────
-export function Financial() {
+interface FinancialProps {
+  patients: Patient[]
+}
+
+export function Financial({ patients }: FinancialProps) {
   const {
     records,
     addRecord:    _addRecord,
@@ -239,10 +244,11 @@ export function Financial() {
   const [period, setPeriod]             = useState<PeriodKey>("month")
   const [modalOpen, setModalOpen]       = useState(false)
   const [editing, setEditing]           = useState<FinancialRecord | null>(null)
-  const [confirmId, setConfirmId]       = useState<number | null>(null)
+  const [confirmId, setConfirmId]       = useState<string | null>(null)
   const [form, setForm]                 = useState<RecordForm>(EMPTY_FORM)
   const [errors, setErrors]             = useState<Partial<Record<keyof RecordForm, string>>>({})
-  const [expandedId, setExpandedId]     = useState<number | null>(null)
+  const [expandedId, setExpandedId]     = useState<string | null>(null)
+  const [isSaving, setIsSaving]         = useState(false)
 
   // ── derived ─────────────────────────────────────────────────────
   const periodRecords = useMemo(() => filterByPeriod(records, period), [records, period])
@@ -275,18 +281,23 @@ export function Financial() {
 
   function validate(): boolean {
     const e: Partial<Record<keyof RecordForm, string>> = {}
-    if (!form.patientName.trim()) e.patientName = "Nome do paciente obrigatório"
+    if (!form.patientId) e.patientId = "Selecione um paciente"
     if (!form.value || isNaN(Number(form.value)) || Number(form.value) <= 0) e.value = "Valor inválido"
     if (!form.dueDate) e.dueDate = "Vencimento obrigatório"
     setErrors(e)
     return Object.keys(e).length === 0
   }
 
-  function handleSave() {
-    if (!validate()) return
+  async function handleSave() {
+    if (!validate() || isSaving) return
+    const patient = patients.find((p) => p.id === form.patientId)
+    if (!patient) {
+      setErrors((e) => ({ ...e, patientId: "Paciente inválido" }))
+      return
+    }
     const base: Omit<FinancialRecord, "id"> = {
-      patientId:      editing?.patientId ?? 0,
-      patientName:    form.patientName.trim(),
+      patientId:      patient.id,
+      patientName:    patient.name,
       appointmentId:  editing?.appointmentId,
       value:          Number(form.value),
       discount:       form.discount ? Number(form.discount) : undefined,
@@ -296,17 +307,27 @@ export function Financial() {
       status:         form.status as PaymentStatus,
       observations:   form.observations.trim() || undefined,
     }
-    if (editing) {
-      _updateRecord({ ...base, id: editing.id })
-    } else {
-      _addRecord(base)
+    setIsSaving(true)
+    try {
+      if (editing) {
+        await _updateRecord({ ...base, id: editing.id })
+      } else {
+        await _addRecord(base)
+      }
+      setModalOpen(false)
+    } catch (err) {
+      setErrors((e) => ({
+        ...e,
+        observations: err instanceof Error ? err.message : "Erro ao salvar lançamento",
+      }))
+    } finally {
+      setIsSaving(false)
     }
-    setModalOpen(false)
   }
 
-  function handleDelete(id: number) { _deleteRecord(id); setConfirmId(null) }
-  function markAsPaid(id: number)   { const r = records.find(x => x.id === id); if (r) _updateRecord({ ...r, status: "Paid" }) }
-  function toggleExpand(id: number) { setExpandedId((p) => (p === id ? null : id)) }
+  async function handleDelete(id: string) { await _deleteRecord(id); setConfirmId(null) }
+  async function markAsPaid(id: string)   { const r = records.find(x => x.id === id); if (r) await _updateRecord({ ...r, status: "Paid" }) }
+  function toggleExpand(id: string) { setExpandedId((p) => (p === id ? null : id)) }
 
   // ── render ──────────────────────────────────────────────────────
   return (
@@ -536,16 +557,26 @@ export function Financial() {
         footer={
           <>
             <Button variant="ghost" onClick={() => setModalOpen(false)}>Cancelar</Button>
-            <Button onClick={handleSave}>{editing ? "Salvar alterações" : "Criar lançamento"}</Button>
+            <Button onClick={handleSave} disabled={isSaving}>
+              {isSaving ? "Salvando..." : editing ? "Salvar alterações" : "Criar lançamento"}
+            </Button>
           </>
         }
       >
         <div className={styles.formGrid}>
           <Section title="Identificação">
             <div className={styles.grid2}>
-              <Input label="Paciente" required className={styles.colSpan2}
-                value={form.patientName} onChange={(e) => setField("patientName", e.target.value)}
-                error={errors.patientName} placeholder="Nome do paciente" />
+              <Select label="Paciente" required className={styles.colSpan2}
+                value={form.patientId}
+                onChange={(e) => {
+                  const patient = patients.find((p) => p.id === e.target.value)
+                  setField("patientId", e.target.value)
+                  setField("patientName", patient?.name ?? "")
+                  if (patient?.healthInsurance && !form.healthInsurance) setField("healthInsurance", patient.healthInsurance)
+                }}
+                error={errors.patientId}
+                options={patients.map((p) => ({ value: p.id, label: p.name }))}
+                placeholder="Selecionar paciente" />
               <Input label="Valor (R$)" required type="number"
                 value={form.value} onChange={(e) => setField("value", e.target.value)}
                 error={errors.value} placeholder="0,00" />
@@ -578,6 +609,7 @@ export function Financial() {
               placeholder="Informações adicionais sobre este lançamento..."
               value={form.observations} onChange={(e) => setField("observations", e.target.value)}
             />
+            {errors.observations && <p style={{ color: "var(--destructive)", fontSize: 12, marginTop: 8 }}>{errors.observations}</p>}
           </Section>
         </div>
       </Modal>

@@ -22,28 +22,18 @@ interface ApiDoctor {
   id: string
   full_name: string
 }
+interface ApiProfile {
+  id: string
+  full_name: string
+}
+interface ApiAvailableSlot {
+  time: string
+  available: boolean
+}
 
-/*
-IMPORTANTE:
-
-Como você não tem acesso ao Supabase, o frontend NÃO deve inventar
-valores para o enum appointment_type.
-
-Agora usamos exatamente o valor vindo do backend.
-
-Se existir appointment_type salvo no banco, ele será reutilizado.
-Se for criação nova e não houver certeza do enum correto,
-enviamos null para evitar erro de enum inválido.
-
-Depois que você descobrir o valor real do enum aceito pelo backend,
-basta substituir no map abaixo.
-*/
-
-const appointmentTypeMap: Record<string, string | null> = {
-  consultation: null,
-  evaluation: null,
-  return: null,
-  procedure: null,
+export interface AppointmentDoctor {
+  id: string
+  name: string
 }
 
 function apiToAppointment(
@@ -93,25 +83,15 @@ function appointmentToApi(
       ? `${a.date}T${a.time}:00`
       : a.date
 
-  /*
-  Só envia appointment_type se houver valor real conhecido.
-  Isso evita erro:
-  invalid input value for enum appointment_type
-  */
-  const mappedType =
-    appointmentTypeMap[a.type] ?? null
-
   const payload: Record<string, unknown> = {
     patient_id: a.patientId,
     doctor_id: a.doctorId,
     scheduled_at: scheduledAt,
     duration_minutes: a.duration,
-    status: a.status ?? "confirmed",
-    notes: a.observations ?? null,
   }
 
-  if (mappedType) {
-    payload.appointment_type = mappedType
+  if (!isCreate) {
+    payload.status = a.status ?? "confirmed"
   }
 
   if (isCreate) {
@@ -122,38 +102,49 @@ function appointmentToApi(
     }
   }
 
-  console.log(
-    "APPOINTMENT PAYLOAD:",
-    JSON.stringify(payload, null, 2)
-  )
-
   return payload
 }
 
 export async function getAppointments(): Promise<Appointment[]> {
-  const [apts, doctors] = await Promise.all([
+  const [apts, patients, doctors, profiles] = await Promise.all([
     apiRequest<ApiAppointment[]>(
-      "/rest/v1/appointments?select=*,patients(full_name)&order=scheduled_at.desc"
+      "/rest/v1/appointments?select=*&order=scheduled_at.desc"
+    ),
+    apiRequest<{ id: string; full_name: string }[]>(
+      "/rest/v1/patients?select=id,full_name"
     ),
     apiRequest<ApiDoctor[]>(
       "/rest/v1/doctors?select=id,full_name"
     ),
+    apiRequest<ApiProfile[]>(
+      "/rest/v1/profiles?select=id,full_name"
+    ),
   ])
 
-  console.log("APPOINTMENTS RAW:", apts)
-
-  const doctorMap = new Map(
-    (doctors ?? []).map((d) => [
-      d.id,
-      d.full_name,
+  const patientMap = new Map(
+    (patients ?? []).map((p) => [
+      p.id,
+      p.full_name,
     ])
+  )
+  const doctorMap = new Map(
+    [
+      ...(doctors ?? []).map((d) => [d.id, d.full_name] as const),
+      ...(profiles ?? []).map((p) => [p.id, p.full_name] as const),
+    ]
   )
 
   return (apts ?? []).map((a) =>
-    apiToAppointment(
-      a,
-      doctorMap.get(a.doctor_id) ?? ""
-    )
+    {
+      const appointment = apiToAppointment(
+        a,
+        doctorMap.get(a.doctor_id) ?? ""
+      )
+      return {
+        ...appointment,
+        patientName: patientMap.get(a.patient_id) ?? appointment.patientName,
+      }
+    }
   )
 }
 
@@ -175,10 +166,13 @@ export async function createAppointment(
     ? created[0]
     : (created as ApiAppointment)
 
-  return apiToAppointment(
-    raw,
-    data.doctorName
-  )
+  return {
+    ...apiToAppointment(
+      raw,
+      data.doctorName
+    ),
+    patientName: data.patientName,
+  }
 }
 
 export async function updateAppointment(
@@ -207,4 +201,39 @@ export async function deleteAppointment(
       method: "DELETE",
     }
   )
+}
+
+export async function getAvailableSlots(
+  doctorId: string,
+  date: string,
+): Promise<string[]> {
+  if (!doctorId || !date) return []
+
+  const data = await apiRequest<{ slots?: ApiAvailableSlot[] }>(
+    "/functions/v1/get-available-slots",
+    {
+      method: "POST",
+      body: {
+        doctor_id: doctorId,
+        date,
+      },
+    },
+  )
+
+  return (data.slots ?? [])
+    .filter((slot) => slot.available)
+    .map((slot) => slot.time.slice(0, 5))
+    .filter((time, index, all) => all.indexOf(time) === index)
+    .sort()
+}
+
+export async function getAppointmentDoctors(): Promise<AppointmentDoctor[]> {
+  const doctors = await apiRequest<ApiDoctor[]>(
+    "/rest/v1/doctors?select=id,full_name&active=eq.true&order=full_name.asc"
+  )
+
+  return (doctors ?? []).map((doctor) => ({
+    id: doctor.id,
+    name: doctor.full_name,
+  }))
 }

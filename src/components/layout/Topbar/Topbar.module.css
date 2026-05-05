@@ -34,3 +34,21 @@
   flex-wrap: wrap;
   flex-shrink: 0;
 }
+
+@media (max-width: 640px) {
+  .topbar {
+    align-items: stretch;
+    gap: 14px;
+    padding-bottom: 16px;
+    margin-bottom: 16px;
+  }
+
+  .info,
+  .actions {
+    width: 100%;
+  }
+
+  .actions > * {
+    min-width: 0;
+  }
+}

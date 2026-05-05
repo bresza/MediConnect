@@ -60,6 +60,23 @@
   .grid2      { grid-template-columns: 1fr; }
   .grid3      { grid-template-columns: 1fr; }
   .vitalsGrid { grid-template-columns: 1fr 1fr; }
+  .formCard   { padding: 16px; }
+  .footerRight,
+  .formFooter {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+  .searchWrapper {
+    max-width: none;
+    width: 100%;
+  }
+  .filters {
+    align-items: stretch;
+  }
+}
+
+@media (max-width: 420px) {
+  .vitalsGrid { grid-template-columns: 1fr; }
 }
 
 /* ── Footer ───────────────────────────────────────────────────── */

@@ -87,7 +87,7 @@ export interface Report {
 // ─── MESSAGE ──────────────────────────────────────────────────────
 export type MessageStatus = "Delivered" | "Pending" | "Failed"
 export interface Message {
-  id: number; patientId: number; patientName: string; channel: CommunicationChannel
+  id: number; patientId: string | number; patientName: string; channel: CommunicationChannel
   templateId?: number; content: string; status: MessageStatus; sentBy?: string; date: string
 }
 export interface MessageTemplate { id: number; name: string; channel: CommunicationChannel; content: string }
@@ -96,7 +96,7 @@ export interface MessageTemplate { id: number; name: string; channel: Communicat
 export type PaymentStatus = "Paid" | "Pending" | "Overdue" | "Cancelled"
 export type PaymentMethod = "Cash" | "Card" | "Pix" | "Insurance" | "Transfer"
 export interface FinancialRecord {
-  id: number; patientId: number; patientName: string; appointmentId?: number
+  id: string; patientId?: string; patientName: string; appointmentId?: string
   value: number; discount?: number; paymentMethod: PaymentMethod
   healthInsurance?: string; dueDate: string; status: PaymentStatus; observations?: string
 }
@@ -108,8 +108,8 @@ export interface VitalSigns {
   weight?: number; height?: number; oxygenSaturation?: number
 }
 export interface MedicalRecord {
-  id: number; patientId: number; patientName: string; doctorId: number; doctorName: string
-  appointmentId?: number; date: string; chiefComplaint: string; currentHistory?: string
+  id: string; patientId: string; patientName: string; doctorId: string; doctorName: string
+  appointmentId?: string; date: string; chiefComplaint: string; currentHistory?: string
   allergies?: string; medications?: string; personalHistory?: string; familyHistory?: string
   vitalSigns?: VitalSigns; physicalExam?: string; diagnosis?: string; cid10?: string
   treatmentPlan?: string; prescriptions?: string; examRequests?: string; returnDate?: string
@@ -119,12 +119,12 @@ export interface MedicalRecord {
 // ─── PRESCRIPTION ─────────────────────────────────────────────────
 export type PrescriptionType = "simple" | "special" | "antimicrobial"
 export interface PrescriptionMedication {
-  id: number; name: string; concentration: string; form: string
+  id: string; name: string; concentration: string; form: string
   quantity: string; posology: string; duration: string; instructions?: string
 }
 export interface Prescription {
-  id: number; patientId: number; patientName: string; patientDob?: string
-  doctorId: number; doctorName: string; doctorCrm?: string; doctorSpecialty?: string
+  id: string; patientId: string; patientName: string; patientDob?: string
+  doctorId: string; doctorName: string; doctorCrm?: string; doctorSpecialty?: string
   date: string; type: PrescriptionType; medications: PrescriptionMedication[]
   cid10?: string; observations?: string; status: "draft" | "emitted"
 }

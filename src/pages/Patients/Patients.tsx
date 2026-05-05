@@ -17,6 +17,7 @@ interface PatientsProps {
   onViewRecords?: (p: Patient) => void
   onViewProfile?: (p: Patient) => void
   onDeletePatient?: (id: string) => void | Promise<void>
+  canCreatePatient?: boolean
   toast?: UseToastReturn["toast"]
 }
 
@@ -37,7 +38,7 @@ const TrashIcon = () => (
   </svg>
 )
 
-export function Patients({ patients, onNavigate, onEditPatient, onViewRecords, onViewProfile, onDeletePatient, toast: _toast }: PatientsProps) {
+export function Patients({ patients, onNavigate, onEditPatient, onViewRecords, onViewProfile, onDeletePatient, canCreatePatient = true }: PatientsProps) {
   const [search, setSearch]             = useState("")
   const [filterStatus, setFilterStatus] = useState<"All" | "Active" | "Inactive">("All")
   const [confirmId, setConfirmId]       = useState<string | null>(null)
@@ -59,7 +60,7 @@ export function Patients({ patients, onNavigate, onEditPatient, onViewRecords, o
       <Topbar
         title="Pacientes"
         subtitle={`${patients.length} pacientes cadastrados`}
-        action={<Button onClick={() => onNavigate("register")} icon={<PlusIcon />}>Novo paciente</Button>}
+        action={canCreatePatient ? <Button onClick={() => onNavigate("register")} icon={<PlusIcon />}>Novo paciente</Button> : undefined}
       />
       <div className={styles.filters}>
         <div className={styles.searchWrapper}>

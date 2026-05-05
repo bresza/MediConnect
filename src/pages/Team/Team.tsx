@@ -154,8 +154,8 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast }: TeamProps) {
     if (!form.name.trim())  e.name  = "Nome obrigatório"
     if (!form.email.trim()) e.email = "E-mail obrigatório"
     if (!form.phone.trim()) e.phone = "Telefone obrigatório"
-    // CPF obrigatório para todos os perfis (exigido pela API)
-    if (!form.cpf.trim()) e.cpf = "CPF obrigatório"
+    // CPF é obrigatório na criação porque o endpoint de usuário exige validação.
+    if (!editingMember && !form.cpf.trim()) e.cpf = "CPF obrigatório"
     if (activeTab === "doctor") {
       if (!form.crmNum.trim())    e.crmNum    = "CRM obrigatório"
       if (!form.crmUf.trim())     e.crmUf     = "UF obrigatória"

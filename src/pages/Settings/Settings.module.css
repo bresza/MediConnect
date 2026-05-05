@@ -30,6 +30,11 @@
   display: block;
 }
 
+.menuBtn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .menuBtn:hover {
   background-color: var(--muted);
   color: var(--foreground);
@@ -52,8 +57,125 @@
 
 .colSpan2 { grid-column: span 2; }
 
+.infoGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.infoItem {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--muted);
+  padding: 14px;
+  min-width: 0;
+}
+
+.infoItem span,
+.integrationLabel {
+  display: block;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.infoItem strong {
+  display: block;
+  color: var(--foreground);
+  font-size: 14px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.textBlock {
+  color: var(--muted-foreground);
+  font-size: 14px;
+  line-height: 1.6;
+  margin-top: 18px;
+  display: grid;
+  gap: 10px;
+}
+
+.textBlock p { margin: 0; }
+
+.integrationBox {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border: 1px solid rgb(16 185 129 / 0.24);
+  border-radius: var(--radius-md);
+  background: rgb(16 185 129 / 0.08);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.integrationBox strong {
+  color: var(--foreground);
+  font-size: 15px;
+}
+
+.integrationStatus {
+  flex: 0 0 auto;
+  color: #047857;
+  background: rgb(16 185 129 / 0.12);
+  border: 1px solid rgb(16 185 129 / 0.24);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 10px;
+}
+
 .saveRow {
   display: flex;
   justify-content: flex-end;
   margin-top: 4px;
+}
+
+.stateText {
+  color: var(--muted-foreground);
+  font-size: 13px;
+  padding: 12px 0;
+}
+
+.errorText,
+.successText {
+  font-size: 12px;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  margin: 4px 0 12px;
+}
+
+.errorText {
+  color: var(--destructive);
+  background: rgb(220 38 38 / 0.08);
+  border: 1px solid rgb(220 38 38 / 0.2);
+}
+
+.successText {
+  color: #047857;
+  background: rgb(16 185 129 / 0.08);
+  border: 1px solid rgb(16 185 129 / 0.2);
+}
+
+@media (max-width: 640px) {
+  .contentCard { padding: 18px; }
+
+  .grid2 {
+    grid-template-columns: 1fr;
+  }
+
+  .infoGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .integrationBox {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .colSpan2 { grid-column: auto; }
 }

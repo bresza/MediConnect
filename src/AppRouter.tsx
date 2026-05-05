@@ -27,10 +27,22 @@ interface AppRouterProps { darkMode: boolean; onToggleDark: () => void }
 export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
   const { user, logout } = useAuth()
 
-  const { patients,     addPatient,    updatePatient,  deletePatient }                 = usePatients()
-  const { appointments, addAppointment }                                                = useAppointments()
-  const { records,      prescriptions, addRecord,      updateRecord, addPrescription } = useMedicalData()
-  const { staff,        addStaff,      updateStaff,    deleteStaff }                  = useStaff()
+  const {
+    patients, addPatient, updatePatient, deletePatient,
+    error: patientsError,
+  } = usePatients()
+  const {
+    appointments, addAppointment, updateAppointment,
+    error: appointmentsError,
+  } = useAppointments()
+  const {
+    records, prescriptions, addRecord, updateRecord, addPrescription,
+    error: medicalDataError,
+  } = useMedicalData()
+  const {
+    staff, addStaff, updateStaff, deleteStaff,
+    error: staffError,
+  } = useStaff()
   const { toasts,       toast,         dismiss }                                       = useToast()
 
   const [activePage,       setActivePage]       = useState<PageId>(() => getDefaultPage(user?.role ?? "secretary"))
@@ -40,15 +52,19 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
   const [recordsPatientId, setRecordsPatientId] = useState<string | null>(null)
 
   if (!user) return null
+  const currentUser = user
 
-  const isDoctor    = user.role === "doctor"
-  const isSecretary = user.role === "secretary"
-  const isManager   = user.role === "manager" || user.role === "admin"
+  const isDoctor    = currentUser.role === "doctor"
+  const isSecretary = currentUser.role === "secretary"
+  const isCurrentDoctor = (doctorId?: string, doctorName?: string) =>
+    doctorId === currentUser.id ||
+    doctorName === currentUser.name ||
+    doctorName?.toLowerCase().trim() === currentUser.name.toLowerCase().trim()
 
   // ── Filtros de dados por perfil ──────────────────────────────────
   // Médico vê apenas seus próprios agendamentos e pacientes vinculados
   const doctorAppts      = isDoctor
-    ? appointments.filter((a) => a.doctorName === user.name)
+    ? appointments.filter((a) => isCurrentDoctor(a.doctorId, a.doctorName))
     : appointments
   const doctorPatientIds = isDoctor
     ? new Set(doctorAppts.map((a) => a.patientId))
@@ -56,12 +72,18 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
 
   const visiblePatients      = isDoctor ? patients.filter((p) => doctorPatientIds!.has(p.id)) : patients
   const visibleAppointments  = doctorAppts
-  const visibleRecords       = isDoctor ? records.filter((r) => doctorPatientIds!.has(String(r.patientId))) : records
-  const visiblePrescriptions = isDoctor ? prescriptions.filter((p) => doctorPatientIds!.has(String(p.patientId))) : prescriptions
+  const visibleRecords       = isDoctor ? records.filter((r) => doctorPatientIds!.has(r.patientId)) : records
+  const visiblePrescriptions = isDoctor ? prescriptions.filter((p) => doctorPatientIds!.has(p.patientId)) : prescriptions
+  const dataErrors = [
+    patientsError && `Pacientes: ${patientsError}`,
+    appointmentsError && `Agenda: ${appointmentsError}`,
+    medicalDataError && `Prontuários/laudos: ${medicalDataError}`,
+    staffError && `Equipe: ${staffError}`,
+  ].filter(Boolean)
 
   // ── Navegação ────────────────────────────────────────────────────
   function handleNavigate(page: PageId) {
-    if (!canAccess(user.role, page)) return
+    if (!canAccess(currentUser.role, page)) return
     if (page !== "register")        setEditingPatient(null)
     if (page !== "records")         setRecordsPatientId(null)
     if (page !== "patient-profile") setViewingPatient(null)
@@ -82,7 +104,7 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
   }
 
   function handleViewRecords(patient: Patient) {
-    if (!canAccess(user.role, "records")) return  // secretária nunca acessa
+    if (!canAccess(currentUser.role, "records")) return  // secretária nunca acessa
     setRecordsPatientId(patient.id)
     setActivePage("records")
     setSidebarOpen(false)
@@ -107,7 +129,7 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
   // ── Renderização por página ──────────────────────────────────────
   function renderPage() {
     // Bloqueia acesso a páginas não permitidas
-    if (!canAccess(user.role, activePage)) {
+    if (!canAccess(currentUser.role, activePage)) {
       return (
         <div style={{ padding: 48, textAlign: "center", color: "var(--muted-foreground)" }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
@@ -115,7 +137,7 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
             Acesso restrito
           </p>
           <p style={{ fontSize: 13 }}>
-            Seu perfil ({user.role}) não tem permissão para acessar este módulo.
+            Seu perfil ({currentUser.role}) não tem permissão para acessar este módulo.
           </p>
         </div>
       )
@@ -129,7 +151,7 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
           <Dashboard
             patients={visiblePatients}
             appointments={visibleAppointments}
-            currentUser={user}
+            currentUser={currentUser}
             onNavigate={handleNavigate}
           />
         )
@@ -142,10 +164,11 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
             onNavigate={handleNavigate}
             onEditPatient={handleEditPatient}
             // Secretária NÃO vê botão de prontuário
-            onViewRecords={canAccess(user.role, "records") ? handleViewRecords : undefined}
+            onViewRecords={canAccess(currentUser.role, "records") ? handleViewRecords : undefined}
             onViewProfile={handleViewProfile}
             // Somente gestão pode excluir pacientes
-            onDeletePatient={canDo(user.role, "delete_patients") ? handleDeletePatient : undefined}
+            onDeletePatient={canDo(currentUser.role, "delete_patients") ? handleDeletePatient : undefined}
+            canCreatePatient={canAccess(currentUser.role, "register")}
             toast={toast}
           />
         )
@@ -158,21 +181,22 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
             records={visibleRecords}
             appointments={visibleAppointments}
             prescriptions={visiblePrescriptions}
-            currentUser={user}
+            currentUser={currentUser}
             onNavigate={handleNavigate}
             onEditPatient={handleEditPatient}
             // Secretária NÃO acessa prontuário dentro do perfil
-            onViewRecords={canAccess(user.role, "records") ? handleViewRecords : undefined}
-            onAddPrescription={canDo(user.role, "create_records") ? addPrescription : async () => {}}
+            onViewRecords={canAccess(currentUser.role, "records") ? handleViewRecords : undefined}
+            onAddPrescription={canDo(currentUser.role, "create_records") ? addPrescription : async () => {}}
           />
         ) : (
           <Patients
             patients={visiblePatients}
             onNavigate={handleNavigate}
             onEditPatient={handleEditPatient}
-            onViewRecords={canAccess(user.role, "records") ? handleViewRecords : undefined}
+            onViewRecords={canAccess(currentUser.role, "records") ? handleViewRecords : undefined}
             onViewProfile={handleViewProfile}
-            onDeletePatient={canDo(user.role, "delete_patients") ? handleDeletePatient : undefined}
+            onDeletePatient={canDo(currentUser.role, "delete_patients") ? handleDeletePatient : undefined}
+            canCreatePatient={canAccess(currentUser.role, "register")}
             toast={toast}
           />
         )
@@ -199,8 +223,9 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
           <Appointments
             appointments={visibleAppointments}
             patients={visiblePatients}
-            currentUser={user}
+            currentUser={currentUser}
             onAddAppointment={addAppointment}
+            onUpdateAppointment={updateAppointment}
           />
         )
 
@@ -212,16 +237,16 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
             records={visibleRecords}
             patients={visiblePatients}
             filterPatientId={recordsPatientId}
-            currentUser={user}
-            onAddRecord={canDo(user.role, "create_records") ? addRecord : async () => {}}
-            onUpdateRecord={canDo(user.role, "update_records") ? updateRecord : async (r) => r}
+            currentUser={currentUser}
+            onAddRecord={canDo(currentUser.role, "create_records") ? addRecord : async () => {}}
+            onUpdateRecord={canDo(currentUser.role, "update_records") ? updateRecord : async () => {}}
             onNavigate={handleNavigate}
           />
         )
 
       // ── Relatórios / Laudos ──────────────────────────────────────
       case "reports":
-        return <Reports currentUser={user} patients={visiblePatients} />
+        return <Reports currentUser={currentUser} patients={visiblePatients} />
 
       // ── Mensagens ────────────────────────────────────────────────
       case "messages":
@@ -229,7 +254,7 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
 
       // ── Financeiro — somente gestor e financeiro ─────────────────
       case "financial":
-        return <Financial />
+        return <Financial patients={patients} />
 
       // ── Equipe — somente gestão ──────────────────────────────────
       case "team":
@@ -245,14 +270,14 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
 
       // ── Configurações — somente gestão ──────────────────────────
       case "settings":
-        return <Settings />
+        return <Settings currentUser={currentUser} />
 
       default:
         return (
           <Dashboard
             patients={visiblePatients}
             appointments={visibleAppointments}
-            currentUser={user}
+            currentUser={currentUser}
             onNavigate={handleNavigate}
           />
         )
@@ -265,7 +290,7 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
       <Sidebar
         activePage={activePage}
         onNavigate={handleNavigate}
-        currentUser={user}
+        currentUser={currentUser}
         onLogout={logout}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
@@ -291,7 +316,15 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
             <p className={styles.mobileLogoName}>Mediconnect</p>
           </div>
         </div>
-        <div className={styles.content}>{renderPage()}</div>
+        <div className={styles.content}>
+          {dataErrors.length > 0 && (
+            <div className={styles.dataAlert} role="alert">
+              <strong>Falha ao carregar dados da API.</strong>
+              <span>{dataErrors.join(" | ")}</span>
+            </div>
+          )}
+          {renderPage()}
+        </div>
       </main>
       <ToastContainer toasts={toasts} onDismiss={dismiss} />
     </div>

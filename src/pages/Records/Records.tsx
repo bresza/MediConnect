@@ -8,13 +8,12 @@ import { Input } from "../../components/ui/Input/Input"
 import { Select } from "../../components/ui/Select/Select"
 import { Section } from "../../components/ui/Section/Section"
 import { formatDate } from "../../utils"
+import { useStaff } from "../../hooks/useStaff"
 import type { MedicalRecord, Patient, PageId, User } from "../../types"
 import styles from "./Records.module.css"
 
-const DOCTORS = ["Dr. Roberto Farias", "Dra. Carla Nunes"]
-
 type RecordForm = {
-  patientId: string; doctorName: string; date: string
+  patientId: string; doctorId: string; doctorName: string; date: string
   chiefComplaint: string; currentHistory: string; allergies: string
   medications: string; personalHistory: string; familyHistory: string
   bloodPressure: string; heartRate: string; temperature: string
@@ -25,7 +24,7 @@ type RecordForm = {
 }
 
 const EMPTY_FORM: RecordForm = {
-  patientId: "", doctorName: "", date: new Date().toISOString().slice(0, 10),
+  patientId: "", doctorId: "", doctorName: "", date: new Date().toISOString().slice(0, 10),
   chiefComplaint: "", currentHistory: "", allergies: "", medications: "",
   personalHistory: "", familyHistory: "",
   bloodPressure: "", heartRate: "", temperature: "", weight: "", height: "", oxygenSaturation: "",
@@ -35,7 +34,7 @@ const EMPTY_FORM: RecordForm = {
 
 function recordToForm(r: MedicalRecord): RecordForm {
   return {
-    patientId: String(r.patientId), doctorName: r.doctorName, date: r.date,
+    patientId: String(r.patientId), doctorId: r.doctorId, doctorName: r.doctorName, date: r.date,
     chiefComplaint: r.chiefComplaint,
     currentHistory: r.currentHistory ?? "", allergies: r.allergies ?? "",
     medications: r.medications ?? "", personalHistory: r.personalHistory ?? "",
@@ -55,17 +54,21 @@ function recordToForm(r: MedicalRecord): RecordForm {
 interface RecordsProps {
   records: MedicalRecord[]; patients: Patient[]
   filterPatientId?: string | null; currentUser: User
-  onAddRecord: (r: MedicalRecord) => void
-  onUpdateRecord: (r: MedicalRecord) => void
+  onAddRecord: (r: Omit<MedicalRecord, "id">) => void | Promise<void>
+  onUpdateRecord: (r: MedicalRecord) => void | Promise<void>
   onNavigate: (page: PageId) => void
 }
 
 export function Records({ records, patients, filterPatientId, currentUser, onAddRecord, onUpdateRecord, onNavigate }: RecordsProps) {
+  const { staff } = useStaff()
+  const doctors = staff.filter((member) => member.role === "doctor")
   const [view, setView]                   = useState<"list" | "editor">("list")
   const [editingRecord, setEditing]       = useState<MedicalRecord | null>(null)
   const [form, setForm]                   = useState<RecordForm>(EMPTY_FORM)
   const [errors, setErrors]               = useState<Partial<Record<keyof RecordForm, string>>>({})
   const [saved, setSaved]                 = useState(false)
+  const [saveError, setSaveError]         = useState<string | null>(null)
+  const [isSaving, setIsSaving]           = useState(false)
   const [search, setSearch]               = useState("")
   const [filterStatus, setFilterStatus]   = useState<"all" | "open" | "finalized">("all")
   const [patientFilter, setPatientFilter] = useState<string | null>(filterPatientId ?? null)
@@ -80,14 +83,19 @@ export function Records({ records, patients, filterPatientId, currentUser, onAdd
 
   function openNew() {
     setEditing(null)
-    setForm({ ...EMPTY_FORM, patientId: patientFilter ? String(patientFilter) : "", doctorName: isDoctor ? currentUser.name : "" })
-    setErrors({}); setSaved(false); setView("editor")
+    setForm({
+      ...EMPTY_FORM,
+      patientId: patientFilter ? String(patientFilter) : "",
+      doctorId: isDoctor ? currentUser.id : "",
+      doctorName: isDoctor ? currentUser.name : "",
+    })
+    setErrors({}); setSaved(false); setSaveError(null); setView("editor")
   }
 
   function openEdit(record: MedicalRecord) {
     setEditing(record)
     setForm(recordToForm(record))
-    setErrors({}); setSaved(false); setView("editor")
+    setErrors({}); setSaved(false); setSaveError(null); setView("editor")
   }
 
   function validate(): boolean {
@@ -100,13 +108,13 @@ export function Records({ records, patients, filterPatientId, currentUser, onAdd
   }
 
   function buildRecord(status: "open" | "finalized"): MedicalRecord {
-    const patient = patients.find(p => p.id === Number(form.patientId))
+    const patient = patients.find(p => p.id === form.patientId)
     return {
       ...(editingRecord ?? {}),
-      id: editingRecord?.id ?? Date.now(),
-      patientId: Number(form.patientId),
+      id: editingRecord?.id ?? crypto.randomUUID(),
+      patientId: form.patientId,
       patientName: patient?.name ?? "",
-      doctorId: DOCTORS.indexOf(form.doctorName) + 1,
+      doctorId: form.doctorId || currentUser.id,
       doctorName: form.doctorName,
       date: form.date,
       chiefComplaint:  form.chiefComplaint,
@@ -138,13 +146,21 @@ export function Records({ records, patients, filterPatientId, currentUser, onAdd
     }
   }
 
-  function handleSave(status: "open" | "finalized") {
+  async function handleSave(status: "open" | "finalized") {
     if (!validate()) return
     const record = buildRecord(status)
-    if (isEditing) onUpdateRecord(record)
-    else onAddRecord(record)
-    setSaved(true)
-    setTimeout(() => setView("list"), 600)
+    setIsSaving(true)
+    setSaveError(null)
+    try {
+      if (isEditing) await onUpdateRecord(record)
+      else await onAddRecord(record)
+      setSaved(true)
+      setTimeout(() => setView("list"), 600)
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Erro ao salvar prontuario")
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   // ── Filters ────────────────────────────────────────────────────
@@ -176,7 +192,7 @@ export function Records({ records, patients, filterPatientId, currentUser, onAdd
 
   // ── Editor ─────────────────────────────────────────────────────
   if (view === "editor") {
-    const selectedPatient = patients.find(p => p.id === Number(form.patientId))
+    const selectedPatient = patients.find(p => p.id === form.patientId)
 
     return (
       <div>
@@ -213,13 +229,28 @@ export function Records({ records, patients, filterPatientId, currentUser, onAdd
                     {currentUser.name}
                   </div>
                 </div>
-              ) : (
+              ) : doctors.length > 0 ? (
                 <Select
                   label="Médico responsável" required
-                  options={DOCTORS}
+                  options={doctors.map((doctor) => ({ value: doctor.id, label: doctor.name }))}
                   placeholder="Selecione o médico"
+                  value={form.doctorId}
+                  onChange={e => {
+                    const doctor = doctors.find((d) => d.id === e.target.value)
+                    set("doctorId", doctor?.id ?? "")
+                    set("doctorName", doctor?.name ?? "")
+                  }}
+                />
+              ) : (
+                <Input
+                  label="Médico responsável"
+                  required
+                  placeholder="Nome do médico"
                   value={form.doctorName}
-                  onChange={e => set("doctorName", e.target.value)}
+                  onChange={e => {
+                    set("doctorName", e.target.value)
+                    set("doctorId", "")
+                  }}
                 />
               )}
               <Input label="Data da consulta" type="date" required
@@ -231,6 +262,7 @@ export function Records({ records, patients, filterPatientId, currentUser, onAdd
                 {errors.doctorName && <p className={styles.errorMsg}>{errors.doctorName}</p>}
               </div>
             )}
+            {saveError && <p className={styles.errorMsg}>{saveError}</p>}
           </Section>
 
           {/* ── Anamnese ──────────────────────────────────────── */}
@@ -338,8 +370,12 @@ export function Records({ records, patients, filterPatientId, currentUser, onAdd
           <div className={styles.formFooter}>
             <Button variant="ghost" onClick={() => setView("list")}>Cancelar</Button>
             <div className={styles.footerRight}>
-              <Button variant="outline" onClick={() => handleSave("open")}>Salvar rascunho</Button>
-              <Button onClick={() => handleSave("finalized")}>Finalizar prontuário</Button>
+              <Button variant="outline" onClick={() => handleSave("open")} disabled={isSaving}>
+                {isSaving ? "Salvando..." : "Salvar rascunho"}
+              </Button>
+              <Button onClick={() => handleSave("finalized")} disabled={isSaving}>
+                {isSaving ? "Salvando..." : "Finalizar prontuário"}
+              </Button>
             </div>
           </div>
         </Card>

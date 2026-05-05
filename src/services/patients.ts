@@ -1,4 +1,4 @@
-import { apiRequest } from "./api"
+import { apiRequest, getApiUserId } from "./api"
 import type {
   Patient, Gender, PatientStatus, MaritalStatus,
   Ethnicity, CommunicationChannel, CommunicationFrequency,
@@ -73,20 +73,65 @@ function apiToPatient(api: ApiPatient): Patient {
   }
 }
 
+function compactPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(payload).filter(([, value]) =>
+      value !== undefined &&
+      value !== null &&
+      value !== "" &&
+      !(typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 0),
+    ),
+  )
+}
+
+function onlyDigits(value?: string): string | undefined {
+  const digits = value?.replace(/\D/g, "")
+  return digits || undefined
+}
+
 function patientToApi(
-  p: Omit<Patient, "id"> | Patient
+  p: Omit<Patient, "id"> | Patient,
+  mode: "create" | "update" = "create",
 ): Record<string, unknown> {
-  return {
-    full_name: p.name?.trim() || null,
+  const payload = compactPayload({
+    full_name:    p.name?.trim(),
+    cpf:          onlyDigits(p.cpf),
+    email:        p.email?.trim(),
+    phone_mobile: onlyDigits(p.phone),
+    birth_date:   p.dob,
+    gender:       p.gender,
+    status:       p.status ?? "Active",
 
-    cpf: p.cpf
-      ? p.cpf.replace(/\D/g, "")
-      : null,
+    social_name:             p.socialName,
+    rg:                      p.rg,
+    marital_status:          p.maritalStatus,
+    occupation:              p.occupation,
+    nationality:             p.nationality,
+    birthplace:              p.birthplace,
+    ethnicity:               p.ethnicity,
+    health_insurance:        p.healthInsurance,
+    health_insurance_number: p.healthInsuranceNumber,
+    is_vip:                  p.isVip,
+    emergency_contact:       p.emergencyContact,
+    address:                 p.address,
+    observations:            p.observations,
+    preferred_channel:       p.preferredChannel,
+    communication_frequency: p.communicationFrequency,
+    opt_in:                  p.optIn,
+    behavior_score:          p.behaviorScore,
+    photo_url:               p.photoUrl,
+  })
 
-    email: p.email?.trim() || "sememail@temp.com",
-
-    phone_mobile: p.phone?.trim() || null,
-  }
+  // A tabela patients documentada pela API aceita apenas dados cadastrais basicos.
+  // Campos clinicos/familia/comunicacao ficam fora daqui para nao quebrar o PATCH.
+  return compactPayload({
+    full_name:    payload.full_name,
+    cpf:          payload.cpf,
+    email:        payload.email,
+    phone_mobile: payload.phone_mobile,
+    birth_date:   payload.birth_date,
+    ...(mode === "create" ? { created_by: getApiUserId() ?? undefined } : {}),
+  })
 }
 
 export async function getPatients(): Promise<Patient[]> {
@@ -100,40 +145,35 @@ export async function createPatient(
   data: Omit<Patient, "id">
 ): Promise<Patient> {
 
-  if (!data.email?.trim()) {
-    throw new Error("E-mail do paciente é obrigatório")
-  }
+  const payload = patientToApi(data, "create")
 
-  const payload = patientToApi(data)
-
-  console.log(
-    "PATIENT PAYLOAD:",
-    JSON.stringify(payload, null, 2)
-  )
-
-  const created = await apiRequest<ApiPatient[]>(
-    "/rest/v1/patients",
-    {
-      method: "POST",
-      headers: {
-        Prefer: "return=representation",
-      },
-      body: payload,
-    }
+  const created = await apiRequest<ApiPatient[] | ApiPatient | { patient?: ApiPatient } | void>(
+    "/functions/v1/create-patient",
+    { method: "POST", body: payload },
   )
 
   const raw = Array.isArray(created)
     ? created[0]
-    : (created as ApiPatient)
+    : created && "patient" in created
+      ? created.patient
+      : created
 
-  return apiToPatient(raw)
+  if (raw && typeof raw === "object" && "id" in raw) return apiToPatient(raw as ApiPatient)
+
+  const cpf = String(payload.cpf ?? "")
+  const found = await apiRequest<ApiPatient[]>(
+    `/rest/v1/patients?cpf=eq.${encodeURIComponent(cpf)}&select=*&limit=1`,
+  )
+
+  if (found[0]) return apiToPatient(found[0])
+  throw new Error("A API não retornou o paciente criado e o registro não foi encontrado no banco.")
 }
 
 export async function updatePatient(patient: Patient): Promise<Patient> {
   await apiRequest(`/rest/v1/patients?id=eq.${patient.id}`, {
     method: "PATCH",
     headers: { Prefer: "return=minimal" },
-    body: patientToApi(patient),
+    body: patientToApi(patient, "update"),
   })
   return patient
 }
