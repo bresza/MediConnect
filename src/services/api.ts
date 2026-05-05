@@ -56,7 +56,11 @@ export async function apiRequest<T>(
     "apikey":       SUPABASE_ANON_KEY,
     ...(rest.headers as Record<string, string> ?? {}),
   }
-  if (_token) headers["Authorization"] = `Bearer ${_token}`
+  // Edge Functions e PostgREST exigem Authorization; sem Bearer o Supabase retorna 401.
+  // Com usuário logado: JWT da sessão; caso contrário: anon key (mesmo padrão do supabase-js).
+  headers["Authorization"] =
+    headers["Authorization"] ??
+    `Bearer ${_token ?? SUPABASE_ANON_KEY}`
 
   const res = await fetch(`${SUPABASE_URL}${path}`, {
     ...rest, headers,
