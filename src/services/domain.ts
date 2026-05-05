@@ -114,7 +114,7 @@ function reportToApi(
     content_json:   {},
     hide_date:      r.hideDate      ?? false,
     hide_signature: r.hideSignature ?? false,
-  })
+  };
 }
 
 const REPORT_SELECT = "select=*,patients(full_name)"
