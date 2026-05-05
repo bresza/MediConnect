@@ -1,5 +1,5 @@
-import { ApiError, apiRequest, getApiUserId } from "./api"
-import { MESSAGES, MESSAGE_TEMPLATES } from "../data/mock"
+import { apiRequest, ApiError, getApiUserId } from "./api"
+import { MEDICAL_RECORDS, PRESCRIPTIONS, MESSAGES, MESSAGE_TEMPLATES } from "../data/mock"
 import type {
   MedicalRecord, Prescription, Report, ReportStatus,
   Message, MessageTemplate, StaffMember, StaffRole, StaffStatus,
@@ -13,7 +13,7 @@ interface ApiReport {
   id:             string
   order_number?:  string
   patient_id:     string
-  status?:        string        // "draft" | "finalized" | "sent"
+  status?:        string        // "draft" | "completed" (legacy: "finalized")
   exam?:          string
   requested_by?:  string
   cid_code?:      string
@@ -34,12 +34,42 @@ interface ApiReport {
 }
 
 function statusToFrontend(s?: string): ReportStatus {
-  if (s === "delivered") return "Finalized"
+  if (s === "completed") return "Finalized"
+  if (s === "finalized") return "Finalized"
+  if (s === "sent")      return "Sent"
   return "Draft"
 }
 function statusToApi(s: ReportStatus): string {
-  if (s === "Finalized" || s === "Sent") return "delivered"
+  // Conforme spec da API: draft | completed
+  if (s === "Finalized") return "completed"
+  if (s === "Sent")      return "completed"
   return "draft"
+}
+
+const FINALIZE_STATUS_CANDIDATES = [
+  "completed",
+  "finalized",
+  "sent",
+] as const
+
+const FINALIZE_STATUS_STORAGE_KEY = "reports.finalizeStatusValue"
+
+function getPersistedFinalizeStatus(): string | null {
+  if (typeof window === "undefined") return null
+  try {
+    return localStorage.getItem(FINALIZE_STATUS_STORAGE_KEY)
+  } catch {
+    return null
+  }
+}
+
+function setPersistedFinalizeStatus(value: string): void {
+  if (typeof window === "undefined") return
+  try {
+    localStorage.setItem(FINALIZE_STATUS_STORAGE_KEY, value)
+  } catch {
+    // ignore storage errors
+  }
 }
 
 function apiToReport(api: ApiReport): Report {
@@ -66,11 +96,15 @@ function apiToReport(api: ApiReport): Report {
 }
 
 // ReportInput exato conforme schema da API
-function reportToApi(r: Partial<Report> & { patientId: string }): Record<string, unknown> {
+function reportToApi(
+  r: Partial<Report> & { patientId: string },
+  opts?: { statusOverride?: string; omitStatus?: boolean },
+): Record<string, unknown> {
   const uid = getApiUserId()
-  return compactPayload({
+  const statusValue = opts?.statusOverride ?? statusToApi(r.status ?? "Draft")
+  return {
     patient_id:     r.patientId,
-    status:         statusToApi(r.status ?? "Draft"),
+    ...(opts?.omitStatus ? {} : { status: statusValue }),
     exam:           r.type   ?? r.exam ?? "Laudo Médico",
     requested_by:   uid ?? r.requestedBy ?? undefined,
     cid_code:       r.cid10  ?? "",
@@ -81,6 +115,12 @@ function reportToApi(r: Partial<Report> & { patientId: string }): Record<string,
     hide_date:      r.hideDate      ?? false,
     hide_signature: r.hideSignature ?? false,
   })
+}
+
+const REPORT_SELECT = "select=*,patients(full_name)"
+
+function isReportStatusEnumError(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 400 && err.message.includes("report_status")
 }
 
 export async function getReports(): Promise<Report[]> {
@@ -117,6 +157,7 @@ export async function createReport(
     headers: { Prefer: "return=representation" },
     body: reportToApi(data),
   })
+
   const raw  = Array.isArray(created) ? created[0] : (created as ApiReport)
   return {
     ...apiToReport(raw),
@@ -126,12 +167,42 @@ export async function createReport(
 }
 
 export async function updateReport(report: Report): Promise<Report> {
-  await apiRequest(`/rest/v1/reports?id=eq.${report.id}`, {
-    method: "PATCH",
-    headers: { Prefer: "return=minimal" },
-    body: reportToApi(report),
-  })
-  return report
+  const uiStatus = report.status ?? "Draft"
+  const isFinalizeFlow = uiStatus === "Finalized" || uiStatus === "Sent"
+
+  if (!isFinalizeFlow) {
+    await apiRequest(`/rest/v1/reports?id=eq.${report.id}`, {
+      method: "PATCH",
+      headers: { Prefer: "return=minimal" },
+      body: reportToApi(report),
+    })
+    return report
+  }
+
+  const persisted = getPersistedFinalizeStatus()
+  const candidates = persisted
+    ? [persisted, ...FINALIZE_STATUS_CANDIDATES.filter((x) => x !== persisted)]
+    : [...FINALIZE_STATUS_CANDIDATES]
+
+  let lastError: unknown
+  for (const candidate of candidates) {
+    try {
+      await apiRequest(`/rest/v1/reports?id=eq.${report.id}`, {
+        method: "PATCH",
+        headers: { Prefer: "return=minimal" },
+        body: reportToApi(report, { statusOverride: candidate }),
+      })
+      setPersistedFinalizeStatus(candidate)
+      return report
+    } catch (err) {
+      if (!isReportStatusEnumError(err)) throw err
+      lastError = err
+    }
+  }
+
+  throw (lastError instanceof Error
+    ? new Error(`${lastError.message}. Nenhum valor de status de finalização foi aceito.`)
+    : new Error("Erro ao finalizar laudo: nenhum status aceito pelo enum report_status."))
 }
 
 // ─────────────────────────────────────────────────────────────────

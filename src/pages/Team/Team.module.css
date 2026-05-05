@@ -235,3 +235,8 @@
 @media (max-width: 480px) {
   .colSpan2 { grid-column: span 1; }
 }
+
+@media (max-width: 767px) {
+  .grid2 { grid-template-columns: 1fr; }
+  .colSpan2 { grid-column: span 1; }
+}

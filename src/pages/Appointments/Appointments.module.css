@@ -457,6 +457,7 @@
   align-items: center;
   justify-content: center;
   z-index: 50;
+  padding: 14px;
 }
 
 .modal {
@@ -464,6 +465,8 @@
   width: 100%;
   max-width: 460px;
   box-shadow: var(--shadow-xl);
+  max-height: calc(100vh - 28px);
+  overflow-y: auto;
 }
 
 .modalTitle {
@@ -959,3 +962,14 @@
 }
 
 .weekDayHeader:hover { background-color: var(--accent); }
+
+@media (max-width: 767px) {
+  .toolbar { padding: 12px; }
+  .spacer { display: none; }
+  .doctorBadge { width: 100%; justify-content: center; }
+  .modal { padding: 18px; max-width: 100%; }
+  .modalGrid { grid-template-columns: 1fr; }
+  .colSpan2 { grid-column: span 1; }
+  .modalFooter { flex-wrap: wrap; justify-content: stretch; }
+  .modalFooter > * { flex: 1; }
+}

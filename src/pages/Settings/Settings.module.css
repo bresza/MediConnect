@@ -135,47 +135,8 @@
   margin-top: 4px;
 }
 
-.stateText {
-  color: var(--muted-foreground);
-  font-size: 13px;
-  padding: 12px 0;
-}
-
-.errorText,
-.successText {
-  font-size: 12px;
-  padding: 8px 12px;
-  border-radius: var(--radius-md);
-  margin: 4px 0 12px;
-}
-
-.errorText {
-  color: var(--destructive);
-  background: rgb(220 38 38 / 0.08);
-  border: 1px solid rgb(220 38 38 / 0.2);
-}
-
-.successText {
-  color: #047857;
-  background: rgb(16 185 129 / 0.08);
-  border: 1px solid rgb(16 185 129 / 0.2);
-}
-
-@media (max-width: 640px) {
+@media (max-width: 767px) {
   .contentCard { padding: 18px; }
-
-  .grid2 {
-    grid-template-columns: 1fr;
-  }
-
-  .infoGrid {
-    grid-template-columns: 1fr;
-  }
-
-  .integrationBox {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .colSpan2 { grid-column: auto; }
+  .grid2 { grid-template-columns: 1fr; }
+  .colSpan2 { grid-column: span 1; }
 }
