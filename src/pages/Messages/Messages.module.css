@@ -161,6 +161,7 @@
   align-items: center;
   justify-content: center;
   z-index: 50;
+  padding: 14px;
 }
 
 .modal {
@@ -168,6 +169,8 @@
   width: 100%;
   max-width: 460px;
   box-shadow: var(--shadow-xl);
+  max-height: calc(100vh - 28px);
+  overflow-y: auto;
 }
 
 .modalTitle {
@@ -205,4 +208,11 @@
   justify-content: flex-end;
   gap: 10px;
   margin-top: 20px;
+}
+
+@media (max-width: 767px) {
+  .searchWrapper { max-width: 100%; }
+  .modal { padding: 18px; max-width: 100%; }
+  .modalFooter { flex-wrap: wrap; justify-content: stretch; }
+  .modalFooter > * { flex: 1; }
 }

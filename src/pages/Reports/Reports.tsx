@@ -162,17 +162,20 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
   const [modalOpen,     setModalOpen]     = useState(false)
   const [templateModal, setTemplateModal] = useState(false)
   const [editingReport, setEditingReport] = useState<Report | null>(null)
-  const [form,          setForm]          = useState<ReportForm>(EMPTY_FORM)
-  const [isSaving,      setIsSaving]      = useState(false)
-  const [isAiLoading,   setIsAiLoading]   = useState(false)
-  const [error,         setError]         = useState<string | null>(null)
-  const [search,        setSearch]        = useState("")
-  const [filterStatus,  setFilterStatus]  = useState<ReportStatus | "All">("All")
+  const [form,        setForm]        = useState<ReportForm>(EMPTY_FORM)
+  const [isSaving,    setIsSaving]    = useState(false)
+  const [error,       setError]       = useState<string | null>(null)
+  const [listError,   setListError]   = useState<string | null>(null)
+  const [updatingId,  setUpdatingId]  = useState<string | null>(null)
+  const [search,      setSearch]      = useState("")
+  const [filterStatus, setFilterStatus] = useState<ReportStatus | "All">("All")
 
   const visibleReports = reports
-    .filter((r) => currentUser.role === "doctor"
-      ? (r.doctorName === currentUser.name || r.doctorId === currentUser.id)
-      : true)
+    .filter((r) => {
+      if (currentUser.role !== "doctor") return true
+      // Alguns registros retornam sem doctorName no join; usa created_by como fallback.
+      return r.doctorId === currentUser.id || r.doctorName === currentUser.name
+    })
     .filter((r) => filterStatus === "All" || r.status === filterStatus)
     .filter((r) => !search ||
       r.patientName.toLowerCase().includes(search.toLowerCase()) ||
@@ -255,7 +258,25 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
     setError(null); setModalOpen(true)
   }
 
-  // ── Salvar ───────────────────────────────────────────────────────
+  function setField<K extends keyof ReportForm>(k: K, v: ReportForm[K]) {
+    setForm((prev) => ({ ...prev, [k]: v }))
+    setError(null)
+  }
+
+  async function handleQuickStatusUpdate(r: Report, nextStatus: ReportStatus) {
+    setListError(null)
+    setUpdatingId(r.id)
+    try {
+      const updated = await updateReport({ ...r, status: nextStatus })
+      setReports((prev) => prev.map((x) => (x.id === updated.id ? updated : x)))
+      await load()
+    } catch (err) {
+      setListError(err instanceof Error ? err.message : "Erro ao atualizar status do laudo")
+    } finally {
+      setUpdatingId(null)
+    }
+  }
+
   async function handleSave(finalStatus?: ReportStatus) {
     if (!form.patientId && !form.patientName) { setError("Selecione o paciente."); return }
     if (!form.type)                           { setError("Informe o tipo de laudo."); return }
@@ -347,6 +368,11 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
 
       {/* Tabela */}
       <Card>
+        {listError && (
+          <div style={{ padding: "10px 14px", margin: "10px 10px 0", borderRadius: 8, fontSize: 12, color: "var(--destructive)", background: "var(--destructive-light, #fef2f2)", border: "1px solid var(--destructive)" }}>
+            {listError}
+          </div>
+        )}
         {isLoading ? (
           <div style={{ padding: 40, textAlign: "center", color: "var(--muted-foreground)", fontSize: 13 }}>
             Carregando laudos...
@@ -391,7 +417,14 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
                         <div className={styles.tdActions}>
                           <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>Editar</Button>
                           {r.status === "Draft" && (
-                            <Button size="sm" variant="ghost" onClick={() => quickStatus(r, "Finalized")}>Finalizar</Button>
+                            <Button size="sm" variant="ghost" disabled={updatingId === r.id} onClick={() => handleQuickStatusUpdate(r, "Finalized")}>
+                              {updatingId === r.id ? "Finalizando..." : "Finalizar"}
+                            </Button>
+                          )}
+                          {r.status === "Finalized" && (
+                            <Button size="sm" variant="ghost" disabled={updatingId === r.id} onClick={() => handleQuickStatusUpdate(r, "Sent")}>
+                              {updatingId === r.id ? "Enviando..." : "Enviar"}
+                            </Button>
                           )}
                         </div>
                       </td>
@@ -481,14 +514,11 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
             )}
           </div>
 
-          {/* Tipo e CID */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
-            <div>
-              <label style={labelStyle}>Tipo de laudo</label>
-              <input value={form.type} onChange={(e) => setField("type", e.target.value)}
-                placeholder="Ex: Laudo Médico"
-                style={{ width: "100%", padding: "9px 12px", borderRadius: 8, fontSize: 13, border: "1px solid var(--border)", background: "var(--background)", color: "var(--foreground)", outline: "none", boxSizing: "border-box" }} />
-            </div>
+          {/* Tipo e CID-10 */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+            <Select label="Tipo de laudo" value={form.type}
+              onChange={(e) => setField("type", e.target.value)}
+              options={EXAM_TYPES} required />
             <div>
               <label style={labelStyle}>CID-10</label>
               <input value={form.cid10} onChange={(e) => setField("cid10", e.target.value)}

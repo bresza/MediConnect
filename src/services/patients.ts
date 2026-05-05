@@ -4,6 +4,7 @@ import type {
   Ethnicity, CommunicationChannel, CommunicationFrequency,
   EmergencyContact, Address,
 } from "../types"
+import { normalizeEmail, onlyDigits } from "../utils/masks"
 
 interface ApiPatient {
   id:                       string
@@ -93,45 +94,15 @@ function patientToApi(
   p: Omit<Patient, "id"> | Patient,
   mode: "create" | "update" = "create",
 ): Record<string, unknown> {
-  const payload = compactPayload({
-    full_name:    p.name?.trim(),
-    cpf:          onlyDigits(p.cpf),
-    email:        p.email?.trim(),
-    phone_mobile: onlyDigits(p.phone),
-    birth_date:   p.dob,
-    gender:       p.gender,
-    status:       p.status ?? "Active",
+  return {
+    full_name: p.name?.trim() || null,
 
-    social_name:             p.socialName,
-    rg:                      p.rg,
-    marital_status:          p.maritalStatus,
-    occupation:              p.occupation,
-    nationality:             p.nationality,
-    birthplace:              p.birthplace,
-    ethnicity:               p.ethnicity,
-    health_insurance:        p.healthInsurance,
-    health_insurance_number: p.healthInsuranceNumber,
-    is_vip:                  p.isVip,
-    emergency_contact:       p.emergencyContact,
-    address:                 p.address,
-    observations:            p.observations,
-    preferred_channel:       p.preferredChannel,
-    communication_frequency: p.communicationFrequency,
-    opt_in:                  p.optIn,
-    behavior_score:          p.behaviorScore,
-    photo_url:               p.photoUrl,
-  })
+    cpf: p.cpf ? onlyDigits(p.cpf) : null,
 
-  // A tabela patients documentada pela API aceita apenas dados cadastrais basicos.
-  // Campos clinicos/familia/comunicacao ficam fora daqui para nao quebrar o PATCH.
-  return compactPayload({
-    full_name:    payload.full_name,
-    cpf:          payload.cpf,
-    email:        payload.email,
-    phone_mobile: payload.phone_mobile,
-    birth_date:   payload.birth_date,
-    ...(mode === "create" ? { created_by: getApiUserId() ?? undefined } : {}),
-  })
+    email: normalizeEmail(p.email ?? "") || "sememail@temp.com",
+
+    phone_mobile: p.phone ? onlyDigits(p.phone) : null,
+  }
 }
 
 export async function getPatients(): Promise<Patient[]> {

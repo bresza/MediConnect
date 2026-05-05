@@ -299,9 +299,9 @@
 /* ── Modal form ───────────────────────────────────────────────── */
 .formGrid { display: flex; flex-direction: column; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-@media (max-width: 480px) { .grid2 { grid-template-columns: 1fr; } }
+@media (max-width: 767px) { .grid2 { grid-template-columns: 1fr; } }
 .colSpan2 { grid-column: span 2; }
-@media (max-width: 480px) { .colSpan2 { grid-column: span 1; } }
+@media (max-width: 767px) { .colSpan2 { grid-column: span 1; } }
 
 .obsTextarea {
   width: 100%; padding: 9px 12px;
