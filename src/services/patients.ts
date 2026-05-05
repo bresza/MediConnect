@@ -1,4 +1,4 @@
-import { apiRequest, getApiUserId } from "./api"
+import { apiRequest } from "./api"
 import type {
   Patient, Gender, PatientStatus, MaritalStatus,
   Ethnicity, CommunicationChannel, CommunicationFrequency,
@@ -74,25 +74,9 @@ function apiToPatient(api: ApiPatient): Patient {
   }
 }
 
-function compactPayload(payload: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(payload).filter(([, value]) =>
-      value !== undefined &&
-      value !== null &&
-      value !== "" &&
-      !(typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 0),
-    ),
-  )
-}
-
-function onlyDigits(value?: string): string | undefined {
-  const digits = value?.replace(/\D/g, "")
-  return digits || undefined
-}
-
 function patientToApi(
   p: Omit<Patient, "id"> | Patient,
-  mode: "create" | "update" = "create",
+  _mode: "create" | "update" = "create",
 ): Record<string, unknown> {
   return {
     full_name: p.name?.trim() || null,

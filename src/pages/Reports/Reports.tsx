@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback, useRef, type ChangeEvent } from "react"
 import { getReports, createReport, updateReport } from "../../services/domain"
 import { REPORT_TEMPLATES, TEMPLATE_SPECIALTIES } from "../../data/reportTemplates"
 import type { ReportTemplate } from "../../data/reportTemplates"
@@ -9,6 +9,7 @@ import { Badge }   from "../../components/ui/Badge/Badge"
 import { Button }  from "../../components/ui/Button/Button"
 import { Avatar }  from "../../components/ui/Avatar/Avatar"
 import { Modal }   from "../../components/ui/Modal/Modal"
+import { Select }  from "../../components/ui/Select/Select"
 import { formatDate } from "../../utils"
 import styles from "./Reports.module.css"
 
@@ -36,6 +37,10 @@ const EMPTY_FORM: ReportForm = {
   diagnosis: "", conclusion: "", cid10: "",
   contentHtml: "", hideDate: false, hideSignature: false, status: "Draft",
 }
+
+const EXAM_TYPES = Array.from(
+  new Set(["Laudo Médico", ...REPORT_TEMPLATES.map((t) => t.exam)]),
+).sort((a, b) => a.localeCompare(b, "pt-BR"))
 
 // ─── IA — completa laudo via Anthropic API ────────────────────────
 async function aiCompleteReport(
@@ -164,6 +169,7 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
   const [editingReport, setEditingReport] = useState<Report | null>(null)
   const [form,        setForm]        = useState<ReportForm>(EMPTY_FORM)
   const [isSaving,    setIsSaving]    = useState(false)
+  const [isAiLoading, setIsAiLoading] = useState(false)
   const [error,       setError]       = useState<string | null>(null)
   const [listError,   setListError]   = useState<string | null>(null)
   const [updatingId,  setUpdatingId]  = useState<string | null>(null)
@@ -191,7 +197,8 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
   useEffect(() => { load() }, [load])
 
   function setField<K extends keyof ReportForm>(k: K, v: ReportForm[K]) {
-    setForm((p) => ({ ...p, [k]: v })); setError(null)
+    setForm((prev) => ({ ...prev, [k]: v }))
+    setError(null)
   }
 
   // ── Aplicar template ─────────────────────────────────────────────
@@ -258,11 +265,6 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
     setError(null); setModalOpen(true)
   }
 
-  function setField<K extends keyof ReportForm>(k: K, v: ReportForm[K]) {
-    setForm((prev) => ({ ...prev, [k]: v }))
-    setError(null)
-  }
-
   async function handleQuickStatusUpdate(r: Report, nextStatus: ReportStatus) {
     setListError(null)
     setUpdatingId(r.id)
@@ -310,14 +312,6 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao salvar laudo")
     } finally { setIsSaving(false) }
-  }
-
-  // ── Mudar status direto da lista ─────────────────────────────────
-  async function quickStatus(r: Report, status: ReportStatus) {
-    try {
-      const updated = await updateReport({ ...r, status })
-      setReports((prev) => prev.map((x) => x.id === updated.id ? updated : x))
-    } catch { /* silencia */ }
   }
 
   // ── Estilos inline reutilizáveis ─────────────────────────────────
@@ -517,7 +511,7 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
           {/* Tipo e CID-10 */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
             <Select label="Tipo de laudo" value={form.type}
-              onChange={(e) => setField("type", e.target.value)}
+              onChange={(e: ChangeEvent<HTMLSelectElement>) => setField("type", e.target.value)}
               options={EXAM_TYPES} required />
             <div>
               <label style={labelStyle}>CID-10</label>
