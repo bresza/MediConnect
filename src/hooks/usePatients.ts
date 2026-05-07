@@ -1,12 +1,21 @@
 import { useState, useEffect, useCallback } from "react"
 import type { Patient } from "../types"
-import { getPatients, createPatient, updatePatient, deletePatient } from "../services/patients"
+import {
+  getPatients,
+  createPatient,
+  createPatientWithPassword,
+  createPatientPortalAccess,
+  updatePatient,
+  deletePatient,
+} from "../services/patients"
 
 export interface UsePatientsReturn {
   patients:      Patient[]
   isLoading:     boolean
   error:         string | null
   addPatient:    (p: Omit<Patient, "id">) => Promise<Patient>
+  addPatientWithPassword: (p: Omit<Patient, "id">, password: string) => Promise<Patient>
+  createPatientAccess: (p: Patient, password: string) => Promise<Patient>
   updatePatient: (p: Patient) => Promise<void>
   deletePatient: (id: string) => Promise<void>
   reload:        () => Promise<void>
@@ -34,6 +43,18 @@ export function usePatients(): UsePatientsReturn {
     return created
   }, [])
 
+  const addPatientWithPassword = useCallback(async (p: Omit<Patient, "id">, password: string) => {
+    const created = await createPatientWithPassword(p, password)
+    setPatients((prev) => [...prev, created])
+    return created
+  }, [])
+
+  const createPatientAccess = useCallback(async (p: Patient, password: string) => {
+    const saved = await createPatientPortalAccess(p, password)
+    setPatients((prev) => prev.map((x) => (x.id === saved.id ? saved : x)))
+    return saved
+  }, [])
+
   const updatePatientFn = useCallback(async (p: Patient) => {
     const saved = await updatePatient(p)
     setPatients((prev) => prev.map((x) => (x.id === saved.id ? saved : x)))
@@ -44,5 +65,15 @@ export function usePatients(): UsePatientsReturn {
     setPatients((prev) => prev.filter((p) => p.id !== id))
   }, [])
 
-  return { patients, isLoading, error, addPatient, updatePatient: updatePatientFn, deletePatient: deletePatientFn, reload: load }
+  return {
+    patients,
+    isLoading,
+    error,
+    addPatient,
+    addPatientWithPassword,
+    createPatientAccess,
+    updatePatient: updatePatientFn,
+    deletePatient: deletePatientFn,
+    reload: load,
+  }
 }

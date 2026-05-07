@@ -14,7 +14,6 @@ interface PatientProfileProps {
   currentUser: User
   onNavigate: (page: PageId) => void
   onEditPatient: (p: Patient) => void
-  onViewRecords?: (p: Patient) => void
   onAddPrescription: (p: Omit<Prescription, "id">) => void | Promise<void>
 }
 
@@ -94,7 +93,7 @@ function VitalCard({ label, value, unit, ref: refRange }: { label: string; value
 // ── Main component ─────────────────────────────────────────────────
 export function PatientProfile({
   patient, records, appointments, prescriptions, currentUser,
-  onNavigate, onEditPatient, onViewRecords, onAddPrescription,
+  onNavigate, onEditPatient, onAddPrescription,
 }: PatientProfileProps) {
   const [tab, setTab]               = useState<Tab>("overview")
   const [prescribing, setPrescribing] = useState(false)
@@ -626,7 +625,6 @@ export function PatientProfile({
           <div>
             <div className={styles.listHeader}>
               <p className={styles.listHeaderTitle}>{patientRecords.length} prontuário{patientRecords.length !== 1 ? "s" : ""}</p>
-              {onViewRecords && <Button size="sm" onClick={() => onViewRecords(patient)}>Abrir editor</Button>}
             </div>
             {patientRecords.length === 0 ? (
               <div className={styles.emptyState}>

@@ -1,6 +1,8 @@
 .layout {
   display: flex;
   min-height: 100vh;
+  width: 100%;
+  min-width: 0;
   background-color: var(--background);
 }
 
@@ -34,13 +36,20 @@
 }
 .hamburgerBtn:hover { background-color: var(--muted); }
 
-.mobileLogo    { display: flex; align-items: center; gap: 8px; }
+.mobileLogo    { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .mobileLogoIcon {
   width: 24px; height: 24px;
   border-radius: 6px; background-color: var(--primary);
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
-.mobileLogoName { font-size: 14px; font-weight: 700; color: var(--foreground); }
+.mobileLogoName {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* ── Content area ─────────────────────────────────────────────── */
 .content {
@@ -51,29 +60,6 @@
   min-width: 0;
   margin: 0 auto;
 }
-
-.dataAlert {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-bottom: 16px;
-  padding: 12px 14px;
-  border: 1px solid rgb(245 158 11 / 0.35);
-  border-radius: var(--radius-md);
-  background: rgb(245 158 11 / 0.12);
-  color: var(--foreground);
-  font-size: 13px;
-  line-height: 1.4;
-}
-
-.dataAlert strong {
-  font-size: 13px;
-}
-
-.dataAlert span {
-  color: var(--muted-foreground);
-}
-
 @media (max-width: 480px)  { .content { padding: 12px; } }
 @media (min-width: 640px)  { .content { padding: 20px; } }
 @media (min-width: 1024px) { .content { padding: 28px 32px; } }
