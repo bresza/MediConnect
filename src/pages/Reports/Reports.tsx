@@ -10,7 +10,6 @@ import { Badge }   from "../../components/ui/Badge/Badge"
 import { Button }  from "../../components/ui/Button/Button"
 import { Avatar }  from "../../components/ui/Avatar/Avatar"
 import { Modal }   from "../../components/ui/Modal/Modal"
-import { Select }  from "../../components/ui/Select/Select"
 import { formatDate } from "../../utils"
 import styles from "./Reports.module.css"
 
@@ -249,8 +248,7 @@ export function Reports({ currentUser, patients = [], staff = [] }: ReportsProps
   }, [patients])
 
   function setField<K extends keyof ReportForm>(k: K, v: ReportForm[K]) {
-    setForm((prev) => ({ ...prev, [k]: v }))
-    setError(null)
+    setForm((p) => ({ ...p, [k]: v })); setError(null)
   }
 
   // ── Aplicar template ─────────────────────────────────────────────
