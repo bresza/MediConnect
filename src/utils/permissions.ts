@@ -9,6 +9,7 @@ export const ROLE_PAGES: Record<UserRole, PageId[]> = {
   doctor: [
     "dashboard",
     "appointments",   // filtra por médico no AppRouter
+    "availability",   // disponibilidade própria
     "records",        // prontuário completo
     "reports",        // gestão de laudos
     "messages",       // comunicação com pacientes
@@ -22,6 +23,7 @@ export const ROLE_PAGES: Record<UserRole, PageId[]> = {
     "patients",
     "register",
     "appointments",
+    "availability",
     "records",
     "reports",
     "messages",
@@ -37,6 +39,7 @@ export const ROLE_PAGES: Record<UserRole, PageId[]> = {
     "patients",
     "register",
     "appointments",
+    "availability",
     "records",
     "reports",
     "messages",
@@ -71,9 +74,9 @@ export const ROLE_PAGES: Record<UserRole, PageId[]> = {
 // Ações permitidas por perfil (controle fino dentro das páginas)
 // ─────────────────────────────────────────────────────────────────
 export const ROLE_ACTIONS: Record<UserRole, string[]> = {
-  doctor:    ["view_records", "create_records", "update_records", "view_reports", "create_reports", "update_reports", "view_own_appointments", "send_messages"],
-  manager:   ["view_records", "create_records", "update_records", "delete_records", "view_reports", "create_reports", "update_reports", "delete_reports", "view_all_appointments", "create_appointments", "delete_appointments", "manage_patients", "delete_patients", "manage_team", "view_financial", "manage_financial", "send_messages"],
-  admin:     ["view_records", "create_records", "update_records", "delete_records", "view_reports", "create_reports", "update_reports", "delete_reports", "view_all_appointments", "create_appointments", "delete_appointments", "manage_patients", "delete_patients", "manage_team", "view_financial", "manage_financial", "send_messages"],
+  doctor:    ["view_records", "create_records", "update_records", "view_reports", "create_reports", "update_reports", "view_own_appointments", "manage_own_availability", "send_messages"],
+  manager:   ["view_records", "create_records", "update_records", "delete_records", "view_reports", "create_reports", "update_reports", "delete_reports", "view_all_appointments", "create_appointments", "delete_appointments", "manage_availability", "manage_patients", "delete_patients", "manage_team", "view_financial", "manage_financial", "send_messages"],
+  admin:     ["view_records", "create_records", "update_records", "delete_records", "view_reports", "create_reports", "update_reports", "delete_reports", "view_all_appointments", "create_appointments", "delete_appointments", "manage_availability", "manage_patients", "delete_patients", "manage_team", "view_financial", "manage_financial", "send_messages"],
   financial: ["view_financial", "manage_financial", "view_reports"],
   secretary: ["view_appointments", "create_appointments", "update_appointments", "cancel_appointments", "register_patients", "send_messages"],
 }
