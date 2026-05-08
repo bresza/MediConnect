@@ -1,7 +1,8 @@
 .formCard {
   padding: 24px;
-  max-width: 768px;
+  max-width: 1120px;
   width: 100%;
+  margin: 0 auto;
 }
 
 @media (min-width: 640px) {
@@ -361,4 +362,18 @@
 
 .checkLabel input[type="checkbox"] {
   accent-color: var(--primary);
+}
+
+@media (max-width: 639px) {
+  .formCard { padding: 16px; }
+  .colSpan2 { grid-column: span 1; }
+  .formFooter {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .formFooterRight {
+    justify-content: space-between;
+    width: 100%;
+  }
 }
