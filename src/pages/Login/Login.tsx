@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { login as authLogin } from "../../services/auth"
+import { createPatientAccount, login as authLogin, requestPasswordReset } from "../../services/auth"
 import type { LoginResponse } from "../../services/auth"
 import styles from "./Login.module.css"
 
@@ -18,27 +18,67 @@ const FEATURE_LIST = [
 ]
 
 export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
+  const [mode,         setMode]         = useState<"login" | "signup">("login")
   const [email,        setEmail]        = useState("")
   const [password,     setPassword]     = useState("")
+  const [name,         setName]         = useState("")
+  const [cpf,          setCpf]          = useState("")
+  const [phone,        setPhone]        = useState("")
+  const [dob,          setDob]          = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [error,        setError]        = useState<string | null>(null)
+  const [success,      setSuccess]      = useState<string | null>(null)
   const [isLoading,    setIsLoading]    = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!email.trim() || !password.trim()) { setError("Preencha e-mail e senha."); return }
-    setError(null); setIsLoading(true)
-    try { onLogin(await authLogin({ email, password })) }
+    if (!email.trim()) { setError("Preencha seu e-mail."); return }
+    if (mode === "login" && !password.trim()) { setError("Preencha sua senha."); return }
+    setError(null); setSuccess(null); setIsLoading(true)
+    try {
+      if (mode === "signup") {
+        const response = await createPatientAccount({ name, email, cpf, phone, dob })
+        setSuccess(response.message ?? "Cadastro realizado com sucesso. Verifique seu e-mail para acessar a plataforma.")
+        setMode("login")
+        setPassword("")
+        setName("")
+        setCpf("")
+        setPhone("")
+        setDob("")
+        return
+      }
+
+      onLogin(await authLogin({ email, password }))
+    }
     catch (err) { setError(err instanceof Error ? err.message : "E-mail ou senha inválidos.") }
     finally { setIsLoading(false) }
   }
 
   async function handleGestorClick() {
-    setError(null); setIsLoading(true)
+    setError(null); setSuccess(null); setIsLoading(true)
     setEmail("hugo@popcode.com.br"); setPassword("hdoria")
     try { onLogin(await authLogin({ email: "hugo@popcode.com.br", password: "hdoria" })) }
     catch (err) { setError(err instanceof Error ? err.message : "Erro ao fazer login") }
     finally { setIsLoading(false) }
+  }
+
+  async function handlePasswordReset() {
+    if (!email.trim()) { setError("Informe seu e-mail para recuperar a senha."); return }
+    setError(null); setSuccess(null); setIsLoading(true)
+    try {
+      const response = await requestPasswordReset(email)
+      setSuccess(response.message)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao solicitar recuperação de senha.")
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  function switchMode(nextMode: "login" | "signup") {
+    setMode(nextMode)
+    setError(null)
+    setSuccess(null)
   }
 
   return (
@@ -85,12 +125,74 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
           </div>
 
           <div className={styles.formHeader}>
-            <p className={styles.formTitle}>Bem-vindo de volta</p>
-            <p className={styles.formSub}>Faça login para acessar o sistema</p>
+            <p className={styles.formTitle}>{mode === "login" ? "Bem-vindo de volta" : "Criar conta de paciente"}</p>
+            <p className={styles.formSub}>
+              {mode === "login"
+                ? "Faça login para acessar o sistema"
+                : "Cadastre-se pelo e-mail para receber o acesso ao portal"}
+            </p>
+          </div>
+
+          <div className={styles.modeTabs} role="tablist" aria-label="Tipo de acesso">
+            <button
+              type="button"
+              className={`${styles.modeTab} ${mode === "login" ? styles.modeTabActive : ""}`}
+              onClick={() => switchMode("login")}
+            >
+              Entrar
+            </button>
+            <button
+              type="button"
+              className={`${styles.modeTab} ${mode === "signup" ? styles.modeTabActive : ""}`}
+              onClick={() => switchMode("signup")}
+            >
+              Criar conta
+            </button>
           </div>
 
           {/* Formulário */}
           <form onSubmit={handleSubmit} className={styles.form}>
+            {mode === "signup" && (
+              <>
+                <p className={styles.signupHint}>
+                  O cadastro usa o endpoint público da API e envia o acesso para o e-mail informado.
+                </p>
+                <div className={styles.fieldGroup}>
+                  <label className={styles.label}>Nome completo</label>
+                  <input
+                    type="text" placeholder="Seu nome" value={name}
+                    onChange={(e) => { setName(e.target.value); setError(null); setSuccess(null) }}
+                    className={styles.input} autoComplete="name"
+                  />
+                </div>
+                <div className={styles.signupGrid}>
+                  <div className={styles.fieldGroup}>
+                    <label className={styles.label}>CPF</label>
+                    <input
+                      type="text" placeholder="000.000.000-00" value={cpf}
+                      onChange={(e) => { setCpf(e.target.value); setError(null); setSuccess(null) }}
+                      className={styles.input} autoComplete="off"
+                    />
+                  </div>
+                  <div className={styles.fieldGroup}>
+                    <label className={styles.label}>Nascimento</label>
+                    <input
+                      type="date" value={dob}
+                      onChange={(e) => { setDob(e.target.value); setError(null); setSuccess(null) }}
+                      className={styles.input}
+                    />
+                  </div>
+                </div>
+                <div className={styles.fieldGroup}>
+                  <label className={styles.label}>Telefone</label>
+                  <input
+                    type="tel" placeholder="(00) 00000-0000" value={phone}
+                    onChange={(e) => { setPhone(e.target.value); setError(null); setSuccess(null) }}
+                    className={styles.input} autoComplete="tel"
+                  />
+                </div>
+              </>
+            )}
             <div className={styles.fieldGroup}>
               <label className={styles.label}>E-mail</label>
               <input
@@ -99,39 +201,52 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
                 className={styles.input} autoComplete="username"
               />
             </div>
-            <div className={styles.fieldGroup}>
-              <label className={styles.label}>Senha</label>
-              <div className={styles.passwordWrapper}>
-                <input
-                  type={showPassword ? "text" : "password"} placeholder="••••••••" value={password}
-                  onChange={(e) => { setPassword(e.target.value); setError(null) }}
-                  className={styles.input} autoComplete="current-password"
-                />
-                <button type="button" className={styles.showPasswordBtn}
-                  onClick={() => setShowPassword((v) => !v)} tabIndex={-1}>
-                  {showPassword ? (
-                    <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round">
-                      <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24" />
-                      <path d="M1 1l22 22" />
-                    </svg>
-                  ) : (
-                    <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round">
-                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
-                    </svg>
-                  )}
-                </button>
+            {mode === "login" && (
+              <div className={styles.fieldGroup}>
+                <div className={styles.labelRow}>
+                  <label className={styles.label}>Senha</label>
+                  <button
+                    type="button"
+                    className={styles.linkBtn}
+                    onClick={handlePasswordReset}
+                    disabled={isLoading}
+                  >
+                    Esqueci minha senha
+                  </button>
+                </div>
+                <div className={styles.passwordWrapper}>
+                  <input
+                    type={showPassword ? "text" : "password"} placeholder="••••••••" value={password}
+                    onChange={(e) => { setPassword(e.target.value); setError(null); setSuccess(null) }}
+                    className={styles.input} autoComplete="current-password"
+                  />
+                  <button type="button" className={styles.showPasswordBtn}
+                    onClick={() => setShowPassword((v) => !v)} tabIndex={-1}>
+                    {showPassword ? (
+                      <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round">
+                        <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24" />
+                        <path d="M1 1l22 22" />
+                      </svg>
+                    ) : (
+                      <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
             {error && <p className={styles.errorMsg}>{error}</p>}
+            {success && <p className={styles.successMsg}>{success}</p>}
 
             <button type="submit" className={styles.submitBtn} disabled={isLoading}>
-              {isLoading ? "Entrando..." : "Entrar"}
+              {isLoading ? (mode === "signup" ? "Criando..." : "Entrando...") : (mode === "signup" ? "Criar conta" : "Entrar")}
             </button>
           </form>
 
           {/* Card gestor */}
-          <div className={styles.demoSection}>
+          {mode === "login" && <div className={styles.demoSection}>
             <p className={styles.demoTitle}>Acesso rápido</p>
             <div className={styles.demoGrid}>
               <button
@@ -157,9 +272,9 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
               </button>
             </div>
             <p style={{ fontSize: 11, color: "var(--muted-foreground)", marginTop: 10, textAlign: "center" }}>
-              Outros perfis (médico, secretária) são criados pelo gestor em <strong>Equipe</strong>.
+              Pacientes podem criar a própria conta acima. Outros perfis são criados pelo gestor em <strong>Equipe</strong>.
             </p>
-          </div>
+          </div>}
         </div>
       </div>
 

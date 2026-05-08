@@ -4,6 +4,9 @@ import type { UserRole, PageId } from "../types"
 // Páginas permitidas por perfil
 // ─────────────────────────────────────────────────────────────────
 export const ROLE_PAGES: Record<UserRole, PageId[]> = {
+  patient: [
+    "patient-portal",
+  ],
 
   // Médico — prontuário, laudos, agenda própria, comunicação, relatórios
   doctor: [
@@ -74,6 +77,7 @@ export const ROLE_PAGES: Record<UserRole, PageId[]> = {
 // Ações permitidas por perfil (controle fino dentro das páginas)
 // ─────────────────────────────────────────────────────────────────
 export const ROLE_ACTIONS: Record<UserRole, string[]> = {
+  patient:   ["view_own_appointments", "view_own_reports"],
   doctor:    ["view_records", "create_records", "update_records", "view_reports", "create_reports", "update_reports", "view_own_appointments", "manage_own_availability", "send_messages"],
   manager:   ["view_records", "create_records", "update_records", "delete_records", "view_reports", "create_reports", "update_reports", "delete_reports", "view_all_appointments", "create_appointments", "delete_appointments", "manage_availability", "manage_patients", "delete_patients", "manage_team", "view_financial", "manage_financial", "send_messages"],
   admin:     ["view_records", "create_records", "update_records", "delete_records", "view_reports", "create_reports", "update_reports", "delete_reports", "view_all_appointments", "create_appointments", "delete_appointments", "manage_availability", "manage_patients", "delete_patients", "manage_team", "view_financial", "manage_financial", "send_messages"],
@@ -82,6 +86,7 @@ export const ROLE_ACTIONS: Record<UserRole, string[]> = {
 }
 
 export const ROLE_LABELS: Record<UserRole, string> = {
+  patient:   "Paciente",
   doctor:    "Médico(a)",
   manager:   "Gestão",
   admin:     "Administrador",
@@ -90,6 +95,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
 }
 
 export const ROLE_DESCRIPTION: Record<UserRole, string> = {
+  patient:   "Consultas e laudos vinculados",
   doctor:    "Prontuários, laudos e agenda própria",
   manager:   "Acesso completo ao sistema",
   admin:     "Acesso completo ao sistema",
@@ -98,6 +104,7 @@ export const ROLE_DESCRIPTION: Record<UserRole, string> = {
 }
 
 export const ROLE_COLORS: Record<UserRole, string> = {
+  patient:   "#14b8a6",
   doctor:    "#0ea5e9",
   manager:   "#6366f1",
   admin:     "#6366f1",

@@ -1,10 +1,10 @@
-export { login } from "./auth"
-export type { LoginResponse, LoginPayload } from "./auth"
+export { login, createPatientAccount, requestPasswordReset } from "./auth"
+export type { LoginResponse, LoginPayload, PatientSignupPayload, PatientSignupResponse } from "./auth"
 
 export { apiRequest, setApiContext, ApiError, setUnauthorizedHandler } from "./api"
 
 export {
-  getPatients, createPatient, updatePatient, deletePatient,
+  getPatients, createPatient, createPatientWithPassword, createPatientPortalAccess, updatePatient, deletePatient,
 } from "./patients"
 
 export {

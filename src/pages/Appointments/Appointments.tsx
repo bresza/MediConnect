@@ -13,7 +13,8 @@ import { Avatar } from "../../components/ui/Avatar/Avatar"
 import { Button } from "../../components/ui/Button/Button"
 import { Select } from "../../components/ui/Select/Select"
 import { checkConflict, formatAppointmentType } from "../../utils"
-import { getAppointmentDoctors, getAvailableSlots } from "../../services/appointments"
+import { getAppointmentDoctors, getAvailableSlots, getDoctorAvailability } from "../../services/appointments"
+import type { DoctorAvailability } from "../../services/appointments"
 import type { Appointment, Patient, User } from "../../types"
 import styles from "./Appointments.module.css"
 
@@ -89,6 +90,15 @@ function localDateTime(date: Date): string {
   return `${toDateStr(date)}T${localTime(date)}:00`
 }
 
+function timeToMinutes(value: string): number {
+  const [hours, minutes] = value.slice(0, 5).split(":").map(Number)
+  return hours * 60 + minutes
+}
+
+function minutesToTime(value: number): string {
+  return `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`
+}
+
 function addMinutes(date: Date, minutes: number): Date {
   const next = new Date(date)
   next.setMinutes(next.getMinutes() + minutes)
@@ -143,7 +153,7 @@ export function Appointments({
   const [doctors, setDoctors] = useState<{ id: string; name: string }[]>([])
   const [isLoadingDoctors, setIsLoadingDoctors] = useState(true)
   const [doctorsError, setDoctorsError] = useState<string | null>(null)
-  const [calendarView, setCalendarView] = useState<CalendarView>("timeGridWeek")
+  const [calendarView, setCalendarView] = useState<CalendarView>("dayGridMonth")
   const [calendarTitle, setCalendarTitle] = useState("")
   const [filterDoctorId, setFilterDoctorId] = useState("")
   const [selected, setSelected] = useState<Appointment | null>(null)
@@ -154,6 +164,9 @@ export function Appointments({
   const [availableSlots, setAvailableSlots] = useState<string[]>([])
   const [isLoadingSlots, setIsLoadingSlots] = useState(false)
   const [slotsError, setSlotsError] = useState<string | null>(null)
+  const [availabilityRows, setAvailabilityRows] = useState<DoctorAvailability[]>([])
+  const [isLoadingAvailability, setIsLoadingAvailability] = useState(false)
+  const [availabilityError, setAvailabilityError] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -179,6 +192,46 @@ export function Appointments({
       doctor.id === currentUser.id ||
       doctor.name.toLowerCase().trim() === currentUser.name.toLowerCase().trim())
   }, [currentUser.id, currentUser.name, doctors])
+
+  const visibleDoctorIds = useMemo(() => {
+    if (isDoctor) return [currentDoctor?.id ?? currentUser.id].filter(Boolean)
+    if (filterDoctorId) return [filterDoctorId]
+    return doctors.map((doctor) => doctor.id)
+  }, [currentDoctor?.id, currentUser.id, doctors, filterDoctorId, isDoctor])
+
+  const scopedCalendarDoctorId = useMemo(() => {
+    if (isDoctor) return currentDoctor?.id ?? currentUser.id
+    return filterDoctorId || undefined
+  }, [currentDoctor?.id, currentUser.id, filterDoctorId, isDoctor])
+
+  useEffect(() => {
+    let active = true
+
+    if (visibleDoctorIds.length === 0) {
+      setAvailabilityRows([])
+      setAvailabilityError(null)
+      setIsLoadingAvailability(false)
+      return () => { active = false }
+    }
+
+    setIsLoadingAvailability(true)
+    setAvailabilityError(null)
+    Promise.all(visibleDoctorIds.map((doctorId) => getDoctorAvailability(doctorId)))
+      .then((rows) => {
+        if (!active) return
+        setAvailabilityRows(rows.flat())
+      })
+      .catch((err) => {
+        if (!active) return
+        setAvailabilityRows([])
+        setAvailabilityError(err instanceof Error ? err.message : "Erro ao carregar disponibilidade")
+      })
+      .finally(() => {
+        if (active) setIsLoadingAvailability(false)
+      })
+
+    return () => { active = false }
+  }, [visibleDoctorIds])
 
   const visibleAppointments = useMemo(() => {
     if (isDoctor) {
@@ -213,6 +266,18 @@ export function Appointments({
     }),
     [visibleAppointments],
   )
+
+  const calendarSlotMin = useMemo(() => {
+    if (availabilityRows.length === 0) return "07:00:00"
+    const min = Math.min(...availabilityRows.map((row) => timeToMinutes(row.startTime)))
+    return `${minutesToTime(Math.max(0, min - 30))}:00`
+  }, [availabilityRows])
+
+  const calendarSlotMax = useMemo(() => {
+    if (availabilityRows.length === 0) return "18:00:00"
+    const max = Math.max(...availabilityRows.map((row) => timeToMinutes(row.endTime)))
+    return `${minutesToTime(Math.min(24 * 60, max + 30))}:00`
+  }, [availabilityRows])
 
   const summary = useMemo(() => {
     const todayAppointments = visibleAppointments.filter((appointment) => appointment.date === today)
@@ -262,6 +327,39 @@ export function Appointments({
       if (slotRequestRef.current === requestId) setIsLoadingSlots(false)
     }
   }, [])
+
+  function hasAvailabilityAt(date: Date, doctorId?: string): boolean {
+    if (date <= new Date()) return false
+    const dateStr = toDateStr(date)
+    const minutes = timeToMinutes(localTime(date))
+
+    return availabilityRows.some((row) => {
+      if (doctorId && row.doctorId !== doctorId) return false
+      if (row.weekday !== date.getDay()) return false
+      return dateStr >= today &&
+        minutes >= timeToMinutes(row.startTime) &&
+        minutes < timeToMinutes(row.endTime)
+    })
+  }
+
+  function hasAvailabilityOnDate(date: Date, doctorId?: string): boolean {
+    const dateStr = toDateStr(date)
+    if (dateStr < today) return false
+    return availabilityRows.some((row) => {
+      if (doctorId && row.doctorId !== doctorId) return false
+      return row.weekday === date.getDay()
+    })
+  }
+
+  function availableDoctorFor(date: Date) {
+    const minutes = timeToMinutes(localTime(date))
+    const row = availabilityRows.find((item) =>
+      item.weekday === date.getDay() &&
+      minutes >= timeToMinutes(item.startTime) &&
+      minutes < timeToMinutes(item.endTime))
+
+    return row ? doctors.find((doctor) => doctor.id === row.doctorId) : undefined
+  }
 
   function changeView(view: CalendarView) {
     setCalendarView(view)
@@ -317,7 +415,7 @@ export function Appointments({
   function openModal(startDate?: Date, appointment?: Appointment) {
     if (!canManage) return
 
-    const fallbackDoctor = defaultDoctor()
+    const fallbackDoctor = startDate ? (defaultDoctor() ?? availableDoctorFor(startDate)) : defaultDoctor()
     const date = appointment?.date ?? (startDate ? toDateStr(startDate) : today)
     const time = appointment?.time ?? (startDate ? localTime(startDate) : "")
     const doctorId = appointment?.doctorId ?? fallbackDoctor?.id ?? ""
@@ -465,6 +563,16 @@ export function Appointments({
       window.alert("Agendamentos só podem ser criados para horários futuros.")
       return
     }
+
+    const isAvailableSelection = arg.allDay
+      ? hasAvailabilityOnDate(clicked, scopedCalendarDoctorId)
+      : hasAvailabilityAt(clicked, scopedCalendarDoctorId)
+
+    if (!isAvailableSelection) {
+      window.alert(isLoadingAvailability ? "Aguarde o carregamento da disponibilidade." : "Este horário não possui disponibilidade cadastrada.")
+      return
+    }
+
     openModal(clicked)
   }
 
@@ -524,6 +632,7 @@ export function Appointments({
 
           <div className={styles.calendarShell}>
             {doctorsError && <p className={styles.availabilityNotice}>Não foi possível carregar médicos: {doctorsError}</p>}
+            {availabilityError && <p className={styles.availabilityNotice}>Não foi possível carregar disponibilidade: {availabilityError}</p>}
             <FullCalendar
               ref={calendarRef}
               plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin, listPlugin]}
@@ -532,8 +641,8 @@ export function Appointments({
               headerToolbar={false}
               events={events}
               height="auto"
-              slotMinTime="07:00:00"
-              slotMaxTime="19:00:00"
+              slotMinTime={calendarSlotMin}
+              slotMaxTime={calendarSlotMax}
               slotDuration="00:30:00"
               snapDuration="00:30:00"
               allDaySlot={false}
@@ -548,7 +657,19 @@ export function Appointments({
               eventMaxStack={3}
               slotEventOverlap={false}
               expandRows
-              datesSet={(arg) => setCalendarTitle(arg.view.title)}
+              dayCellClassNames={(arg) => {
+                if (toDateStr(arg.date) < today) return [styles.pastDay]
+                return hasAvailabilityOnDate(arg.date, scopedCalendarDoctorId) ? [styles.availableDay] : [styles.unavailableDay]
+              }}
+              dayHeaderClassNames={(arg) => toDateStr(arg.date) < today ? [styles.pastHeader] : []}
+              slotLaneClassNames={(arg) => {
+                if (!arg.date) return []
+                if (arg.date <= new Date()) return [styles.pastSlot]
+                return hasAvailabilityAt(arg.date, scopedCalendarDoctorId) ? [styles.availableSlot] : [styles.unavailableSlot]
+              }}
+              datesSet={(arg) => {
+                setCalendarTitle(arg.view.title)
+              }}
               dateClick={handleDateClick}
               eventClick={handleEventClick}
               eventDrop={handleEventDrop}
