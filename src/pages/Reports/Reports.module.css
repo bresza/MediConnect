@@ -111,7 +111,7 @@
 /* ── Editor meta bar ──────────────────────────────────────────── */
 .editorMeta {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(3, 1fr);
   gap: 12px;
   padding: 16px;
   border-bottom: 1px solid var(--border);
@@ -188,15 +188,3 @@
 
 .panelInput:focus { border-color: var(--primary); }
 .panelInput::placeholder { color: var(--muted-foreground); }
-
-@media (max-width: 640px) {
-  .editorMeta {
-    grid-template-columns: 1fr;
-    padding: 12px;
-  }
-
-  .editorBody {
-    min-height: 320px;
-    padding: 14px;
-  }
-}

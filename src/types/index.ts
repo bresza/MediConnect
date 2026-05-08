@@ -1,9 +1,8 @@
 // ─── USER & PERMISSIONS ───────────────────────────────────────────
-export type UserRole = "doctor" | "manager" | "financial" | "secretary" | "admin" | "patient"
+export type UserRole = "doctor" | "manager" | "financial" | "secretary" | "admin"
 
 export interface User {
   id: string; name: string; role: UserRole; email: string; crm?: string; specialty?: string
-  doctorId?: string; patientId?: string; patientCpf?: string; phone?: string; dob?: string
 }
 
 // ─── STAFF ────────────────────────────────────────────────────────
@@ -12,7 +11,6 @@ export type StaffStatus = "Active" | "Inactive"
 
 export interface StaffMember {
   id: string; name: string; role: StaffRole; email: string; phone: string
-  phone2?: string; rg?: string; address?: Address; tempPassword?: string
   status: StaffStatus; cpf?: string; crm?: string; specialty?: string; department?: string
   createdAt: string; updatedAt?: string
 }
@@ -40,7 +38,6 @@ export interface AuditEntry {
 
 export interface Patient {
   id: string; name: string; socialName?: string; cpf: string; rg?: string
-  userId?: string
   documents?: PatientDocument[]; gender: Gender; dob: string; ethnicity?: Ethnicity
   race?: string; birthplace?: string; nationality?: string; occupation?: string
   maritalStatus?: MaritalStatus; motherName?: string; motherOccupation?: string
@@ -139,6 +136,5 @@ export interface Toast { id: string; message: string; variant: ToastVariant }
 // ─── NAVIGATION ───────────────────────────────────────────────────
 export type PageId =
   | "dashboard" | "patients" | "register" | "appointments"
-  | "reports"  | "messages" | "financial"
-  | "settings"  | "patient-profile" | "team" | "patient-portal"
-  | "availability"
+  | "records"   | "reports"  | "messages" | "financial"
+  | "settings"  | "patient-profile" | "team"

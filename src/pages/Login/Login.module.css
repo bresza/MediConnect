@@ -1,7 +1,6 @@
 .root {
   min-height: 100vh;
   display: flex;
-  min-width: 0;
   background: var(--background);
 }
 
@@ -92,7 +91,6 @@
 /* ── Right panel – form ────────────────────────────────────────── */
 .formPanel {
   flex: 1;
-  min-width: 0;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -155,35 +153,6 @@
   font-family: var(--font-sans);
 }
 
-.modeTabs {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px;
-  padding: 4px;
-  margin-bottom: 20px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--muted);
-}
-
-.modeTab {
-  border: 0;
-  border-radius: calc(var(--radius-md) - 2px);
-  padding: 8px 10px;
-  background: transparent;
-  color: var(--muted-foreground);
-  cursor: pointer;
-  font-family: var(--font-sans);
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.modeTabActive {
-  background: var(--background);
-  color: var(--foreground);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
-}
-
 /* ── Form fields ───────────────────────────────────────────────── */
 .form {
   display: flex;
@@ -192,27 +161,10 @@
   margin-bottom: 24px;
 }
 
-.signupHint {
-  margin: 0;
-  padding: 9px 11px;
-  border: 1px solid color-mix(in srgb, var(--primary) 24%, transparent);
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--primary) 10%, transparent);
-  color: var(--foreground);
-  font-size: 12px;
-  line-height: 1.45;
-}
-
 .fieldGroup {
   display: flex;
   flex-direction: column;
   gap: 6px;
-}
-
-.signupGrid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr);
-  gap: 10px;
 }
 
 .label {
@@ -220,30 +172,6 @@
   font-weight: 600;
   font-family: var(--font-sans);
   color: var(--foreground);
-}
-
-.labelRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.linkBtn {
-  border: 0;
-  background: transparent;
-  color: var(--primary);
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 700;
-  font-family: var(--font-sans);
-  padding: 0;
-  white-space: nowrap;
-}
-
-.linkBtn:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
 }
 
 .input {
@@ -296,16 +224,6 @@
   background: color-mix(in srgb, var(--destructive) 10%, transparent);
   border-radius: var(--radius-md);
   border: 1px solid color-mix(in srgb, var(--destructive) 25%, transparent);
-}
-
-.successMsg {
-  font-size: 12px;
-  color: var(--primary);
-  font-family: var(--font-sans);
-  padding: 8px 12px;
-  background: color-mix(in srgb, var(--primary) 10%, transparent);
-  border-radius: var(--radius-md);
-  border: 1px solid color-mix(in srgb, var(--primary) 25%, transparent);
 }
 
 .submitBtn {
@@ -418,27 +336,6 @@
   color: var(--muted-foreground);
   white-space: nowrap;
   flex-shrink: 0;
-}
-
-@media (max-width: 420px) {
-  .formPanel {
-    padding: 28px 16px;
-  }
-
-  .demoCard {
-    align-items: flex-start;
-  }
-
-  .demoCred {
-    white-space: normal;
-    overflow-wrap: anywhere;
-    text-align: right;
-    max-width: 42%;
-  }
-
-  .signupGrid {
-    grid-template-columns: 1fr;
-  }
 }
 
 /* ── Theme toggle ──────────────────────────────────────────────── */

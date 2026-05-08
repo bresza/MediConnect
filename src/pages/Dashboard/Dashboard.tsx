@@ -17,6 +17,13 @@ interface DashboardProps {
   onNavigate: (page: PageId) => void
 }
 
+const PlusIcon = () => (
+  <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.2"
+    viewBox="0 0 24 24" strokeLinecap="round">
+    <path d="M12 5v14M5 12h14" />
+  </svg>
+)
+
 interface StatConfig {
   label: string
   icon: string
@@ -43,13 +50,11 @@ function todayKey() {
 
 export function Dashboard({ patients, appointments, currentUser, onNavigate }: DashboardProps) {
   const isDoctor = currentUser.role === "doctor"
-  const currentDoctorId = currentUser.doctorId ?? currentUser.id
 
   const [allReports, setAllReports] = useState<Report[]>([])
   useEffect(() => { getReports().then(setAllReports).catch(() => setAllReports([])) }, [])
 
   const isCurrentDoctor = (doctorId?: string, doctorName?: string) =>
-    doctorId === currentDoctorId ||
     doctorId === currentUser.id ||
     doctorName === currentUser.name ||
     doctorName?.toLowerCase().trim() === currentUser.name.toLowerCase().trim()
@@ -90,6 +95,11 @@ export function Dashboard({ patients, appointments, currentUser, onNavigate }: D
       <Topbar
         title={currentUser.role === "doctor" ? "Meu Painel" : currentUser.role === "secretary" ? "Recepção" : "Dashboard"}
         subtitle={`Visão geral · ${today}`}
+        action={!isDoctor ? (
+          <Button onClick={() => onNavigate("register")} icon={<PlusIcon />}>
+            Novo paciente
+          </Button>
+        ) : undefined}
       />
 
       {/* Stats */}

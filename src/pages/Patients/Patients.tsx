@@ -14,10 +14,10 @@ interface PatientsProps {
   patients: Patient[]
   onNavigate: (page: PageId) => void
   onEditPatient: (p: Patient) => void
+  onViewRecords?: (p: Patient) => void
   onViewProfile?: (p: Patient) => void
   onDeletePatient?: (id: string) => void | Promise<void>
   canCreatePatient?: boolean
-  onRefresh?: () => Promise<void>
   toast?: UseToastReturn["toast"]
 }
 
@@ -37,18 +37,11 @@ const TrashIcon = () => (
     <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6M10 11v6M14 11v6M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2" />
   </svg>
 )
-const RefreshIcon = () => (
-  <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 12a9 9 0 11-2.64-6.36" />
-    <path d="M21 3v6h-6" />
-  </svg>
-)
 
-export function Patients({ patients, onNavigate, onEditPatient, onViewProfile, onDeletePatient, canCreatePatient = true, onRefresh, toast }: PatientsProps) {
+export function Patients({ patients, onNavigate, onEditPatient, onViewRecords, onViewProfile, onDeletePatient, canCreatePatient = true }: PatientsProps) {
   const [search, setSearch]             = useState("")
   const [filterStatus, setFilterStatus] = useState<"All" | "Active" | "Inactive">("All")
   const [confirmId, setConfirmId]       = useState<string | null>(null)
-  const [isRefreshing, setIsRefreshing] = useState(false)
 
   const filtered = patients.filter((p) =>
     (filterStatus === "All" || p.status === filterStatus) &&
@@ -58,25 +51,8 @@ export function Patients({ patients, onNavigate, onEditPatient, onViewProfile, o
   const FILTER_LABELS = { All: "Todos", Active: "Ativo", Inactive: "Inativo" } as const
 
   function handleDeleteConfirm() {
-    if (confirmId !== null) {
-      void Promise.resolve(onDeletePatient?.(confirmId)).catch((err) => {
-        toast?.(err instanceof Error ? err.message : "Erro ao remover paciente.", "error")
-      })
-    }
+    if (confirmId !== null) onDeletePatient?.(confirmId)
     setConfirmId(null)
-  }
-
-  async function handleRefresh() {
-    if (!onRefresh || isRefreshing) return
-    setIsRefreshing(true)
-    try {
-      await onRefresh()
-      toast?.("Lista de pacientes atualizada.", "success")
-    } catch (err) {
-      toast?.(err instanceof Error ? err.message : "Erro ao atualizar pacientes.", "error")
-    } finally {
-      setIsRefreshing(false)
-    }
   }
 
   return (
@@ -96,11 +72,6 @@ export function Patients({ patients, onNavigate, onEditPatient, onViewProfile, o
             {FILTER_LABELS[s]}
           </button>
         ))}
-        {onRefresh && (
-          <Button variant="ghost" onClick={handleRefresh} loading={isRefreshing} icon={<RefreshIcon />}>
-            Atualizar
-          </Button>
-        )}
       </div>
       <Card>
         {filtered.length === 0 ? (
@@ -134,6 +105,7 @@ export function Patients({ patients, onNavigate, onEditPatient, onViewProfile, o
                       <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}>
                         <div className={styles.actions} onClick={(e) => e.stopPropagation()}>
                           <Button size="sm" variant="ghost" onClick={() => onEditPatient(p)}>Editar</Button>
+                          {onViewRecords && <Button size="sm" variant="ghost" onClick={() => onViewRecords(p)}>Prontuário</Button>}
                           {onDeletePatient && (
                             <button className={styles.deleteBtn} onClick={() => setConfirmId(p.id)} title="Remover paciente"><TrashIcon /></button>
                           )}

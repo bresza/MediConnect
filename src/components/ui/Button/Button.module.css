@@ -1,8 +1,5 @@
 .btn {
   display: inline-flex; align-items: center;
-  justify-content: center;
-  max-width: 100%;
-  min-width: 0;
   border-radius: var(--radius-lg);
   font-weight: 600; cursor: pointer;
   font-family: var(--font-sans);

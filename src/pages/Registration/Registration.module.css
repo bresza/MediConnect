@@ -28,23 +28,6 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  padding: 0;
-}
-
-.stepButton {
-  cursor: pointer;
-}
-
-.stepButton:hover .stepLabel {
-  color: var(--foreground);
-}
-
-.stepInner:disabled {
-  cursor: default;
 }
 
 .stepCircle {
@@ -213,20 +196,6 @@
 
 :global(.dark) .lgpdBox { background-color: rgb(59 130 246 / 0.10); }
 :global(.dark) .lgpdText { color: #93c5fd; }
-
-.portalAccessBox {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--muted);
-  padding: 14px;
-}
-
-.portalAccessText {
-  color: var(--muted-foreground);
-  font-size: 12px;
-  line-height: 1.45;
-  margin: 4px 0 14px;
-}
 
 .textarea {
   width: 100%;

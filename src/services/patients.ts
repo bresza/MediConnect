@@ -1,14 +1,13 @@
-import { ApiError, apiRequest, getApiUserId } from "./api"
-import { rememberPatientLink } from "./patientLinks"
+import { apiRequest, getApiUserId } from "./api"
 import type {
   Patient, Gender, PatientStatus, MaritalStatus,
   Ethnicity, CommunicationChannel, CommunicationFrequency,
   EmergencyContact, Address,
 } from "../types"
+import { normalizeEmail, onlyDigits } from "../utils/masks"
 
 interface ApiPatient {
   id:                       string
-  user_id?:                  string
   full_name:                string
   cpf:                      string
   email?:                   string
@@ -38,53 +37,11 @@ interface ApiPatient {
   created_at?:              string
   updated_at?:              string
   photo_url?:               string
-  landline?:                string
-  alternative_phone?:       string
-  mother_name?:             string
-  mother_occupation?:       string
-  father_name?:             string
-  father_occupation?:       string
-  guardian_name?:           string
-  guardian_cpf?:            string
-  spouse_name?:             string
-  legacy_code?:             string
-}
-
-interface CreateUserWithPasswordResponse {
-  success?: boolean
-  user?: {
-    id: string
-    email: string
-    full_name: string
-    roles: string[]
-    email_confirmed_at?: string | null
-  }
-  user_id?: string
-  patient_id?: string
-  profile?: unknown
-  role?: string
-  message?: string
-}
-
-interface ApiProfile {
-  id: string
-  email?: string
-  full_name?: string
-  patient_id?: string
-}
-
-interface PatientIdentity {
-  patientId?: string
-  userId?: string
-  name?: string
-  email?: string
-  cpf?: string
 }
 
 function apiToPatient(api: ApiPatient): Patient {
   return {
     id:                     api.id,
-    userId:                 api.user_id,
     name:                   api.full_name,
     cpf:                    api.cpf,
     email:                  api.email,
@@ -114,16 +71,6 @@ function apiToPatient(api: ApiPatient): Patient {
     createdAt:              api.created_at,
     updatedAt:              api.updated_at,
     photoUrl:               api.photo_url,
-    landline:               api.landline,
-    alternativePhone:       api.alternative_phone,
-    motherName:             api.mother_name,
-    motherOccupation:       api.mother_occupation,
-    fatherName:             api.father_name,
-    fatherOccupation:       api.father_occupation,
-    guardianName:           api.guardian_name,
-    guardianCpf:            api.guardian_cpf,
-    spouseName:             api.spouse_name,
-    legacyCode:             api.legacy_code,
   }
 }
 
@@ -143,651 +90,65 @@ function onlyDigits(value?: string): string | undefined {
   return digits || undefined
 }
 
-function patientToFullApi(p: Omit<Patient, "id"> | Patient): Record<string, unknown> {
-  return compactPayload({
-    full_name:    p.name?.trim(),
-    cpf:          onlyDigits(p.cpf),
-    email:        p.email?.trim(),
-    phone_mobile: onlyDigits(p.phone),
-    birth_date:   p.dob,
-    gender:       p.gender,
-    status:       p.status ?? "Active",
+function patientToApi(
+  p: Omit<Patient, "id"> | Patient,
+  mode: "create" | "update" = "create",
+): Record<string, unknown> {
+  return {
+    full_name: p.name?.trim() || null,
 
-    social_name:             p.socialName,
-    rg:                      p.rg,
-    marital_status:          p.maritalStatus,
-    occupation:              p.occupation,
-    nationality:             p.nationality,
-    birthplace:              p.birthplace,
-    ethnicity:               p.ethnicity,
-    health_insurance:        p.healthInsurance,
-    health_insurance_number: p.healthInsuranceNumber,
-    is_vip:                  p.isVip,
-    emergency_contact:       p.emergencyContact,
-    address:                 p.address,
-    observations:            p.observations,
-    preferred_channel:       p.preferredChannel,
-    communication_frequency: p.communicationFrequency,
-    opt_in:                  p.optIn,
-    behavior_score:          p.behaviorScore,
-    photo_url:               p.photoUrl,
-    landline:                onlyDigits(p.landline),
-    alternative_phone:       onlyDigits(p.alternativePhone),
-    mother_name:             p.motherName,
-    mother_occupation:       p.motherOccupation,
-    father_name:             p.fatherName,
-    father_occupation:       p.fatherOccupation,
-    guardian_name:           p.guardianName,
-    guardian_cpf:            onlyDigits(p.guardianCpf),
-    spouse_name:             p.spouseName,
-    legacy_code:             p.legacyCode,
-    user_id:                 "userId" in p ? p.userId : undefined,
-  })
-}
+    cpf: p.cpf ? onlyDigits(p.cpf) : null,
 
-function patientToApi(p: Omit<Patient, "id"> | Patient): Record<string, unknown> {
-  const payload = patientToFullApi(p)
-  return compactPayload({
-    full_name:    payload.full_name,
-    cpf:          payload.cpf,
-    email:        payload.email,
-    phone_mobile: payload.phone_mobile,
-    birth_date:   payload.birth_date,
-  })
-}
+    email: normalizeEmail(p.email ?? "") || "sememail@temp.com",
 
-function patientToDirectApi(p: Omit<Patient, "id"> | Patient): Record<string, unknown> {
-  return compactPayload({
-    ...patientToFullApi(p),
-    created_by: getApiUserId() ?? undefined,
-  })
-}
-
-function isSchemaMismatch(err: unknown): boolean {
-  return err instanceof ApiError &&
-    err.status === 400 &&
-    (
-      /schema cache|could not find|column|PGRST204|unexpected|unknown/i.test(err.message) ||
-      /invalid input value.*(gender|status|marital_status|ethnicity|preferred_channel|communication_frequency)/i.test(err.message)
-    )
-}
-
-function extractCreatedPatient(data: unknown): ApiPatient | null {
-  if (!data) return null
-  if (Array.isArray(data)) return (data[0] as ApiPatient | undefined) ?? null
-  if (typeof data !== "object") return null
-
-  const obj = data as Partial<ApiPatient> & {
-    patient?: ApiPatient
-    data?: ApiPatient
+    phone_mobile: p.phone ? onlyDigits(p.phone) : null,
   }
-
-  return obj.patient ?? obj.data ?? (obj.id && obj.full_name ? obj as ApiPatient : null)
-}
-
-async function findPatientByCpf(cpf: unknown): Promise<ApiPatient | null> {
-  if (typeof cpf !== "string" || cpf.length === 0) return null
-  const rows = await apiRequest<ApiPatient[]>(
-    `/rest/v1/patients?cpf=eq.${encodeURIComponent(cpf)}&select=*&limit=1`,
-  )
-  return rows?.[0] ?? null
-}
-
-async function createPatientValidated(
-  path: string,
-  payload: Record<string, unknown>,
-): Promise<ApiPatient[] | ApiPatient | undefined> {
-  return apiRequest<ApiPatient[] | ApiPatient | undefined>(
-    path,
-    {
-      method: "POST",
-      body: payload,
-      logErrors: false,
-    },
-  )
-}
-
-async function createPatientDirect(
-  data: Omit<Patient, "id">,
-): Promise<Patient> {
-  const payload = patientToDirectApi(data)
-  const minimalPayload = compactPayload({
-    ...patientToApi(data),
-    created_by: payload.created_by,
-  })
-
-  if (!payload.created_by) {
-    throw new Error("Sessão inválida. Faça login novamente para cadastrar pacientes.")
-  }
-
-  let created: ApiPatient[] | ApiPatient | undefined
-  try {
-    created = await apiRequest<ApiPatient[] | ApiPatient | undefined>(
-      "/rest/v1/patients",
-      {
-        method: "POST",
-        headers: { Prefer: "return=representation" },
-        body: payload,
-        logErrors: false,
-      },
-    )
-  } catch (err) {
-    if (!isSchemaMismatch(err)) throw err
-    created = await apiRequest<ApiPatient[] | ApiPatient | undefined>(
-      "/rest/v1/patients",
-      {
-        method: "POST",
-        headers: { Prefer: "return=representation" },
-        body: minimalPayload,
-      },
-    )
-  }
-
-  const raw = extractCreatedPatient(created) ?? await findPatientByCpf(minimalPayload.cpf)
-  if (!raw) throw new Error("Paciente criado, mas a API não retornou o registro cadastrado.")
-  const patient = apiToPatient(raw)
-  rememberPatientLink({ patientId: patient.id, name: patient.name, email: patient.email, cpf: patient.cpf })
-  return patient
-}
-
-async function createPatientUserWithPassword(
-  path: string,
-  payload: Record<string, unknown>,
-): Promise<CreateUserWithPasswordResponse> {
-  return apiRequest<CreateUserWithPasswordResponse>(path, {
-    method: "POST",
-    body: payload,
-    logErrors: false,
-  })
-}
-
-async function createPatientUser(payload: Record<string, unknown>): Promise<CreateUserWithPasswordResponse> {
-  try {
-    return await createPatientUserWithPassword("/functions/v1/create-user-with-password", payload)
-  } catch (err) {
-    if (!(err instanceof ApiError) || err.status !== 404) throw err
-  }
-
-  return createPatientUserWithPassword("/create-user-with-password", payload)
-}
-
-function createdUserId(response: CreateUserWithPasswordResponse): string {
-  return response.user?.id ?? response.user_id ?? ""
-}
-
-async function ensurePatientRole(userId: string): Promise<void> {
-  if (!userId) return
-
-  const existing = await apiRequest<{ user_id: string; role: string }[]>(
-    `/rest/v1/user_roles?user_id=eq.${encodeURIComponent(userId)}&role=eq.paciente&select=user_id,role&limit=1`,
-  ).catch(() => [])
-  if (existing?.length) return
-
-  await apiRequest("/rest/v1/user_roles", {
-    method: "POST",
-    headers: { Prefer: "return=minimal" },
-    body: { user_id: userId, role: "paciente" },
-  }).catch((err) => {
-    console.warn("[user_roles] sincronizacao de paciente falhou:", err)
-  })
-}
-
-async function ensurePatientProfile(
-  userId: string,
-  data: Omit<Patient, "id"> | Patient,
-): Promise<void> {
-  if (!userId) return
-
-  const fullPayload = compactPayload({
-    id: userId,
-    full_name: data.name.trim(),
-    email: data.email?.trim(),
-    phone: onlyDigits(data.phone),
-  })
-
-  const minimalPayload = compactPayload({
-    id: userId,
-    full_name: data.name.trim(),
-    email: data.email?.trim(),
-    phone: onlyDigits(data.phone),
-  })
-
-  try {
-    await apiRequest("/rest/v1/profiles", {
-      method: "POST",
-      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-      body: fullPayload,
-      logErrors: false,
-    })
-  } catch (err) {
-    if (!isSchemaMismatch(err)) {
-      console.warn("[profiles] sincronizacao de perfil paciente falhou:", err)
-      return
-    }
-    await apiRequest("/rest/v1/profiles", {
-      method: "POST",
-      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-      body: minimalPayload,
-      logErrors: false,
-    }).catch((fallbackErr) => {
-      console.warn("[profiles] sincronizacao minima de perfil paciente falhou:", fallbackErr)
-    })
-  }
-}
-
-async function findProfileByEmail(email?: string): Promise<ApiProfile | null> {
-  if (!email) return null
-  const rows = await apiRequest<ApiProfile[]>(
-    `/rest/v1/profiles?email=eq.${encodeURIComponent(email.trim())}&select=*&limit=1`,
-  ).catch(() => [])
-  return rows?.[0] ?? null
-}
-
-function isAlreadyRegisteredError(err: unknown): boolean {
-  return err instanceof Error &&
-    /already been registered|already registered|email.*registered|email.*exists|usu[aá]rio.*existe|e-?mail.*cadastrado/i.test(err.message)
-}
-
-async function findPatientById(id?: string): Promise<ApiPatient | null> {
-  if (!id) return null
-  const rows = await apiRequest<ApiPatient[]>(
-    `/rest/v1/patients?id=eq.${encodeURIComponent(id)}&select=*&limit=1`,
-  )
-  return rows?.[0] ?? null
-}
-
-function isBlockedDependencyDelete(err: unknown): boolean {
-  return err instanceof Error && /A API não removeu .* vinculados ao paciente/i.test(err.message)
-}
-
-async function deletePatientAuthUser(userId: string, email?: string): Promise<boolean> {
-  if (!userId) return false
-
-  async function request(path: string): Promise<void> {
-    await apiRequest(path, {
-      method: "POST",
-      body: {
-        userId,
-        user_id: userId,
-        email: email || undefined,
-        hard_delete: true,
-        hardDelete: true,
-      },
-      logErrors: false,
-    })
-  }
-
-  let lastError: unknown = null
-  for (const path of ["/functions/v1/delete-user", "/delete-user"]) {
-    try {
-      await request(path)
-      return true
-    } catch (err) {
-      lastError = err
-      if (!(err instanceof ApiError) || (err.status !== 404 && err.status !== 0)) throw err
-    }
-  }
-
-  console.warn("[delete-user] endpoint indisponivel, usando fallback REST:", lastError)
-  return false
-}
-
-function patientIdentityFilters(identity: PatientIdentity): string[] {
-  const cpf = onlyDigits(identity.cpf)
-  const name = identity.name?.trim()
-  return [
-    identity.patientId ? `id.eq.${encodeURIComponent(identity.patientId)}` : "",
-    identity.userId ? `user_id.eq.${encodeURIComponent(identity.userId)}` : "",
-    identity.email ? `email.eq.${encodeURIComponent(identity.email.trim().toLowerCase())}` : "",
-    cpf ? `cpf.eq.${encodeURIComponent(cpf)}` : "",
-    name ? `full_name.ilike.*${encodeURIComponent(name)}*` : "",
-  ].filter(Boolean)
-}
-
-function scorePatientMatch(api: ApiPatient, identity: PatientIdentity): number {
-  const cpf = onlyDigits(identity.cpf)
-  const email = identity.email?.trim().toLowerCase()
-  const name = identity.name?.trim().toLowerCase()
-  if (identity.patientId && api.id === identity.patientId) return 50
-  if (identity.userId && api.user_id === identity.userId) return 45
-  if (cpf && onlyDigits(api.cpf) === cpf) return 40
-  if (email && api.email?.trim().toLowerCase() === email) return 30
-  if (name && api.full_name?.trim().toLowerCase() === name) return 25
-  if (name && api.full_name?.trim().toLowerCase().includes(name)) return 15
-  return 0
-}
-
-async function syncResolvedPatientProfile(userId: string | undefined, patient: ApiPatient): Promise<void> {
-  if (!userId) return
-
-  await apiRequest(`/rest/v1/patients?id=eq.${encodeURIComponent(patient.id)}`, {
-    method: "PATCH",
-    headers: { Prefer: "return=minimal" },
-    body: { user_id: userId },
-    logErrors: false,
-  }).catch(() => undefined)
-}
-
-async function linkPatientToUser(patientId: string, userId: string): Promise<void> {
-  if (!patientId || !userId) return
-  await apiRequest(`/rest/v1/patients?id=eq.${encodeURIComponent(patientId)}`, {
-    method: "PATCH",
-    headers: { Prefer: "return=minimal" },
-    body: { user_id: userId },
-    logErrors: false,
-  }).catch((err) => {
-    console.warn("[patients] vinculo user_id do paciente falhou:", err)
-  })
-}
-
-export async function getPatientByIdentity(identity: PatientIdentity): Promise<Patient | null> {
-  const filters = patientIdentityFilters(identity)
-  if (filters.length === 0) return null
-
-  let rows: ApiPatient[] = []
-  const orFilter = filters.length > 1 ? `or=(${filters.join(",")})` : filters[0]
-  rows = await apiRequest<ApiPatient[]>(
-    `/rest/v1/patients?${orFilter}&select=*&limit=10`,
-    { logErrors: false },
-  ).catch(() => [])
-
-  if (rows.length === 0 && filters.length > 1) {
-    const results = await Promise.all(
-      filters.map((filter) =>
-        apiRequest<ApiPatient[]>(`/rest/v1/patients?${filter}&select=*&limit=10`, { logErrors: false })
-          .catch(() => []),
-      ),
-    )
-    rows = results.flat()
-  }
-
-  const uniqueRows = Array.from(new Map(rows.map((row) => [row.id, row])).values())
-  const best = uniqueRows
-    .map((row) => ({ row, score: scorePatientMatch(row, identity) }))
-    .sort((a, b) => b.score - a.score)[0]?.row
-
-  if (!best) return null
-  await syncResolvedPatientProfile(identity.userId, best)
-  return apiToPatient(best)
 }
 
 export async function getPatients(): Promise<Patient[]> {
   const data = await apiRequest<ApiPatient[]>(
     "/rest/v1/patients?select=*&order=full_name.asc",
   )
-  return (data ?? []).map((row) => {
-    const patient = apiToPatient(row)
-    rememberPatientLink({ patientId: patient.id, name: patient.name, email: patient.email, cpf: patient.cpf })
-    return patient
-  })
-}
-
-export async function getPatientsForReports(): Promise<Patient[]> {
-  const data = await apiRequest<ApiPatient[]>(
-    "/rest/v1/patients?select=id,user_id,full_name,cpf,email,phone_mobile,birth_date&order=full_name.asc",
-    { logErrors: false },
-  )
-  return (data ?? []).map((row) => {
-    const patient = apiToPatient(row)
-    rememberPatientLink({ patientId: patient.id, name: patient.name, email: patient.email, cpf: patient.cpf })
-    return patient
-  })
+  return (data ?? []).map(apiToPatient)
 }
 
 export async function createPatient(
   data: Omit<Patient, "id">
 ): Promise<Patient> {
-  const payload = patientToApi(data)
 
-  try {
-    let created: ApiPatient[] | ApiPatient | undefined
-    try {
-      created = await createPatientValidated("/functions/v1/create-patient", payload)
-    } catch (err) {
-      if (!(err instanceof ApiError) || err.status !== 404) throw err
-      created = await createPatientValidated("/create-patient", payload)
-    }
+  const payload = patientToApi(data, "create")
 
-    const raw = extractCreatedPatient(created) ?? await findPatientByCpf(payload.cpf)
-    if (!raw) throw new Error("Paciente criado, mas a API não retornou o registro cadastrado.")
-    return updatePatient({ ...apiToPatient(raw), ...data, id: raw.id })
-  } catch (err) {
-    if (err instanceof ApiError && err.status === 404) {
-      return createPatientDirect(data)
-    }
-    throw err
-  }
-}
+  const created = await apiRequest<ApiPatient[] | ApiPatient | { patient?: ApiPatient } | void>(
+    "/functions/v1/create-patient",
+    { method: "POST", body: payload },
+  )
 
-export async function createPatientWithPassword(
-  data: Omit<Patient, "id">,
-  password: string,
-): Promise<Patient> {
-  const base = patientToApi(data)
-  const payload = {
-    ...base,
-    password: password.trim(),
-    role: "paciente",
-    create_patient_record: true,
-    phone: base.phone_mobile,
-    phone_mobile: base.phone_mobile,
-    redirect_url: window.location.origin,
-  }
+  const raw = Array.isArray(created)
+    ? created[0]
+    : created && "patient" in created
+      ? created.patient
+      : created
 
-  if (!base.email) throw new Error("E-mail obrigatório para criar acesso do paciente.")
-  if (!payload.password) throw new Error("Senha obrigatória para criar acesso do paciente.")
-  if (payload.password.length < 6) throw new Error("A senha deve ter pelo menos 6 caracteres.")
+  if (raw && typeof raw === "object" && "id" in raw) return apiToPatient(raw as ApiPatient)
 
-  const response = await createPatientUser(payload)
-  const userId = createdUserId(response)
-  await ensurePatientRole(userId)
-  await ensurePatientProfile(userId, data)
+  const cpf = String(payload.cpf ?? "")
+  const found = await apiRequest<ApiPatient[]>(
+    `/rest/v1/patients?cpf=eq.${encodeURIComponent(cpf)}&select=*&limit=1`,
+  )
 
-  const rawById = await findPatientById(response.patient_id)
-  if (rawById) {
-    await linkPatientToUser(rawById.id, userId)
-    return updatePatient({ ...apiToPatient(rawById), ...data, id: rawById.id, userId })
-  }
-
-  let raw = await findPatientByCpf(base.cpf)
-  if (!raw) {
-    const created = await createPatientDirect(data)
-    await linkPatientToUser(created.id, userId)
-    raw = await findPatientById(created.id)
-    if (!raw) return { ...created, userId }
-  }
-  if (!raw) throw new Error(response.message || "Usuário criado, mas o paciente não foi retornado pela API.")
-  await linkPatientToUser(raw.id, userId)
-  return updatePatient({ ...apiToPatient(raw), ...data, id: raw.id, userId })
-}
-
-export async function createPatientPortalAccess(
-  patient: Patient,
-  password: string,
-): Promise<Patient> {
-  const base = patientToApi(patient)
-  const payload = {
-    ...base,
-    patient_id: patient.id,
-    password: password.trim(),
-    role: "paciente",
-    create_patient_record: false,
-    phone: base.phone_mobile,
-    phone_mobile: base.phone_mobile,
-    redirect_url: window.location.origin,
-  }
-
-  if (!base.email) throw new Error("E-mail obrigatório para criar acesso do paciente.")
-  if (!payload.password) throw new Error("Senha obrigatória para criar acesso do paciente.")
-  if (payload.password.length < 6) throw new Error("A senha deve ter pelo menos 6 caracteres.")
-
-  let response: CreateUserWithPasswordResponse | null = null
-  let userId = ""
-  try {
-    response = await createPatientUser(payload)
-    userId = createdUserId(response)
-  } catch (err) {
-    if (!isAlreadyRegisteredError(err)) throw err
-    userId = (await findProfileByEmail(String(base.email ?? "")))?.id ?? ""
-  }
-
-  if (!userId) throw new Error(response?.message || "Usuário paciente não foi criado pela API.")
-
-  await ensurePatientRole(userId)
-  await ensurePatientProfile(userId, patient)
-  await linkPatientToUser(patient.id, userId)
-
-  return updatePatient({ ...patient, userId })
+  if (found[0]) return apiToPatient(found[0])
+  throw new Error("A API não retornou o paciente criado e o registro não foi encontrado no banco.")
 }
 
 export async function updatePatient(patient: Patient): Promise<Patient> {
-  const linkedProfile = patient.userId ? null : await findProfileByEmail(patient.email)
-  const patientWithUser = linkedProfile?.id ? { ...patient, userId: linkedProfile.id } : patient
-
-  try {
-    await apiRequest(`/rest/v1/patients?id=eq.${patientWithUser.id}`, {
-      method: "PATCH",
-      headers: { Prefer: "return=minimal" },
-      body: patientToFullApi(patientWithUser),
-      logErrors: false,
-    })
-  } catch (err) {
-    if (!isSchemaMismatch(err)) throw err
-    await apiRequest(`/rest/v1/patients?id=eq.${patientWithUser.id}`, {
-      method: "PATCH",
-      headers: { Prefer: "return=minimal" },
-      body: patientToApi(patientWithUser),
-    })
-  }
-  rememberPatientLink({ patientId: patientWithUser.id, name: patientWithUser.name, email: patientWithUser.email, cpf: patientWithUser.cpf })
-  return patientWithUser
-}
-
-async function deletePatientDependencies(id: string): Promise<void> {
-  const patientId = encodeURIComponent(id)
-  const isMissingResource = (err: unknown) =>
-    err instanceof ApiError &&
-    (err.status === 404 || (err.status === 400 && /schema|cache|could not find|not found|relation|table/i.test(err.message)))
-
-  const ignoreMissing = (err: unknown) => {
-    if (isMissingResource(err)) return
-    throw err
-  }
-
-  async function listDependencyRows(table: string, required = false): Promise<Array<{ id: string }>> {
-    try {
-      return await apiRequest<Array<{ id: string }>>(
-      `/rest/v1/${table}?patient_id=eq.${patientId}&select=id`,
-      { logErrors: false },
-      )
-    } catch (err) {
-      if (!required && isMissingResource(err)) return []
-      throw err
-    }
-  }
-
-  async function deleteRow(table: string, rowId: string, required = false): Promise<void> {
-    const encodedId = encodeURIComponent(rowId)
-    await apiRequest(`/rest/v1/${table}?id=eq.${encodedId}`, {
-      method: "DELETE",
-      headers: { Prefer: required ? "return=representation" : "return=minimal" },
-      logErrors: false,
-    }).catch((err) => {
-      if (!required) return ignoreMissing(err)
-      throw err
-    })
-  }
-
-  async function deleteRowsByPatient(table: string, required = false): Promise<void> {
-    const rows = await listDependencyRows(table, required)
-    await Promise.all(rows.map((row) => deleteRow(table, row.id, required)))
-
-    await apiRequest(`/rest/v1/${table}?patient_id=eq.${patientId}`, {
-      method: "DELETE",
-      headers: { Prefer: required ? "return=representation" : "return=minimal" },
-      logErrors: false,
-    }).catch((err) => {
-      if (!required) return ignoreMissing(err)
-      throw err
-    })
-
-    if (required) {
-      let remaining = await listDependencyRows(table, true)
-      if (remaining.length > 0 && table === "appointments") {
-        await apiRequest(`/rest/v1/appointments?patient_id=eq.${patientId}`, {
-          method: "PATCH",
-          headers: { Prefer: "return=minimal" },
-          body: {
-            patient_id: null,
-            status: "cancelled",
-          },
-          logErrors: false,
-        }).catch(ignoreMissing)
-        remaining = await listDependencyRows(table, true)
-      }
-      if (remaining.length > 0) {
-        throw new Error(
-          `A API não removeu ${remaining.length} registro(s) de ${table} vinculados ao paciente. ` +
-          "O perfil gestor precisa ter permissão de DELETE nessa tabela antes de excluir o paciente.",
-        )
-      }
-    }
-  }
-
-  await deleteRowsByPatient("appointments", true)
-  await deleteRowsByPatient("reports")
-  await deleteRowsByPatient("patient_assignments")
-}
-
-async function deletePatientRecord(id: string, logErrors = true): Promise<void> {
-  const patientId = encodeURIComponent(id)
-
-  await apiRequest(`/rest/v1/patients?id=eq.${patientId}`, {
-    method: "DELETE",
+  await apiRequest(`/rest/v1/patients?id=eq.${patient.id}`, {
+    method: "PATCH",
     headers: { Prefer: "return=minimal" },
-    logErrors,
+    body: patientToApi(patient, "update"),
   })
+  return patient
 }
 
 export async function deletePatient(id: string): Promise<void> {
-  const patient = await findPatientById(id).catch(() => null)
-  const profile = patient?.user_id ? null : await findProfileByEmail(patient?.email).catch(() => null)
-  const userId = patient?.user_id ?? profile?.id ?? ""
-
-  try {
-    await deletePatientDependencies(id)
-  } catch (err) {
-    if (!isBlockedDependencyDelete(err)) throw err
-    if (!userId) throw err
-    const removedByApi = await deletePatientAuthUser(userId, patient?.email)
-    if (!removedByApi) throw err
-    const stillExists = await findPatientById(id).catch(() => null)
-    if (!stillExists) return
-    throw err
-  }
-
-  try {
-    await deletePatientRecord(id, false)
-    return
-  } catch (err) {
-    if (!(err instanceof ApiError) || err.status !== 409) throw err
-  }
-
-  await deletePatientDependencies(id)
-  try {
-    await deletePatientRecord(id)
-    return
-  } catch (err) {
-    if (!(err instanceof ApiError) || err.status !== 409) throw err
-  }
-
-  if (!userId) {
-    throw new Error("A API bloqueou a exclusão porque ainda existem vínculos com este paciente.")
-  }
-
-  await deletePatientAuthUser(userId, patient?.email)
-  const stillExists = await findPatientById(id).catch(() => null)
-  if (stillExists) {
-    throw new Error("A API não removeu o paciente mesmo após a limpeza dos vínculos.")
-  }
+  await apiRequest(`/rest/v1/patients?id=eq.${id}`, { method: "DELETE" })
 }

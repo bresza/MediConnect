@@ -57,10 +57,6 @@
 
 /* ── Search ──────────────────────────────────────────────────────── */
 .searchRow {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
   margin-bottom: 16px;
 }
 
@@ -108,7 +104,6 @@
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
-  min-width: 640px;
 }
 
 .table thead tr {
@@ -202,11 +197,6 @@
   color: var(--foreground);
 }
 
-.actionBtn:disabled {
-  opacity: 0.45;
-  cursor: wait;
-}
-
 .actionBtnDanger:hover {
   background-color: rgb(220 38 38 / 0.1);
   color: var(--destructive);
@@ -246,13 +236,7 @@
   .colSpan2 { grid-column: span 1; }
 }
 
-@media (max-width: 640px) {
-  .searchWrapper {
-    max-width: none;
-  }
-
-  .tableScroll {
-    margin-inline: -12px;
-    padding-inline: 12px;
-  }
+@media (max-width: 767px) {
+  .grid2 { grid-template-columns: 1fr; }
+  .colSpan2 { grid-column: span 1; }
 }
