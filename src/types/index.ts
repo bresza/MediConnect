@@ -12,6 +12,7 @@ export type StaffStatus = "Active" | "Inactive"
 
 export interface StaffMember {
   id: string; name: string; role: StaffRole; email: string; phone: string
+  phone2?: string; rg?: string; address?: Address; tempPassword?: string
   status: StaffStatus; cpf?: string; crm?: string; specialty?: string; department?: string
   createdAt: string; updatedAt?: string
 }
@@ -137,6 +138,7 @@ export interface Toast { id: string; message: string; variant: ToastVariant }
 
 // ─── NAVIGATION ───────────────────────────────────────────────────
 export type PageId =
-  | "dashboard" | "patients" | "register" | "appointments" | "patient-portal"
-  | "availability" | "records" | "reports" | "messages" | "financial"
-  | "settings"  | "patient-profile" | "team"
+  | "dashboard" | "patients" | "register" | "appointments"
+  | "records" | "reports"  | "messages" | "financial"
+  | "settings"  | "patient-profile" | "team" | "patient-portal"
+  | "availability"
