@@ -26,14 +26,77 @@ interface ApiProfile {
   id: string
   full_name: string
 }
-interface ApiAvailableSlot {
-  time: string
-  available: boolean
+interface ApiDoctorAvailability {
+  doctor_id: string
+  weekday: number | string
+  start_time: string
+  end_time: string
+  slot_minutes?: number
+  active?: boolean
+}
+interface ApiDoctorException {
+  doctor_id: string
+  date?: string
+  start_time?: string | null
+  end_time?: string | null
 }
 
 export interface AppointmentDoctor {
   id: string
   name: string
+}
+
+const WEEKDAY_ENUM_VALUES = [
+  "sunday",
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+] as const
+const WEEKDAY_PT_VALUES = ["domingo", "segunda", "terca", "quarta", "quinta", "sexta", "sabado"] as const
+const WEEKDAY_PT_DASH_VALUES = ["domingo", "segunda-feira", "terca-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sabado"] as const
+
+function pad(value: number): string {
+  return String(value).padStart(2, "0")
+}
+
+function localDate(value: Date): string {
+  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`
+}
+
+function localTime(value: Date): string {
+  return `${pad(value.getHours())}:${pad(value.getMinutes())}`
+}
+
+function normalizeWeekday(value: number | string): number {
+  if (typeof value === "number") return value
+  const numeric = Number(value)
+  if (Number.isInteger(numeric)) return numeric
+  const normalized = value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+  const englishIndex = WEEKDAY_ENUM_VALUES.indexOf(normalized as (typeof WEEKDAY_ENUM_VALUES)[number])
+  if (englishIndex >= 0) return englishIndex
+  const ptIndex = WEEKDAY_PT_VALUES.indexOf(normalized as (typeof WEEKDAY_PT_VALUES)[number])
+  if (ptIndex >= 0) return ptIndex
+  const ptDashIndex = WEEKDAY_PT_DASH_VALUES.indexOf(normalized as (typeof WEEKDAY_PT_DASH_VALUES)[number])
+  return ptDashIndex >= 0 ? ptDashIndex : -1
+}
+
+function timeToMinutes(value: string): number {
+  const [hours, minutes] = value.slice(0, 5).split(":").map(Number)
+  return hours * 60 + minutes
+}
+
+function minutesToTime(value: number): string {
+  return `${pad(Math.floor(value / 60))}:${pad(value % 60)}`
+}
+
+function rangesOverlap(startA: number, endA: number, startB: number, endB: number): boolean {
+  return startA < endB && endA > startB
 }
 
 function apiToAppointment(
@@ -208,21 +271,68 @@ export async function getAvailableSlots(
   date: string,
 ): Promise<string[]> {
   if (!doctorId || !date) return []
+  if (date < localDate(new Date())) return []
 
-  const data = await apiRequest<{ slots?: ApiAvailableSlot[] }>(
-    "/functions/v1/get-available-slots",
-    {
-      method: "POST",
-      body: {
-        doctor_id: doctorId,
-        date,
-      },
-    },
-  )
+  return getAvailableSlotsFromAvailability(doctorId, date)
+}
 
-  return (data.slots ?? [])
-    .filter((slot) => slot.available)
-    .map((slot) => slot.time.slice(0, 5))
+async function getAvailableSlotsFromAvailability(
+  doctorId: string,
+  date: string,
+): Promise<string[]> {
+  const today = localDate(new Date())
+  if (date < today) return []
+
+  const day = new Date(`${date}T00:00:00`).getDay()
+  const [availability, exceptions, appointments] = await Promise.all([
+    apiRequest<ApiDoctorAvailability[]>(
+      `/rest/v1/doctor_availability?doctor_id=eq.${encodeURIComponent(doctorId)}&active=eq.true&select=*`,
+    ),
+    apiRequest<ApiDoctorException[]>(
+      `/rest/v1/doctor_exceptions?doctor_id=eq.${encodeURIComponent(doctorId)}&date=eq.${encodeURIComponent(date)}&select=*`,
+    ).catch(() => []),
+    apiRequest<ApiAppointment[]>(
+      `/rest/v1/appointments?doctor_id=eq.${encodeURIComponent(doctorId)}&select=id,doctor_id,patient_id,scheduled_at,duration_minutes,status`,
+    ),
+  ])
+
+  const busyRanges = (appointments ?? [])
+    .filter((appointment) => localDate(new Date(appointment.scheduled_at)) === date)
+    .filter((appointment) => appointment.status !== "cancelled")
+    .map((appointment) => {
+      const start = timeToMinutes(localTime(new Date(appointment.scheduled_at)))
+      return {
+        start,
+        end: start + (appointment.duration_minutes ?? 30),
+      }
+    })
+
+  const blockedRanges = (exceptions ?? []).map((exception) => ({
+    start: exception.start_time ? timeToMinutes(exception.start_time) : 0,
+    end: exception.end_time ? timeToMinutes(exception.end_time) : 24 * 60,
+  }))
+
+  const now = new Date()
+  const nowMinutes = timeToMinutes(localTime(now))
+
+  return (availability ?? [])
+    .filter((row) => normalizeWeekday(row.weekday) === day)
+    .flatMap((row) => {
+      const slotMinutes = row.slot_minutes ?? 30
+      const start = timeToMinutes(row.start_time)
+      const end = timeToMinutes(row.end_time)
+      const slots: string[] = []
+
+      for (let cursor = start; cursor + slotMinutes <= end; cursor += slotMinutes) {
+        const slotEnd = cursor + slotMinutes
+        const inPast = date === today && cursor <= nowMinutes
+        const blocked = blockedRanges.some((range) => rangesOverlap(cursor, slotEnd, range.start, range.end))
+        const occupied = busyRanges.some((range) => rangesOverlap(cursor, slotEnd, range.start, range.end))
+        if (!inPast && !blocked && !occupied) slots.push(minutesToTime(cursor))
+      }
+
+      return slots
+    })
     .filter((time, index, all) => all.indexOf(time) === index)
     .sort()
 }
