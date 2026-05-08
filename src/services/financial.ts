@@ -62,7 +62,7 @@ function apiToFinancialRecord(api: ApiReport, patientName = ""): FinancialRecord
     paymentMethod: (json.payment_method ?? "Pix") as PaymentMethod,
     healthInsurance: json.health_insurance,
     dueDate: json.due_date ?? api.created_at?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
-    status: (json.status ?? (api.status === "delivered" ? "Paid" : "Pending")) as PaymentStatus,
+    status: (json.status ?? (api.status === "finalized" || api.status === "delivered" ? "Paid" : "Pending")) as PaymentStatus,
     observations: json.observations ?? api.conclusion,
   }
 }
@@ -84,7 +84,7 @@ function financialRecordToReport(record: Omit<FinancialRecord, "id">): Record<st
   const uid = getApiUserId()
   return compactPayload({
     patient_id: record.patientId,
-    status: record.status === "Paid" ? "delivered" : "draft",
+    status: record.status === "Paid" ? "finalized" : "draft",
     exam: FINANCIAL_RECORD_EXAM,
     requested_by: uid ?? undefined,
     diagnosis: "Lançamento financeiro",

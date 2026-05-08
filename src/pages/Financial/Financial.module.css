@@ -315,3 +315,47 @@
 .obsTextarea:hover { background-color: var(--input-hover); }
 .obsTextarea:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgb(124 144 130 / .18); }
 :global(.dark) .obsTextarea { color-scheme: dark; }
+
+@media (max-width: 640px) {
+  .statsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .filters {
+    align-items: stretch;
+  }
+
+  .searchWrapper {
+    max-width: none;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .filterBtn {
+    flex: 1 1 calc(50% - 4px);
+  }
+
+  .filterCount {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .chartHeader {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .tableScroll {
+    margin-inline: -12px;
+    padding-inline: 12px;
+  }
+
+  .modalFooter {
+    flex-direction: column-reverse;
+  }
+
+  .modalFooter > * {
+    width: 100%;
+  }
+}

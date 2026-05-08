@@ -732,3 +732,74 @@
   font-size: 12px;
   color: var(--muted-foreground);
 }
+
+@media (max-width: 768px) {
+  .header {
+    align-items: stretch;
+    padding: 14px 16px;
+  }
+
+  .headerLeft,
+  .headerActions {
+    width: 100%;
+  }
+
+  .headerActions > * {
+    flex: 1 1 100%;
+  }
+
+  .body {
+    flex-direction: column;
+    overflow: auto;
+  }
+
+  .leftCol {
+    padding: 16px;
+  }
+
+  .infoCard,
+  .medRow,
+  .footer {
+    flex-direction: column;
+  }
+
+  .infoBlockDivider {
+    width: 100%;
+    height: 1px;
+  }
+
+  .formField,
+  .typeCard {
+    min-width: 0;
+  }
+
+  .medRowFields {
+    grid-template-columns: 1fr;
+  }
+
+  .medFieldWide,
+  .medFieldFull {
+    grid-column: span 1;
+  }
+
+  .medRowNum,
+  .removeMedBtn {
+    margin-top: 0;
+  }
+
+  .catalog {
+    width: 100%;
+    max-height: 320px;
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+
+  .rxDocument {
+    padding: 24px 18px;
+  }
+
+  .rxPatientField {
+    flex-direction: column;
+    gap: 2px;
+  }
+}
