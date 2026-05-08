@@ -40,7 +40,7 @@ export function Select({
   return (
     <div className={`${styles.wrapper} ${className}`}>
       {label && (
-        <label htmlFor={inputId} className={styles.label} translate="no">
+        <label htmlFor={inputId} className={styles.label}>
           {label}
           {required && <span className={styles.required}>*</span>}
         </label>
@@ -56,8 +56,8 @@ export function Select({
           className={`${styles.select} ${error ? styles.selectError : ""} ${disabled ? styles.selectDisabled : ""}`}
         >
           <option value="">{placeholder}</option>
-          {normalized.map((o, index) => (
-            <option key={`${o.value}-${o.label}-${index}`} value={o.value}>{o.label}</option>
+          {normalized.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
           ))}
         </select>
         <svg className={styles.chevron} width="14" height="14" fill="none"

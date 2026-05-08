@@ -10,16 +10,16 @@ const ALL_NAV_GROUPS: NavGroup[] = [
   {
     section: "Principal",
     items: [
-      { id: "patient-portal", label: "Minha saúde", icon: "M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 000-7.78z" },
       { id: "dashboard",    label: "Início",        icon: "M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" },
       { id: "patients",     label: "Pacientes",     icon: "M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" },
+      { id: "register",     label: "Cadastro",      icon: "M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" },
       { id: "appointments", label: "Agenda",        icon: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" },
-      { id: "availability", label: "Disponibilidade", icon: "M12 8v4l3 3M21 12a9 9 0 11-18 0 9 9 0 0118 0z" },
     ],
   },
   {
     section: "Clínica",
     items: [
+      { id: "records",  label: "Prontuários", icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" },
       { id: "reports",  label: "Relatórios",  icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" },
       { id: "messages", label: "Mensagens",   icon: "M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" },
     ],
@@ -125,7 +125,7 @@ export function Sidebar({ activePage, onNavigate, currentUser, onLogout, isOpen 
                     className={`${styles.navBtn} ${activePage === item.id ? styles.navBtnActive : ""}`}
                   >
                     <NavIcon path={item.icon} />
-                    <span translate="no">{item.label}</span>
+                    {item.label}
                   </button>
                 </li>
               ))}

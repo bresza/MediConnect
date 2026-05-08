@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react"
 import type { Appointment } from "../types"
-import { getAppointments, createAppointment, updateAppointment, deleteAppointment } from "../services/appointments"
+import { getAppointments, createAppointment, updateAppointment } from "../services/appointments"
 
 export interface UseAppointmentsReturn {
   appointments:      Appointment[]
@@ -8,7 +8,6 @@ export interface UseAppointmentsReturn {
   error:             string | null
   addAppointment:    (a: Omit<Appointment, "id">) => Promise<void>
   updateAppointment: (a: Appointment) => Promise<void>
-  deleteAppointment: (id: string) => Promise<void>
   reload:            () => Promise<void>
 }
 
@@ -38,10 +37,5 @@ export function useAppointments(): UseAppointmentsReturn {
     setAppointments((prev) => prev.map((x) => (x.id === saved.id ? saved : x)))
   }, [])
 
-  const deleteAppointmentFn = useCallback(async (id: string) => {
-    await deleteAppointment(id)
-    setAppointments((prev) => prev.filter((x) => x.id !== id))
-  }, [])
-
-  return { appointments, isLoading, error, addAppointment, updateAppointment: updateAppointmentFn, deleteAppointment: deleteAppointmentFn, reload: load }
+  return { appointments, isLoading, error, addAppointment, updateAppointment: updateAppointmentFn, reload: load }
 }

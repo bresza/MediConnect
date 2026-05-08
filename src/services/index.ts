@@ -1,5 +1,5 @@
-export { login, getDemoAccounts }  from "./auth"
-export type { LoginResponse, LoginPayload, DemoAccount } from "./auth"
+export { login } from "./auth"
+export type { LoginResponse, LoginPayload } from "./auth"
 
 export { apiRequest, setApiContext, ApiError, setUnauthorizedHandler } from "./api"
 
@@ -15,11 +15,6 @@ export {
 export {
   getAppointments, createAppointment, updateAppointment, deleteAppointment,
 } from "./appointments"
-
-export {
-  getDoctorAvailability, createDoctorAvailability,
-} from "./availability"
-export type { DoctorAvailability, CreateDoctorAvailabilityInput } from "./availability"
 
 export {
   getMedicalRecords, createMedicalRecord, updateMedicalRecord,

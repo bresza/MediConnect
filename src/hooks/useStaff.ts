@@ -35,13 +35,7 @@ export function useStaff(): UseStaffReturn {
     doctorExtra?: DoctorExtra,
   ) => {
     const created = await createStaffMember(member, password, doctorExtra)
-    setStaff((prev) => [
-      created,
-      ...prev.filter((m) =>
-        m.id !== created.id &&
-        m.email.toLowerCase() !== created.email.toLowerCase(),
-      ),
-    ])
+    setStaff((prev) => [...prev, created])
   }, [])
 
   const updateStaff = useCallback(async (updated: StaffMember) => {
@@ -50,15 +44,9 @@ export function useStaff(): UseStaffReturn {
   }, [])
 
   const deleteStaff = useCallback(async (id: string) => {
-    const member = staff.find((m) => m.id === id)
-    if (!member) throw new Error("Profissional não encontrado.")
-
-    await deleteStaffMember(member)
-    setStaff((prev) => prev.filter((m) =>
-      m.id !== member.id &&
-      m.email.toLowerCase() !== member.email.toLowerCase(),
-    ))
-  }, [staff])
+    await deleteStaffMember(id)
+    setStaff((prev) => prev.filter((m) => m.id !== id))
+  }, [])
 
   return { staff, isLoading, error, addStaff, updateStaff, deleteStaff, reload: load }
 }

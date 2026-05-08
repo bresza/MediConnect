@@ -6,14 +6,13 @@ import { Input }    from "../../components/ui/Input/Input"
 import { Select }   from "../../components/ui/Select/Select"
 import { Section }  from "../../components/ui/Section/Section"
 import type { PageId, Patient } from "../../types"
+import { formatCpfBR, formatPhoneBR, normalizeEmail, onlyDigits } from "../../utils/masks"
 import styles from "./Registration.module.css"
 
 interface RegistrationProps {
   patients:        Patient[]
   editingPatient?: Patient | null
   onAddPatient:    (p: Omit<Patient, "id">) => Promise<Patient>
-  onAddPatientWithPassword?: (p: Omit<Patient, "id">, password: string) => Promise<Patient>
-  onCreatePatientAccess?: (p: Patient, password: string) => Promise<Patient>
   onUpdatePatient: (p: Patient) => Promise<void>
   onNavigate:      (page: PageId) => void
   isSecretary?:    boolean   // secretária vê apenas steps 1-4 (sem dados clínicos)
@@ -88,9 +87,6 @@ interface FormState {
   emergencyName:    string
   emergencyRelation: string
   emergencyPhone:   string
-  createPortalAccess: boolean
-  portalPassword:   string
-  portalConfirmPassword: string
 
   // Step 5 — Saúde e Clínica
   bloodType:        string
@@ -119,7 +115,6 @@ const EMPTY: FormState = {
   motherName:"",motherOccupation:"",fatherName:"",fatherOccupation:"",
   guardianName:"",guardianCpf:"",spouseName:"",
   emergencyName:"",emergencyRelation:"",emergencyPhone:"",
-  createPortalAccess:false,portalPassword:"",portalConfirmPassword:"",
   bloodType:"",allergies:"",chronicDiseases:"",currentMeds:"",
   previousSurgeries:"",familyHistory:"",smokingStatus:"",alcoholUse:"",
   physicalActivity:"",observations:"",
@@ -177,7 +172,7 @@ function toForm(p: Patient): FormState {
     photoUrl: p.photoUrl ?? "",
 
     // ─── STEP 2 — Documentos ────────────────────────────
-    cpf: p.cpf ?? "",
+    cpf: onlyDigits(p.cpf ?? ""),
     rg: p.rg ?? "",
     rgIssuer: "",
     rgState: "",
@@ -203,10 +198,10 @@ function toForm(p: Patient): FormState {
     reference: p.address?.reference ?? "",
 
     // ─── STEP 4 — Contato e Família ─────────────────────
-    phone: p.phone ?? "",
-    landline: p.landline ?? "",
-    alternativePhone: p.alternativePhone ?? "",
-    email: p.email ?? "",
+    phone: onlyDigits(p.phone ?? ""),
+    landline: onlyDigits(p.landline ?? ""),
+    alternativePhone: onlyDigits(p.alternativePhone ?? ""),
+    email: normalizeEmail(p.email ?? ""),
 
     preferredChannel: fromChannel(p.preferredChannel),
     communicationFrequency: fromFrequency(p.communicationFrequency),
@@ -217,15 +212,12 @@ function toForm(p: Patient): FormState {
     fatherName: p.fatherName ?? "",
     fatherOccupation: p.fatherOccupation ?? "",
     guardianName: p.guardianName ?? "",
-    guardianCpf: p.guardianCpf ?? "",
+    guardianCpf: onlyDigits(p.guardianCpf ?? ""),
     spouseName: p.spouseName ?? "",
 
     emergencyName: p.emergencyContact?.name ?? "",
     emergencyRelation: p.emergencyContact?.relationship ?? "",
-    emergencyPhone: p.emergencyContact?.phone ?? "",
-    createPortalAccess: false,
-    portalPassword: "",
-    portalConfirmPassword: "",
+    emergencyPhone: onlyDigits(p.emergencyContact?.phone ?? ""),
 
     // ─── STEP 5 — Saúde e Clínica ───────────────────────
     bloodType: "",
@@ -259,30 +251,9 @@ function toEthnicity(v: string): Patient["ethnicity"] | undefined {
   }
   return m[v]
 }
-function toChannel(v: string): Patient["preferredChannel"] | undefined {
-  const m: Record<string, Patient["preferredChannel"]> = {
-    WhatsApp: "WhatsApp",
-    Email: "Email",
-    SMS: "SMS",
-    Telefone: "Phone",
-    Phone: "Phone",
-  }
-  return m[v]
-}
 function fromChannel(v?: Patient["preferredChannel"]): string {
   if (v === "Phone") return "Telefone"
   return v ?? ""
-}
-function toFrequency(v: string): Patient["communicationFrequency"] | undefined {
-  const m: Record<string, Patient["communicationFrequency"]> = {
-    "Somente essencial": "EssentialOnly",
-    "Lembretes e confirmações": "RemindersAndConfirmations",
-    Todos: "All",
-    EssentialOnly: "EssentialOnly",
-    RemindersAndConfirmations: "RemindersAndConfirmations",
-    All: "All",
-  }
-  return m[v]
 }
 function fromFrequency(v?: Patient["communicationFrequency"]): string {
   const m: Record<string, string> = {
@@ -308,21 +279,14 @@ const HEALTH_INS     = ["Nenhum (Particular)","SUS","Unimed","Bradesco Saúde","
 const BR_STATES      = ["AC","AL","AM","AP","BA","CE","DF","ES","GO","MA","MG","MS","MT","PA","PB","PE","PI","PR","RJ","RN","RO","RR","RS","SC","SE","SP","TO"]
 const RELATIONS      = ["Cônjuge","Pai","Mãe","Filho(a)","Irmão/Irmã","Avô/Avó","Amigo(a)","Outro"]
 const RELIGIONS      = ["Católico","Evangélico","Espírita","Budista","Sem religião","Outro"]
-const TODAY = new Date().toISOString().slice(0, 10)
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 // ─── Component ────────────────────────────────────────────────────
 export function Registration({
-  patients,
-  editingPatient,
-  onAddPatient,
-  onAddPatientWithPassword,
-  onCreatePatientAccess,
-  onUpdatePatient,
-  onNavigate,
-  isSecretary = false,
+  patients, editingPatient, onAddPatient, onUpdatePatient, onNavigate, isSecretary = false,
 }: RegistrationProps) {
   const isEditing   = !!editingPatient
+  const todayISO    = new Date().toISOString().slice(0, 10)
   const totalSteps = isSecretary ? 4 : STEP_LABELS.length
   const [step, setStep]       = useState(1)
   const [form, setForm]       = useState<FormState>(editingPatient ? toForm(editingPatient) : EMPTY)
@@ -360,22 +324,22 @@ export function Registration({
     } catch { /* silencia */ }
   }
 
-  function validationForStep(targetStep = step): Partial<Record<keyof FormState, string>> {
+  function validateStep(): boolean {
     const e: Partial<Record<keyof FormState, string>> = {}
-    if (targetStep === 1) {
+    if (step === 1) {
       if (!form.name.trim()) e.name   = "Nome completo é obrigatório"
       if (!form.gender)      e.gender = "Sexo é obrigatório"
       if (!form.dob)         e.dob    = "Data de nascimento é obrigatória"
-      else if (form.dob > TODAY) e.dob = "Data de nascimento deve estar no passado"
+      else if (form.dob > todayISO) e.dob = "Data de nascimento não pode ser futura"
     }
-    if (targetStep === 2) {
+    if (step === 2) {
       const cpf = form.cpf.replace(/\D/g, "")
       if (!cpf)  e.cpf = "CPF é obrigatório"
       else if (cpf.length !== 11) e.cpf = "CPF deve ter 11 dígitos"
       else if (patients.some((p) => p.cpf.replace(/\D/g,"") === cpf && p.id !== editingPatient?.id))
         e.cpf = "CPF já cadastrado no sistema"
     }
-    if (targetStep === 4) {
+    if (step === 4) {
       const phone = form.phone.replace(/\D/g, "")
       const email = form.email.trim()
       if (!phone)        e.phone = "Celular é obrigatório"
@@ -384,102 +348,70 @@ export function Registration({
       else if (!EMAIL_RE.test(email)) e.email = "E-mail inválido"
       if (form.emergencyPhone && !form.emergencyName)
         e.emergencyName = "Informe o nome do contato de emergência"
-      if (form.createPortalAccess) {
-        if (!form.portalPassword) e.portalPassword = "Senha obrigatória"
-        else if (form.portalPassword.length < 6) e.portalPassword = "Mínimo 6 caracteres"
-        if (form.portalPassword !== form.portalConfirmPassword) e.portalConfirmPassword = "Senhas não coincidem"
-        if (!isEditing && !onAddPatientWithPassword) e.portalPassword = "Criação de acesso indisponível"
-        if (isEditing && !onCreatePatientAccess) e.portalPassword = "Criação de acesso indisponível"
-      }
     }
-    return e
-  }
-
-  function validateStep(targetStep = step): boolean {
-    const e = validationForStep(targetStep)
     setErrors(e)
     return Object.keys(e).length === 0
   }
 
-  function validateRequiredSteps(): boolean {
-    for (const targetStep of [1, 2, 4]) {
-      const e = validationForStep(targetStep)
-      if (Object.keys(e).length > 0) {
-        setErrors(e)
-        setStep(targetStep)
-        return false
-      }
-    }
-    setErrors({})
-    return true
-  }
-
-  function buildPatientData(): Omit<Patient, "id"> {
-    return {
-      name:                   form.name.trim(),
-      socialName:             form.socialName || undefined,
-      gender:                 toGender(form.gender),
-      dob:                    form.dob,
-      birthplace:             form.birthplace || undefined,
-      nationality:            form.nationality || undefined,
-      maritalStatus:          toMarital(form.maritalStatus),
-      ethnicity:              toEthnicity(form.ethnicity),
-      occupation:             form.occupation || undefined,
-      isVip:                  form.isVip,
-      photoUrl:               form.photoUrl || undefined,
-      cpf:                    form.cpf.replace(/\D/g, ""),
-      rg:                     form.rg || undefined,
-      healthInsurance:        form.healthInsurance && form.healthInsurance !== "Nenhum (Particular)" ? form.healthInsurance : undefined,
-      healthInsuranceNumber:  form.healthInsuranceNumber || undefined,
-      phone:                  form.phone.replace(/\D/g, ""),
-      landline:               form.landline || undefined,
-      alternativePhone:       form.alternativePhone || undefined,
-      email:                  form.email.trim(),
-      preferredChannel:       toChannel(form.preferredChannel),
-      communicationFrequency: toFrequency(form.communicationFrequency),
-      optIn:                  form.optIn,
-      motherName:             form.motherName || undefined,
-      motherOccupation:       form.motherOccupation || undefined,
-      fatherName:             form.fatherName || undefined,
-      fatherOccupation:       form.fatherOccupation || undefined,
-      guardianName:           form.guardianName || undefined,
-      guardianCpf:            form.guardianCpf || undefined,
-      spouseName:             form.spouseName || undefined,
-      emergencyContact: form.emergencyName ? {
-        name:         form.emergencyName,
-        relationship: form.emergencyRelation,
-        phone:        form.emergencyPhone,
-      } : undefined,
-      address: form.street ? {
-        zipCode:      form.zipCode,
-        street:       form.street,
-        number:       form.addressNumber,
-        complement:   form.complement || undefined,
-        neighborhood: form.neighborhood,
-        city:         form.city,
-        state:        form.state,
-        reference:    form.reference || undefined,
-      } : undefined,
-      observations: form.observations || undefined,
-      status:       "Active",
-      createdAt:    editingPatient?.createdAt ?? new Date().toISOString().slice(0, 10),
-      updatedAt:    new Date().toISOString().slice(0, 10),
-    }
-  }
-
-  async function savePatient() {
+  async function handleNext() {
+    setSaveError(null)
+    if (!validateStep()) return
+    if (step < totalSteps) { setStep((s) => s + 1); return }
+    // Salvar
     setIsSaving(true)
     try {
-      const data = buildPatientData()
+      const data: Omit<Patient, "id"> = {
+        name:                   form.name.trim(),
+        socialName:             form.socialName || undefined,
+        gender:                 toGender(form.gender),
+        dob:                    form.dob,
+        birthplace:             form.birthplace || undefined,
+        nationality:            form.nationality || undefined,
+        maritalStatus:          toMarital(form.maritalStatus),
+        ethnicity:              toEthnicity(form.ethnicity),
+        occupation:             form.occupation || undefined,
+        isVip:                  form.isVip,
+        photoUrl:               form.photoUrl || undefined,
+        cpf:                    onlyDigits(form.cpf),
+        rg:                     form.rg || undefined,
+        healthInsurance:        form.healthInsurance && form.healthInsurance !== "Nenhum (Particular)" ? form.healthInsurance : undefined,
+        healthInsuranceNumber:  form.healthInsuranceNumber || undefined,
+        phone:                  onlyDigits(form.phone),
+        landline:               onlyDigits(form.landline) || undefined,
+        alternativePhone:       onlyDigits(form.alternativePhone) || undefined,
+        email:                  normalizeEmail(form.email) || undefined,
+        preferredChannel:       form.preferredChannel as Patient["preferredChannel"] | undefined,
+        communicationFrequency: form.communicationFrequency as Patient["communicationFrequency"] | undefined,
+        optIn:                  form.optIn,
+        motherName:             form.motherName || undefined,
+        motherOccupation:       form.motherOccupation || undefined,
+        fatherName:             form.fatherName || undefined,
+        fatherOccupation:       form.fatherOccupation || undefined,
+        guardianName:           form.guardianName || undefined,
+        guardianCpf:            onlyDigits(form.guardianCpf) || undefined,
+        spouseName:             form.spouseName || undefined,
+        emergencyContact: form.emergencyName ? {
+          name:         form.emergencyName,
+          relationship: form.emergencyRelation,
+          phone:        onlyDigits(form.emergencyPhone),
+        } : undefined,
+        address: form.street ? {
+          zipCode:      form.zipCode,
+          street:       form.street,
+          number:       form.addressNumber,
+          complement:   form.complement || undefined,
+          neighborhood: form.neighborhood,
+          city:         form.city,
+          state:        form.state,
+          reference:    form.reference || undefined,
+        } : undefined,
+        observations: form.observations || undefined,
+        status:       "Active",
+        createdAt:    editingPatient?.createdAt ?? new Date().toISOString().slice(0, 10),
+        updatedAt:    new Date().toISOString().slice(0, 10),
+      }
       if (isEditing && editingPatient) {
-        const patient = { ...data, id: editingPatient.id }
-        if (form.createPortalAccess && onCreatePatientAccess) {
-          await onCreatePatientAccess(patient, form.portalPassword)
-        } else {
-          await onUpdatePatient(patient)
-        }
-      } else if (form.createPortalAccess && onAddPatientWithPassword) {
-        await onAddPatientWithPassword(data, form.portalPassword)
+        await onUpdatePatient({ ...data, id: editingPatient.id })
       } else {
         await onAddPatient(data)
       }
@@ -487,18 +419,6 @@ export function Registration({
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Não foi possível salvar o paciente.")
     } finally { setIsSaving(false) }
-  }
-
-  async function handleNext() {
-    setSaveError(null)
-    if (isEditing) {
-      if (!validateRequiredSteps()) return
-      await savePatient()
-      return
-    }
-    if (!validateStep()) return
-    if (step < totalSteps) { setStep((s) => s + 1); return }
-    await savePatient()
   }
 
   // ── Saved screen ─────────────────────────────────────────────────
@@ -570,17 +490,12 @@ export function Registration({
             const n = i + 1; const done = n < step; const active = n === step
             return (
               <div key={label} className={`${styles.step} ${i < totalSteps - 1 ? styles.flex1 : ""}`}>
-                <button
-                  type="button"
-                  className={`${styles.stepInner} ${isEditing ? styles.stepButton : ""}`}
-                  onClick={() => isEditing && setStep(n)}
-                  disabled={!isEditing}
-                >
+                <div className={styles.stepInner}>
                   <div className={`${styles.stepCircle} ${done || active ? styles.stepCircleActive : styles.stepCircleInactive}`}>
                     {done ? "✓" : n}
                   </div>
                   <span className={`${styles.stepLabel} ${active ? styles.stepLabelActive : styles.stepLabelInactive}`}>{label}</span>
-                </button>
+                </div>
                 {i < totalSteps - 1 &&<div className={`${styles.stepLine} ${done ? styles.stepLineDone : styles.stepLineUndone}`} />}
               </div>
             )
@@ -629,8 +544,8 @@ export function Registration({
               <div className={`${styles.grid3} ${styles.marginTop}`}>
                 <Select label="Sexo biológico" required options={GENDERS}
                   value={form.gender} onChange={(e) => set("gender", e.target.value)} />
-                <Input label="Data de nascimento" type="date" required max={TODAY}
-                  value={form.dob} onChange={(e) => set("dob", e.target.value)} error={errors.dob} />
+                <Input label="Data de nascimento" type="date" required
+                  value={form.dob} onChange={(e) => set("dob", e.target.value)} max={todayISO} error={errors.dob} />
                 <Select label="Estado civil" options={MARITAL}
                   value={form.maritalStatus} onChange={(e) => set("maritalStatus", e.target.value)} />
               </div>
@@ -660,7 +575,7 @@ export function Registration({
             <Section title="Documentos de identificação">
               <div className={`${styles.grid3} ${styles.marginTop}`}>
                 <Input label="CPF" required placeholder="000.000.000-00"
-                  value={form.cpf} onChange={(e) => set("cpf", e.target.value)} error={errors.cpf} />
+                  value={formatCpfBR(form.cpf)} onChange={(e) => set("cpf", onlyDigits(e.target.value))} error={errors.cpf} />
                 <Input label="RG" placeholder="0000000"
                   value={form.rg} onChange={(e) => set("rg", e.target.value)} />
                 <Input label="Órgão emissor RG" placeholder="SSP"
@@ -730,13 +645,13 @@ export function Registration({
             <Section title="Contatos">
               <div className={`${styles.grid3} ${styles.marginTop}`}>
                 <Input label="Celular" required placeholder="(00) 00000-0000"
-                  value={form.phone} onChange={(e) => set("phone", e.target.value)} error={errors.phone} />
+                  value={formatPhoneBR(form.phone)} onChange={(e) => set("phone", onlyDigits(e.target.value))} error={errors.phone} />
                 <Input label="Telefone fixo" placeholder="(00) 0000-0000"
-                  value={form.landline} onChange={(e) => set("landline", e.target.value)} />
+                  value={formatPhoneBR(form.landline)} onChange={(e) => set("landline", onlyDigits(e.target.value))} />
                 <Input label="Telefone alternativo" placeholder="(00) 00000-0000"
-                  value={form.alternativePhone} onChange={(e) => set("alternativePhone", e.target.value)} />
-                <Input label="E-mail" type="email" required placeholder="exemplo@email.com"
-                  value={form.email} onChange={(e) => set("email", e.target.value)} error={errors.email} />
+                  value={formatPhoneBR(form.alternativePhone)} onChange={(e) => set("alternativePhone", onlyDigits(e.target.value))} />
+                <Input label="E-mail" type="email" placeholder="exemplo@email.com"
+                  value={form.email} onChange={(e) => set("email", normalizeEmail(e.target.value))} />
                 <Select label="Canal de comunicação preferido" options={CHANNELS}
                   value={form.preferredChannel} onChange={(e) => set("preferredChannel", e.target.value)} />
                 <Select label="Frequência de comunicação" options={FREQUENCIES}
@@ -754,38 +669,7 @@ export function Registration({
                 <Select label="Grau de parentesco" options={RELATIONS}
                   value={form.emergencyRelation} onChange={(e) => set("emergencyRelation", e.target.value)} />
                 <Input label="Telefone do contato" placeholder="(00) 00000-0000"
-                  value={form.emergencyPhone} onChange={(e) => set("emergencyPhone", e.target.value)} />
-              </div>
-            </Section>
-
-            <Section title="Acesso do paciente">
-              <div className={`${styles.portalAccessBox} ${styles.marginTop}`}>
-                <CheckRow
-                  field="createPortalAccess"
-                  label={isEditing ? "Criar acesso ao portal para este paciente" : "Criar usuário paciente com e-mail e senha"}
-                />
-                <p className={styles.portalAccessText}>
-                  O paciente poderá entrar com o e-mail cadastrado e acessar consultas, exames, receitas e laudos vinculados ao CPF/e-mail.
-                </p>
-                {form.createPortalAccess && (
-                  <div className={styles.grid2}>
-                    <Input
-                      label="Senha de acesso"
-                      type="password"
-                      placeholder="Mínimo 6 caracteres"
-                      value={form.portalPassword}
-                      onChange={(e) => set("portalPassword", e.target.value)}
-                      error={errors.portalPassword}
-                    />
-                    <Input
-                      label="Confirmar senha"
-                      type="password"
-                      value={form.portalConfirmPassword}
-                      onChange={(e) => set("portalConfirmPassword", e.target.value)}
-                      error={errors.portalConfirmPassword}
-                    />
-                  </div>
-                )}
+                  value={formatPhoneBR(form.emergencyPhone)} onChange={(e) => set("emergencyPhone", onlyDigits(e.target.value))} />
               </div>
             </Section>
 
@@ -802,7 +686,7 @@ export function Registration({
                 <Input label="Nome do responsável (menores/incapazes)"
                   value={form.guardianName} onChange={(e) => set("guardianName", e.target.value)} />
                 <Input label="CPF do responsável"
-                  value={form.guardianCpf} onChange={(e) => set("guardianCpf", e.target.value)} />
+                  value={formatCpfBR(form.guardianCpf)} onChange={(e) => set("guardianCpf", onlyDigits(e.target.value))} />
                 <Input label="Nome do cônjuge/companheiro(a)"
                   value={form.spouseName} onChange={(e) => set("spouseName", e.target.value)} />
               </div>
@@ -852,11 +736,9 @@ export function Registration({
           </Button>
           <div className={styles.formFooterRight}>
             {saveError && <span className={styles.saveError}>{saveError}</span>}
-            <span className={styles.stepCount}>
-              {isEditing ? "Edição rápida" : `Etapa ${step} de ${totalSteps}`}
-            </span>
+            <span className={styles.stepCount}>Etapa {step} de {totalSteps}</span>
             <Button onClick={handleNext} disabled={isSaving}>
-              {isSaving ? "Salvando..." : isEditing ? "Salvar alterações" : step < totalSteps ? "Próximo →" : "Cadastrar paciente"}
+              {isSaving ? "Salvando..." : step < totalSteps ? "Próximo →" : isEditing ? "Salvar alterações" : "Cadastrar paciente"}
             </Button>
           </div>
         </div>

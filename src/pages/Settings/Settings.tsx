@@ -4,10 +4,8 @@ import { Card } from "../../components/ui/Card/Card"
 import { Section } from "../../components/ui/Section/Section"
 import { Input } from "../../components/ui/Input/Input"
 import { Button } from "../../components/ui/Button/Button"
-import { Avatar } from "../../components/ui/Avatar/Avatar"
 import { getProfileSettings, updateProfileSettings } from "../../services/settings"
 import type { ProfileSettings } from "../../services/settings"
-import { uploadAvatar } from "../../services/storage"
 import type { User } from "../../types"
 import styles from "./Settings.module.css"
 
@@ -30,7 +28,6 @@ export function Settings({ currentUser }: SettingsProps) {
   const [form, setForm] = useState<ProfileSettings>(EMPTY)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
-  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -53,7 +50,6 @@ export function Settings({ currentUser }: SettingsProps) {
 
   async function handleSave() {
     if (!form.fullName.trim()) { setError("Nome obrigatório"); return }
-    if (!form.email.trim()) { setError("E-mail obrigatório"); return }
     setIsSaving(true)
     setError(null)
     setMessage(null)
@@ -65,26 +61,6 @@ export function Settings({ currentUser }: SettingsProps) {
       setError(err instanceof Error ? err.message : "Erro ao salvar configurações")
     } finally {
       setIsSaving(false)
-    }
-  }
-
-  async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    e.target.value = ""
-    if (!file) return
-
-    setIsUploadingAvatar(true)
-    setError(null)
-    setMessage(null)
-    try {
-      const avatarUrl = await uploadAvatar(form.id || currentUser.id, file)
-      const saved = await updateProfileSettings({ ...form, avatarUrl })
-      setForm(saved)
-      setMessage("Avatar atualizado.")
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao enviar avatar")
-    } finally {
-      setIsUploadingAvatar(false)
     }
   }
 
@@ -120,22 +96,6 @@ export function Settings({ currentUser }: SettingsProps) {
           ) : activeTab === "profile" ? (
             <>
               <Section title="Perfil do gestor">
-                <div className={styles.avatarRow}>
-                  <Avatar name={form.fullName || currentUser.name} size="xl" src={form.avatarUrl} />
-                  <div className={styles.avatarActions}>
-                    <strong>Foto de perfil</strong>
-                    <span>Imagem armazenada no bucket de avatars da API.</span>
-                    <label className={styles.avatarButton}>
-                      {isUploadingAvatar ? "Enviando..." : "Alterar avatar"}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleAvatarChange}
-                        disabled={isUploadingAvatar}
-                      />
-                    </label>
-                  </div>
-                </div>
                 <div className={styles.grid2}>
                   <Input
                     label="Nome"
@@ -145,10 +105,9 @@ export function Settings({ currentUser }: SettingsProps) {
                   />
                   <Input
                     label="E-mail"
-                    required
                     type="email"
                     value={form.email}
-                    onChange={(e) => setField("email", e.target.value)}
+                    disabled
                   />
                   <Input
                     label="Telefone"
