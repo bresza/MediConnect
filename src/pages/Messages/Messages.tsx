@@ -81,7 +81,7 @@ export function Messages() {
     <div>
       <Topbar
         title="Comunicação"
-        subtitle="Mensagens enviadas aos pacientes"
+        subtitle="SMS documentado na API, mas envio desativado no sistema"
         action={<Button onClick={() => setShowModal(true)}>Nova mensagem</Button>}
       />
 

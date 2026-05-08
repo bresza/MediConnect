@@ -32,7 +32,7 @@ export function Input({
   return (
     <div className={`${styles.wrapper} ${className}`}>
       {label && (
-        <label htmlFor={inputId} className={styles.label}>
+        <label htmlFor={inputId} className={styles.label} translate="no">
           {label}{required && <span className={styles.required}>*</span>}
         </label>
       )}
