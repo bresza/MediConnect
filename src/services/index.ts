@@ -1,5 +1,5 @@
-export { login, getDemoAccounts }  from "./auth"
-export type { LoginResponse, LoginPayload, DemoAccount } from "./auth"
+export { login } from "./auth"
+export type { LoginResponse, LoginPayload } from "./auth"
 
 export { apiRequest, setApiContext, ApiError, setUnauthorizedHandler } from "./api"
 

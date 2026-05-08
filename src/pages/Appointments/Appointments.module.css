@@ -24,6 +24,7 @@
   border-radius: var(--radius-lg);
   overflow: hidden;
 }
+.viewSwitcher::-webkit-scrollbar { display: none; }
 
 .viewBtn {
   padding: 7px 16px;
@@ -35,6 +36,7 @@
   border: none;
   cursor: pointer;
   transition: background-color 150ms ease, color 150ms ease;
+  white-space: nowrap;
 }
 
 .viewBtn:hover { background-color: var(--muted); }
