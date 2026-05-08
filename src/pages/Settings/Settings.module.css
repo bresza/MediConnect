@@ -55,6 +55,47 @@
   gap: 14px;
 }
 
+.avatarRow {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 20px;
+}
+
+.avatarActions {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.avatarActions strong {
+  color: var(--foreground);
+  font-size: 14px;
+}
+
+.avatarActions span {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.avatarButton {
+  width: fit-content;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--input);
+  color: var(--foreground);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 8px 10px;
+  margin-top: 4px;
+}
+
+.avatarButton input {
+  display: none;
+}
+
 .colSpan2 { grid-column: span 2; }
 
 .infoGrid {
@@ -163,6 +204,11 @@
 
 @media (max-width: 640px) {
   .contentCard { padding: 18px; }
+
+  .avatarRow {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 
   .grid2 {
     grid-template-columns: 1fr;

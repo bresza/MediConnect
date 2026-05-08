@@ -7,6 +7,7 @@ export interface ProfileSettings {
   email: string
   phone: string
   role: string
+  avatarUrl?: string
 }
 
 interface ApiProfile {
@@ -15,6 +16,8 @@ interface ApiProfile {
   email?: string
   phone?: string
   role?: string
+  avatar_url?: string
+  photo_url?: string
 }
 
 function apiToSettings(api: ApiProfile, fallback: User): ProfileSettings {
@@ -24,6 +27,7 @@ function apiToSettings(api: ApiProfile, fallback: User): ProfileSettings {
     email: api.email ?? fallback.email,
     phone: api.phone ?? "",
     role: api.role ?? fallback.role,
+    avatarUrl: api.avatar_url ?? api.photo_url,
   }
 }
 
@@ -47,6 +51,7 @@ export async function updateProfileSettings(settings: ProfileSettings): Promise<
       full_name: settings.fullName.trim(),
       email: settings.email.trim(),
       phone: settings.phone.trim() || null,
+      avatar_url: settings.avatarUrl || null,
     },
   })
   return settings

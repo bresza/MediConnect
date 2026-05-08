@@ -1,6 +1,8 @@
 .layout {
   display: flex;
   min-height: 100vh;
+  width: 100%;
+  min-width: 0;
   background-color: var(--background);
 }
 
@@ -34,13 +36,20 @@
 }
 .hamburgerBtn:hover { background-color: var(--muted); }
 
-.mobileLogo    { display: flex; align-items: center; gap: 8px; }
+.mobileLogo    { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .mobileLogoIcon {
   width: 24px; height: 24px;
   border-radius: 6px; background-color: var(--primary);
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
-.mobileLogoName { font-size: 14px; font-weight: 700; color: var(--foreground); }
+.mobileLogoName {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* ── Content area ─────────────────────────────────────────────── */
 .content {

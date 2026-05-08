@@ -177,3 +177,25 @@
   color: var(--muted-foreground);
   font-size: 14px;
 }
+
+@media (max-width: 640px) {
+  .filters {
+    align-items: stretch;
+  }
+
+  .searchWrapper {
+    max-width: none;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .filterBtn {
+    flex: 1 1 calc(50% - 6px);
+  }
+
+  .tableScroll {
+    margin-inline: -12px;
+    padding-inline: 12px;
+    -webkit-overflow-scrolling: touch;
+  }
+}

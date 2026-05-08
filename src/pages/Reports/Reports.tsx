@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react"
-import { getReports, createReport, updateReport } from "../../services/domain"
+import { getReports, createReport, updateReport, updateReportStatus } from "../../services/domain"
+import { getPatientsForReports } from "../../services/patients"
 import { REPORT_TEMPLATES, TEMPLATE_SPECIALTIES } from "../../data/reportTemplates"
 import type { ReportTemplate } from "../../data/reportTemplates"
-import type { Report, ReportStatus, User, Patient } from "../../types"
+import type { Report, ReportStatus, User, Patient, StaffMember } from "../../types"
 import { Topbar }  from "../../components/layout/Topbar/Topbar"
 import { Card }    from "../../components/ui/Card/Card"
 import { Badge }   from "../../components/ui/Badge/Badge"
@@ -12,7 +13,7 @@ import { Modal }   from "../../components/ui/Modal/Modal"
 import { formatDate } from "../../utils"
 import styles from "./Reports.module.css"
 
-interface ReportsProps { currentUser: User; patients?: Patient[] }
+interface ReportsProps { currentUser: User; patients?: Patient[]; staff?: StaffMember[] }
 
 const STATUS_PT: Record<ReportStatus, string> = {
   Draft: "Rascunho", Finalized: "Finalizado", Sent: "Enviado",
@@ -36,6 +37,31 @@ const EMPTY_FORM: ReportForm = {
   diagnosis: "", conclusion: "", cid10: "",
   contentHtml: "", hideDate: false, hideSignature: false, status: "Draft",
 }
+
+const DEV_REPORT_PATIENTS: Patient[] = [
+  {
+    id: "local-patient-ana",
+    name: "Ana Souza",
+    cpf: "00000000001",
+    email: "ana.souza@mediconnect.local",
+    phone: "79999990001",
+    dob: "1990-05-12",
+    gender: "Female",
+    status: "Active",
+    healthInsurance: "Unimed",
+  },
+  {
+    id: "local-patient-carlos",
+    name: "Carlos Mendes",
+    cpf: "00000000002",
+    email: "carlos.mendes@mediconnect.local",
+    phone: "79999990002",
+    dob: "1982-08-21",
+    gender: "Male",
+    status: "Active",
+    healthInsurance: "Particular",
+  },
+]
 
 // ─── IA — completa laudo via Anthropic API ────────────────────────
 async function aiCompleteReport(
@@ -156,7 +182,12 @@ function TemplateSelector({ onSelect, onClose }: TemplateSelectorProps) {
 }
 
 // ─── Main ─────────────────────────────────────────────────────────
-export function Reports({ currentUser, patients = [] }: ReportsProps) {
+function sameText(a?: string, b?: string): boolean {
+  return Boolean(a && b && a.toLowerCase().trim() === b.toLowerCase().trim())
+}
+
+export function Reports({ currentUser, patients = [], staff = [] }: ReportsProps) {
+  const [reportPatients, setReportPatients] = useState<Patient[]>(patients)
   const [reports,       setReports]       = useState<Report[]>([])
   const [isLoading,     setIsLoading]     = useState(true)
   const [modalOpen,     setModalOpen]     = useState(false)
@@ -168,10 +199,22 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
   const [error,         setError]         = useState<string | null>(null)
   const [search,        setSearch]        = useState("")
   const [filterStatus,  setFilterStatus]  = useState<ReportStatus | "All">("All")
+  const currentDoctor = currentUser.role === "doctor"
+    ? staff.find((member) =>
+      member.role === "doctor" && (
+        member.id === currentUser.doctorId ||
+        member.id === currentUser.id ||
+        sameText(member.email, currentUser.email) ||
+        sameText(member.name, currentUser.name) ||
+        sameText(member.crm, currentUser.crm)
+      ))
+    : null
+  const currentDoctorId = currentDoctor?.id ?? currentUser.doctorId ?? currentUser.id
+  const patientOptions = reportPatients.length > 0 ? reportPatients : patients
 
   const visibleReports = reports
     .filter((r) => currentUser.role === "doctor"
-      ? (r.doctorName === currentUser.name || r.doctorId === currentUser.id)
+      ? (r.doctorName === currentUser.name || r.doctorId === currentDoctorId || r.doctorId === currentUser.id)
       : true)
     .filter((r) => filterStatus === "All" || r.status === filterStatus)
     .filter((r) => !search ||
@@ -187,13 +230,30 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
 
   useEffect(() => { load() }, [load])
 
+  useEffect(() => {
+    if (patients.length > 0) {
+      setReportPatients(patients)
+      return
+    }
+
+    let alive = true
+    getPatientsForReports()
+      .then((rows) => {
+        if (alive) setReportPatients(rows)
+      })
+      .catch(() => {
+        if (alive && import.meta.env.DEV) setReportPatients(DEV_REPORT_PATIENTS)
+      })
+    return () => { alive = false }
+  }, [patients])
+
   function setField<K extends keyof ReportForm>(k: K, v: ReportForm[K]) {
     setForm((p) => ({ ...p, [k]: v })); setError(null)
   }
 
   // ── Aplicar template ─────────────────────────────────────────────
   function applyTemplate(t: ReportTemplate) {
-    const patient    = patients.find((p) => p.id === form.patientId)
+    const patient    = patientOptions.find((p) => p.id === form.patientId)
     const pName      = patient?.name ?? "[NOME DO PACIENTE]"
     const dName      = currentUser.name ?? "[NOME DO MÉDICO]"
     const today      = new Date().toLocaleDateString("pt-BR")
@@ -219,7 +279,7 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
   async function handleAiComplete() {
     setIsAiLoading(true); setError(null)
     try {
-      const patient    = patients.find((p) => p.id === form.patientId)
+      const patient    = patientOptions.find((p) => p.id === form.patientId)
       const patientInfo = patient
         ? `Nome: ${patient.name}, Idade: ${patient.dob ? new Date().getFullYear() - new Date(patient.dob).getFullYear() : "N/A"} anos, Convênio: ${patient.healthInsurance ?? "Particular"}, Observações: ${patient.observations ?? "Nenhuma"}`
         : "Paciente não identificado"
@@ -257,15 +317,20 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
 
   // ── Salvar ───────────────────────────────────────────────────────
   async function handleSave(finalStatus?: ReportStatus) {
-    if (!form.patientId && !form.patientName) { setError("Selecione o paciente."); return }
-    if (!form.type)                           { setError("Informe o tipo de laudo."); return }
+    if (patientOptions.length === 0) {
+      setError("Não foi possível carregar a lista de pacientes. Recarregue a página e tente novamente.")
+      return
+    }
+    const selectedPatient = patientOptions.find((patient) => patient.id === form.patientId)
+    if (!selectedPatient)                     { setError("Selecione um paciente válido."); return }
+    if (!form.type.trim())                    { setError("Informe o tipo de laudo."); return }
     setIsSaving(true); setError(null)
     try {
       const payload = {
-        patientId:     form.patientId || form.patientName,
-        patientName:   form.patientName,
-        type:          form.type,
-        exam:          form.type,
+        patientId:     selectedPatient.id,
+        patientName:   selectedPatient.name,
+        type:          form.type.trim(),
+        exam:          form.type.trim(),
         diagnosis:     form.diagnosis,
         conclusion:    form.conclusion,
         content:       form.contentHtml,
@@ -274,13 +339,18 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
         hideDate:      form.hideDate,
         hideSignature: form.hideSignature,
         status:        finalStatus ?? form.status,
-        doctorId:      currentUser.id,
+        doctorId:      currentDoctorId,
         doctorName:    currentUser.name,
         date:          new Date().toISOString().slice(0, 10),
       }
       if (editingReport) {
         const updated = await updateReport({ ...editingReport, ...payload })
-        setReports((prev) => prev.map((r) => r.id === updated.id ? updated : r))
+        if (finalStatus === "Finalized") {
+          await updateReportStatus(editingReport.id, "Finalized")
+        }
+        setReports((prev) => prev.map((r) =>
+          r.id === updated.id ? { ...updated, status: finalStatus ?? updated.status } : r,
+        ))
       } else {
         const created = await createReport(payload)
         setReports((prev) => [created, ...prev])
@@ -294,8 +364,8 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
   // ── Mudar status direto da lista ─────────────────────────────────
   async function quickStatus(r: Report, status: ReportStatus) {
     try {
-      const updated = await updateReport({ ...r, status })
-      setReports((prev) => prev.map((x) => x.id === updated.id ? updated : x))
+      await updateReportStatus(r.id, status)
+      setReports((prev) => prev.map((x) => x.id === r.id ? { ...x, status } : x))
     } catch { /* silencia */ }
   }
 
@@ -462,22 +532,21 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
             <label style={labelStyle}>
               Paciente <span style={{ color: "var(--destructive)" }}>*</span>
             </label>
-            {patients.length > 0 ? (
+            {patientOptions.length > 0 ? (
               <select value={form.patientId}
                 onChange={(e) => {
-                  const p = patients.find((x) => x.id === e.target.value)
+                  const p = patientOptions.find((x) => x.id === e.target.value)
                   setField("patientId", e.target.value)
                   setField("patientName", p?.name ?? "")
                 }}
                 style={{ width: "100%", padding: "9px 12px", borderRadius: 8, fontSize: 13, border: "1px solid var(--border)", background: "var(--background)", color: "var(--foreground)", outline: "none" }}>
                 <option value="">Selecionar paciente...</option>
-                {patients.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                {patientOptions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             ) : (
-              <input value={form.patientName}
-                onChange={(e) => { setField("patientName", e.target.value); setField("patientId", e.target.value) }}
-                placeholder="Nome do paciente"
-                style={{ width: "100%", padding: "9px 12px", borderRadius: 8, fontSize: 13, border: "1px solid var(--border)", background: "var(--background)", color: "var(--foreground)", outline: "none", boxSizing: "border-box" }} />
+              <div style={{ padding: "9px 12px", borderRadius: 8, fontSize: 13, border: "1px solid var(--border)", background: "var(--muted)", color: "var(--muted-foreground)" }}>
+                Lista de pacientes indisponível. Recarregue a página para criar o laudo.
+              </div>
             )}
           </div>
 

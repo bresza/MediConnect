@@ -9,6 +9,7 @@ import { ConfirmDialog } from "../../components/ui/ConfirmDialog/ConfirmDialog"
 import { Input } from "../../components/ui/Input/Input"
 import { Select } from "../../components/ui/Select/Select"
 import { Section } from "../../components/ui/Section/Section"
+import { requestPasswordReset } from "../../services/auth"
 import type { StaffMember, StaffRole, StaffStatus } from "../../types"
 import type { UseToastReturn } from "../../hooks/useToast"
 import type { UseStaffReturn } from "../../hooks/useStaff"
@@ -21,6 +22,7 @@ interface TeamProps {
   onAdd:    UseStaffReturn["addStaff"]
   onUpdate: UseStaffReturn["updateStaff"]
   onDelete: UseStaffReturn["deleteStaff"]
+  onRefresh?: UseStaffReturn["reload"]
   toast:    UseToastReturn["toast"]
 }
 
@@ -28,29 +30,75 @@ interface StaffForm {
   name:            string
   email:           string
   phone:           string
+  phone2:          string
   status:          StaffStatus
   cpf:             string   // todos os perfis
+  rg:              string
   crmNum:          string   // médico
   crmUf:           string   // médico
   specialty:       string   // médico
   department:      string   // secretária/gestor
+  cep:             string
+  street:          string
+  number:          string
+  complement:      string
+  neighborhood:    string
+  city:            string
+  state:           string
   password:        string
   confirmPassword: string
 }
 
 const EMPTY_FORM: StaffForm = {
-  name: "", email: "", phone: "", status: "Active",
-  cpf: "", crmNum: "", crmUf: "", specialty: "", department: "",
+  name: "", email: "", phone: "", phone2: "", status: "Active",
+  cpf: "", rg: "", crmNum: "", crmUf: "", specialty: "", department: "",
+  cep: "", street: "", number: "", complement: "", neighborhood: "", city: "", state: "",
   password: "", confirmPassword: "",
 }
 
 function memberToForm(m: StaffMember): StaffForm {
   const [crmNum = "", crmUf = ""] = (m.crm ?? "").split("-")
   return {
-    name: m.name, email: m.email, phone: m.phone, status: m.status,
-    cpf: "", crmNum, crmUf, specialty: m.specialty ?? "",
-    department: m.department ?? "", password: "", confirmPassword: "",
+    name: m.name, email: m.email, phone: m.phone, phone2: formatPhone(m.phone2 ?? ""), status: m.status,
+    cpf: formatCpf(m.cpf ?? ""), rg: m.rg ?? "", crmNum, crmUf, specialty: m.specialty ?? "",
+    department: m.department ?? "",
+    cep: formatCep(m.address?.zipCode ?? ""),
+    street: m.address?.street ?? "",
+    number: m.address?.number ?? "",
+    complement: m.address?.complement ?? "",
+    neighborhood: m.address?.neighborhood ?? "",
+    city: m.address?.city ?? "",
+    state: m.address?.state ?? "",
+    password: "", confirmPassword: "",
   }
+}
+
+function onlyDigits(value: string): string {
+  return value.replace(/\D/g, "")
+}
+
+function formatCpf(value: string): string {
+  const digits = onlyDigits(value).slice(0, 11)
+  return digits
+    .replace(/^(\d{3})(\d)/, "$1.$2")
+    .replace(/^(\d{3})\.(\d{3})(\d)/, "$1.$2.$3")
+    .replace(/^(\d{3})\.(\d{3})\.(\d{3})(\d)/, "$1.$2.$3-$4")
+}
+
+function formatPhone(value: string): string {
+  const digits = onlyDigits(value).slice(0, 11)
+  if (digits.length <= 10) {
+    return digits
+      .replace(/^(\d{2})(\d)/, "($1) $2")
+      .replace(/(\d{4})(\d)/, "$1-$2")
+  }
+  return digits
+    .replace(/^(\d{2})(\d)/, "($1) $2")
+    .replace(/(\d{5})(\d)/, "$1-$2")
+}
+
+function formatCep(value: string): string {
+  return onlyDigits(value).slice(0, 8).replace(/^(\d{5})(\d)/, "$1-$2")
 }
 
 const SPECIALTIES = [
@@ -67,6 +115,8 @@ const UF_LIST = [
 // ─── Icons ────────────────────────────────────────────────────────
 const PlusIcon = () => <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
 const EditIcon = () => <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+const KeyIcon = () => <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round"><circle cx="7.5" cy="15.5" r="5.5" /><path d="M12 12l8-8M16 8l2 2M18 6l2 2" /></svg>
+const RefreshIcon = () => <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 11-2.64-6.36" /><path d="M21 3v6h-6" /></svg>
 const TrashIcon = () => <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6M10 11v6M14 11v6M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2" /></svg>
 
 const EyeIcon = ({ open }: { open: boolean }) => open
@@ -81,7 +131,7 @@ const TABS: { id: TabId; label: string; singular: string }[] = [
 ]
 
 // ─── Password input helper ────────────────────────────────────────
-function PasswordInput({ label, value, show, onToggle, onChange, error, placeholder = "Mínimo 8 caracteres" }: {
+function PasswordInput({ label, value, show, onToggle, onChange, error, placeholder = "Mínimo 6 caracteres" }: {
   label: string; value: string; show: boolean; onToggle: () => void
   onChange: (v: string) => void; error?: string; placeholder?: string
 }) {
@@ -115,7 +165,7 @@ function PasswordInput({ label, value, show, onToggle, onChange, error, placehol
 }
 
 // ─── Main component ───────────────────────────────────────────────
-export function Team({ staff, onAdd, onUpdate, onDelete, toast }: TeamProps) {
+export function Team({ staff, onAdd, onUpdate, onDelete, onRefresh, toast }: TeamProps) {
   const [activeTab,     setActiveTab]     = useState<TabId>("doctor")
   const [search,        setSearch]        = useState("")
   const [modalOpen,     setModalOpen]     = useState(false)
@@ -124,6 +174,8 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast }: TeamProps) {
   const [form,          setForm]          = useState<StaffForm>(EMPTY_FORM)
   const [errors,        setErrors]        = useState<Partial<Record<keyof StaffForm, string>>>({})
   const [isSaving,      setIsSaving]      = useState(false)
+  const [resettingId,   setResettingId]   = useState<string | null>(null)
+  const [isRefreshing,  setIsRefreshing]  = useState(false)
   const [showPass,      setShowPass]      = useState(false)
   const [showConfirm,   setShowConfirm]   = useState(false)
 
@@ -135,7 +187,16 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast }: TeamProps) {
   const confirmTarget = staff.find((m) => m.id === confirmId)
 
   const handleChange = useCallback((field: keyof StaffForm, value: string) => {
-    setForm((prev) => ({ ...prev, [field]: value }))
+    const nextValue =
+      field === "cpf" ? formatCpf(value) :
+      field === "phone" ? formatPhone(value) :
+      field === "phone2" ? formatPhone(value) :
+      field === "cep" ? formatCep(value) :
+      field === "crmNum" ? onlyDigits(value).slice(0, 8) :
+      field === "crmUf" ? value.toUpperCase() :
+      field === "state" ? value.toUpperCase().slice(0, 2) :
+      value
+    setForm((prev) => ({ ...prev, [field]: nextValue }))
     setErrors((prev) => ({ ...prev, [field]: undefined }))
   }, [])
 
@@ -154,8 +215,7 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast }: TeamProps) {
     if (!form.name.trim())  e.name  = "Nome obrigatório"
     if (!form.email.trim()) e.email = "E-mail obrigatório"
     if (!form.phone.trim()) e.phone = "Telefone obrigatório"
-    // CPF é obrigatório na criação porque o endpoint de usuário exige validação.
-    if (!editingMember && !form.cpf.trim()) e.cpf = "CPF obrigatório"
+    if (!form.cpf.trim()) e.cpf = "CPF obrigatório"
     if (activeTab === "doctor") {
       if (!form.crmNum.trim())    e.crmNum    = "CRM obrigatório"
       if (!form.crmUf.trim())     e.crmUf     = "UF obrigatória"
@@ -163,7 +223,7 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast }: TeamProps) {
     }
     if (!editingMember) {
       if (!form.password)             e.password        = "Senha obrigatória"
-      else if (form.password.length < 8) e.password     = "Mínimo 8 caracteres"
+      else if (form.password.length < 6) e.password     = "Mínimo 6 caracteres"
       if (!form.confirmPassword)      e.confirmPassword = "Confirmação obrigatória"
       else if (form.password !== form.confirmPassword) e.confirmPassword = "Senhas não coincidem"
     }
@@ -179,12 +239,23 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast }: TeamProps) {
         name:       form.name.trim(),
         email:      form.email.trim(),
         phone:      form.phone.trim(),
+        phone2:     form.phone2.trim() || undefined,
         status:     form.status,
         role:       activeTab,
-        cpf:        form.cpf.replace(/\D/g, ""),
-        crm:        activeTab === "doctor" ? `${form.crmNum}-${form.crmUf}` : undefined,
+        cpf:        onlyDigits(form.cpf),
+        rg:         form.rg.trim() || undefined,
+        crm:        activeTab === "doctor" ? `${form.crmNum}-${form.crmUf.toUpperCase()}` : undefined,
         specialty:  activeTab === "doctor" ? form.specialty : undefined,
         department: activeTab !== "doctor" ? form.department.trim() : undefined,
+        address: {
+          zipCode: onlyDigits(form.cep),
+          street: form.street.trim(),
+          number: form.number.trim(),
+          complement: form.complement.trim() || undefined,
+          neighborhood: form.neighborhood.trim(),
+          city: form.city.trim(),
+          state: form.state.trim().toUpperCase(),
+        },
       }
 
       if (editingMember) {
@@ -192,7 +263,15 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast }: TeamProps) {
         toast(`${form.name} atualizado com sucesso.`, "success")
       } else {
         const doctorExtra = activeTab === "doctor"
-          ? { cpf: form.cpf, crmNum: form.crmNum, crmUf: form.crmUf, specialty: form.specialty }
+          ? {
+            cpf: form.cpf,
+            crmNum: form.crmNum,
+            crmUf: form.crmUf,
+            specialty: form.specialty,
+            phone2: form.phone2,
+            rg: form.rg,
+            address: base.address,
+          }
           : undefined
         await onAdd(base, form.password, doctorExtra)
         toast(`${form.name} cadastrado! Já pode acessar o sistema com o e-mail e senha definidos.`, "success")
@@ -207,9 +286,45 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast }: TeamProps) {
   }
 
   async function handleDelete(id: string) {
-    await onDelete(id)
-    toast("Profissional removido.", "info")
-    setConfirmId(null)
+    try {
+      await onDelete(id)
+      toast("Profissional removido.", "info")
+      setConfirmId(null)
+    } catch (err) {
+      const raw = err instanceof Error ? err.message : "Erro ao remover profissional"
+      toast(raw, "error")
+    }
+  }
+
+  async function handlePasswordReset(member: StaffMember) {
+    if (!member.email) {
+      toast("Este profissional não tem e-mail cadastrado.", "error")
+      return
+    }
+    setResettingId(member.id)
+    try {
+      await requestPasswordReset(member.email)
+      toast(`Enviamos um e-mail de redefinição para ${member.email}.`, "success")
+    } catch (err) {
+      const raw = err instanceof Error ? err.message : "Erro ao enviar redefinição de senha"
+      toast(raw, "error")
+    } finally {
+      setResettingId(null)
+    }
+  }
+
+  async function handleRefresh() {
+    if (!onRefresh || isRefreshing) return
+    setIsRefreshing(true)
+    try {
+      await onRefresh()
+      toast("Lista da equipe atualizada.", "success")
+    } catch (err) {
+      const raw = err instanceof Error ? err.message : "Erro ao atualizar equipe"
+      toast(raw, "error")
+    } finally {
+      setIsRefreshing(false)
+    }
   }
 
   const currentTab = TABS.find((t) => t.id === activeTab)!
@@ -243,6 +358,11 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast }: TeamProps) {
           <input className={styles.searchInput} value={search} onChange={(e) => setSearch(e.target.value)}
             placeholder={`Buscar ${currentTab.label.toLowerCase()}...`} />
         </div>
+        {onRefresh && (
+          <Button variant="ghost" onClick={handleRefresh} loading={isRefreshing} icon={<RefreshIcon />}>
+            Atualizar
+          </Button>
+        )}
       </div>
 
       {/* Table */}
@@ -272,7 +392,9 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast }: TeamProps) {
                         <Avatar name={member.name} size="sm" />
                         <div>
                           <p className={styles.memberName}>{member.name}</p>
-                          <p className={styles.memberEmail}>{member.email}</p>
+                          <p className={styles.memberEmail}>
+                            {member.email}{member.cpf ? ` · CPF ${formatCpf(member.cpf)}` : ""}
+                          </p>
                         </div>
                       </div>
                     </td>
@@ -284,6 +406,14 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast }: TeamProps) {
                     <td><Badge>{member.status}</Badge></td>
                     <td>
                       <div className={styles.actions}>
+                        <button
+                          className={styles.actionBtn}
+                          onClick={() => handlePasswordReset(member)}
+                          title="Enviar redefinição de senha"
+                          disabled={resettingId === member.id}
+                        >
+                          <KeyIcon />
+                        </button>
                         <button className={styles.actionBtn} onClick={() => openEdit(member)} title="Editar"><EditIcon /></button>
                         <button className={`${styles.actionBtn} ${styles.actionBtnDanger}`} onClick={() => setConfirmId(member.id)} title="Remover"><TrashIcon /></button>
                       </div>
@@ -321,6 +451,8 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast }: TeamProps) {
                 error={errors.email} required />
               <Input label="Telefone" value={form.phone} onChange={(e) => handleChange("phone", e.target.value)}
                 error={errors.phone} required placeholder="(00) 00000-0000" />
+              <Input label="Telefone 2" value={form.phone2} onChange={(e) => handleChange("phone2", e.target.value)}
+                placeholder="(00) 00000-0000" />
               <Select label="Status" value={form.status} onChange={(e) => handleChange("status", e.target.value)} options={["Active", "Inactive"]} />
             </div>
           </Section>
@@ -330,7 +462,9 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast }: TeamProps) {
             <Section title="Dados profissionais">
               <div className={styles.grid2}>
                 <Input label="CPF" value={form.cpf} onChange={(e) => handleChange("cpf", e.target.value)}
-                  error={errors.cpf} required placeholder="000.000.000-00" className={styles.colSpan2} />
+                  error={errors.cpf} required placeholder="000.000.000-00" />
+                <Input label="RG" value={form.rg} onChange={(e) => handleChange("rg", e.target.value)}
+                  placeholder="RG" />
                 <Input label="Número CRM" value={form.crmNum} onChange={(e) => handleChange("crmNum", e.target.value)}
                   error={errors.crmNum} required placeholder="Ex: 123456" />
                 <Select label="UF do CRM" value={form.crmUf} onChange={(e) => handleChange("crmUf", e.target.value)}
@@ -341,12 +475,33 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast }: TeamProps) {
             </Section>
           )}
 
+          {activeTab === "doctor" && (
+            <Section title="Endereço">
+              <div className={styles.grid2}>
+                <Input label="CEP" value={form.cep} onChange={(e) => handleChange("cep", e.target.value)}
+                  placeholder="00000-000" />
+                <Input label="Rua" value={form.street} onChange={(e) => handleChange("street", e.target.value)}
+                  placeholder="Rua" />
+                <Input label="Número" value={form.number} onChange={(e) => handleChange("number", e.target.value)}
+                  placeholder="Número" />
+                <Input label="Complemento" value={form.complement} onChange={(e) => handleChange("complement", e.target.value)}
+                  placeholder="Complemento" />
+                <Input label="Bairro" value={form.neighborhood} onChange={(e) => handleChange("neighborhood", e.target.value)}
+                  placeholder="Bairro" />
+                <Input label="Cidade" value={form.city} onChange={(e) => handleChange("city", e.target.value)}
+                  placeholder="Cidade" />
+                <Input label="UF" value={form.state} onChange={(e) => handleChange("state", e.target.value)}
+                  placeholder="UF" />
+              </div>
+            </Section>
+          )}
+
           {/* Dados profissionais — Secretária/Gestor */}
           {(activeTab === "secretary" || activeTab === "manager") && (
             <Section title="Dados profissionais">
               <div className={styles.grid2}>
-                <Input label="CPF" required value={form.cpf} onChange={(e) => handleChange("cpf", e.target.value)}
-                  error={errors.cpf} placeholder="000.000.000-00" />
+                <Input label="CPF" value={form.cpf} onChange={(e) => handleChange("cpf", e.target.value)}
+                  error={errors.cpf} required placeholder="000.000.000-00" />
                 <Input label="Departamento" value={form.department} onChange={(e) => handleChange("department", e.target.value)}
                   placeholder={activeTab === "secretary" ? "Ex: Recepção" : "Ex: Gestão Geral"} />
               </div>
