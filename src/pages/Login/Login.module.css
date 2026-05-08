@@ -1,6 +1,7 @@
 .root {
   min-height: 100vh;
   display: flex;
+  min-width: 0;
   background: var(--background);
 }
 
@@ -91,6 +92,7 @@
 /* ── Right panel – form ────────────────────────────────────────── */
 .formPanel {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -190,12 +192,6 @@
   margin-bottom: 24px;
 }
 
-.fieldGroup {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
 .signupHint {
   margin: 0;
   padding: 9px 11px;
@@ -207,10 +203,23 @@
   line-height: 1.45;
 }
 
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .signupGrid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr);
   gap: 10px;
+}
+
+.label {
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  color: var(--foreground);
 }
 
 .labelRow {
@@ -229,18 +238,12 @@
   font-weight: 700;
   font-family: var(--font-sans);
   padding: 0;
+  white-space: nowrap;
 }
 
 .linkBtn:disabled {
   cursor: not-allowed;
   opacity: 0.55;
-}
-
-.label {
-  font-size: 12px;
-  font-weight: 600;
-  font-family: var(--font-sans);
-  color: var(--foreground);
 }
 
 .input {
@@ -417,6 +420,27 @@
   flex-shrink: 0;
 }
 
+@media (max-width: 420px) {
+  .formPanel {
+    padding: 28px 16px;
+  }
+
+  .demoCard {
+    align-items: flex-start;
+  }
+
+  .demoCred {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-align: right;
+    max-width: 42%;
+  }
+
+  .signupGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ── Theme toggle ──────────────────────────────────────────────── */
 .themeBtn {
   position: fixed;
@@ -436,9 +460,3 @@
 }
 
 .themeBtn:hover { background: var(--muted); }
-
-@media (max-width: 520px) {
-  .signupGrid {
-    grid-template-columns: 1fr;
-  }
-}

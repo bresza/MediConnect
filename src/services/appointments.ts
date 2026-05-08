@@ -377,3 +377,64 @@ export async function getAppointmentDoctors(): Promise<AppointmentDoctor[]> {
     name: doctor.full_name,
   }))
 }
+
+interface PatientLookup {
+  patientId?: string
+  userId?: string
+  name?: string
+  email?: string
+  cpf?: string
+}
+
+function compactValues(values: Array<string | undefined>): string[] {
+  return values.map((value) => value?.trim()).filter((value): value is string => Boolean(value))
+}
+
+function mergeAppointments(rows: ApiAppointment[][]): ApiAppointment[] {
+  return Array.from(new Map(rows.flat().map((row) => [row.id, row])).values())
+}
+
+export async function getPatientAppointmentsByIdentity(identity: PatientLookup): Promise<Appointment[]> {
+  const queries: Array<Promise<ApiAppointment[]>> = []
+  const patientIds = compactValues([identity.patientId])
+  const email = identity.email?.trim().toLowerCase()
+  const cpf = identity.cpf?.replace(/\D/g, "")
+  const userId = identity.userId?.trim()
+
+  if (patientIds.length > 0) {
+    queries.push(apiRequest<ApiAppointment[]>(
+      `/rest/v1/appointments?patient_id=eq.${encodeURIComponent(patientIds[0])}&select=*,patients(id,full_name,email,cpf,user_id)&order=scheduled_at.asc`,
+      { logErrors: false },
+    ).catch(() => []))
+  }
+  if (email) {
+    queries.push(apiRequest<ApiAppointment[]>(
+      `/rest/v1/appointments?select=*,patients!inner(id,full_name,email,cpf,user_id)&patients.email=eq.${encodeURIComponent(email)}&order=scheduled_at.asc`,
+      { logErrors: false },
+    ).catch(() => []))
+  }
+  if (cpf) {
+    queries.push(apiRequest<ApiAppointment[]>(
+      `/rest/v1/appointments?select=*,patients!inner(id,full_name,email,cpf,user_id)&patients.cpf=eq.${encodeURIComponent(cpf)}&order=scheduled_at.asc`,
+      { logErrors: false },
+    ).catch(() => []))
+  }
+  if (userId) {
+    queries.push(apiRequest<ApiAppointment[]>(
+      `/rest/v1/appointments?select=*,patients!inner(id,full_name,email,cpf,user_id)&patients.user_id=eq.${encodeURIComponent(userId)}&order=scheduled_at.asc`,
+      { logErrors: false },
+    ).catch(() => []))
+  }
+
+  if (queries.length === 0) return []
+
+  const [rows, doctors] = await Promise.all([
+    Promise.all(queries).then(mergeAppointments),
+    getAppointmentDoctors(),
+  ])
+  const doctorMap = new Map(doctors.map((doctor) => [doctor.id, doctor.name]))
+
+  return rows
+    .map((appointment) => apiToAppointment(appointment, doctorMap.get(appointment.doctor_id) ?? ""))
+    .sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`))
+}

@@ -755,3 +755,40 @@ export async function sendMessage(
     status: "Delivered",
   }
 }
+
+interface PatientLookup {
+  patientId?: string
+  userId?: string
+  name?: string
+  email?: string
+  cpf?: string
+}
+
+function sameLookupText(a?: string, b?: string): boolean {
+  return Boolean(a && b && a.trim().toLowerCase() === b.trim().toLowerCase())
+}
+
+function recordMatchesPatient(
+  item: { patientId: string; patientName: string },
+  identity: PatientLookup,
+): boolean {
+  return Boolean(
+    (identity.patientId && item.patientId === identity.patientId) ||
+    sameLookupText(item.patientName, identity.name),
+  )
+}
+
+export async function getPatientReportsByIdentity(identity: PatientLookup): Promise<Report[]> {
+  const reports = await getReports()
+  return reports.filter((report) => recordMatchesPatient(report, identity))
+}
+
+export async function getPatientMedicalRecordsByIdentity(identity: PatientLookup): Promise<MedicalRecord[]> {
+  const records = await getMedicalRecords()
+  return records.filter((record) => recordMatchesPatient(record, identity))
+}
+
+export async function getPatientPrescriptionsByIdentity(identity: PatientLookup): Promise<Prescription[]> {
+  const prescriptions = await getPrescriptions()
+  return prescriptions.filter((prescription) => recordMatchesPatient(prescription, identity))
+}

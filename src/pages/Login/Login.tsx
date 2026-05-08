@@ -68,11 +68,9 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
     try {
       const response = await requestPasswordReset(email)
       setSuccess(response.message)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao solicitar recuperação de senha.")
-    } finally {
-      setIsLoading(false)
     }
+    catch (err) { setError(err instanceof Error ? err.message : "Erro ao solicitar recuperação de senha.") }
+    finally { setIsLoading(false) }
   }
 
   function switchMode(nextMode: "login" | "signup") {
@@ -197,7 +195,7 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
               <label className={styles.label}>E-mail</label>
               <input
                 type="email" placeholder="seu@email.com" value={email}
-                onChange={(e) => { setEmail(e.target.value); setError(null) }}
+                onChange={(e) => { setEmail(e.target.value); setError(null); setSuccess(null) }}
                 className={styles.input} autoComplete="username"
               />
             </div>
