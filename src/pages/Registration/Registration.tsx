@@ -251,30 +251,9 @@ function toEthnicity(v: string): Patient["ethnicity"] | undefined {
   }
   return m[v]
 }
-function toChannel(v: string): Patient["preferredChannel"] | undefined {
-  const m: Record<string, Patient["preferredChannel"]> = {
-    WhatsApp: "WhatsApp",
-    Email: "Email",
-    SMS: "SMS",
-    Telefone: "Phone",
-    Phone: "Phone",
-  }
-  return m[v]
-}
 function fromChannel(v?: Patient["preferredChannel"]): string {
   if (v === "Phone") return "Telefone"
   return v ?? ""
-}
-function toFrequency(v: string): Patient["communicationFrequency"] | undefined {
-  const m: Record<string, Patient["communicationFrequency"]> = {
-    "Somente essencial": "EssentialOnly",
-    "Lembretes e confirmações": "RemindersAndConfirmations",
-    Todos: "All",
-    EssentialOnly: "EssentialOnly",
-    RemindersAndConfirmations: "RemindersAndConfirmations",
-    All: "All",
-  }
-  return m[v]
 }
 function fromFrequency(v?: Patient["communicationFrequency"]): string {
   const m: Record<string, string> = {
@@ -300,7 +279,6 @@ const HEALTH_INS     = ["Nenhum (Particular)","SUS","Unimed","Bradesco Saúde","
 const BR_STATES      = ["AC","AL","AM","AP","BA","CE","DF","ES","GO","MA","MG","MS","MT","PA","PB","PE","PI","PR","RJ","RN","RO","RR","RS","SC","SE","SP","TO"]
 const RELATIONS      = ["Cônjuge","Pai","Mãe","Filho(a)","Irmão/Irmã","Avô/Avó","Amigo(a)","Outro"]
 const RELIGIONS      = ["Católico","Evangélico","Espírita","Budista","Sem religião","Outro"]
-const TODAY = new Date().toISOString().slice(0, 10)
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 // ─── Component ────────────────────────────────────────────────────

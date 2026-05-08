@@ -1,4 +1,4 @@
-import { apiRequest, getApiUserId } from "./api"
+import { apiRequest } from "./api"
 import type {
   Patient, Gender, PatientStatus, MaritalStatus,
   Ethnicity, CommunicationChannel, CommunicationFrequency,
@@ -74,26 +74,7 @@ function apiToPatient(api: ApiPatient): Patient {
   }
 }
 
-function compactPayload(payload: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(payload).filter(([, value]) =>
-      value !== undefined &&
-      value !== null &&
-      value !== "" &&
-      !(typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 0),
-    ),
-  )
-}
-
-function onlyDigits(value?: string): string | undefined {
-  const digits = value?.replace(/\D/g, "")
-  return digits || undefined
-}
-
-function patientToApi(
-  p: Omit<Patient, "id"> | Patient,
-  mode: "create" | "update" = "create",
-): Record<string, unknown> {
+function patientToApi(p: Omit<Patient, "id"> | Patient): Record<string, unknown> {
   return {
     full_name: p.name?.trim() || null,
 
@@ -116,7 +97,7 @@ export async function createPatient(
   data: Omit<Patient, "id">
 ): Promise<Patient> {
 
-  const payload = patientToApi(data, "create")
+  const payload = patientToApi(data)
 
   const created = await apiRequest<ApiPatient[] | ApiPatient | { patient?: ApiPatient } | void>(
     "/functions/v1/create-patient",
@@ -144,7 +125,7 @@ export async function updatePatient(patient: Patient): Promise<Patient> {
   await apiRequest(`/rest/v1/patients?id=eq.${patient.id}`, {
     method: "PATCH",
     headers: { Prefer: "return=minimal" },
-    body: patientToApi(patient, "update"),
+    body: patientToApi(patient),
   })
   return patient
 }

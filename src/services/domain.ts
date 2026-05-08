@@ -1,5 +1,5 @@
 import { apiRequest, ApiError, getApiUserId } from "./api"
-import { MEDICAL_RECORDS, PRESCRIPTIONS, MESSAGES, MESSAGE_TEMPLATES } from "../data/mock"
+import { MESSAGES, MESSAGE_TEMPLATES } from "../data/mock"
 import type {
   MedicalRecord, Prescription, Report, ReportStatus,
   Message, MessageTemplate, StaffMember, StaffRole, StaffStatus,
@@ -116,8 +116,6 @@ function reportToApi(
     hide_signature: r.hideSignature ?? false,
   };
 }
-
-const REPORT_SELECT = "select=*,patients(full_name)"
 
 function isReportStatusEnumError(err: unknown): boolean {
   return err instanceof ApiError && err.status === 400 && err.message.includes("report_status")
