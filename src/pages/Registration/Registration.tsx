@@ -13,6 +13,8 @@ interface RegistrationProps {
   patients:        Patient[]
   editingPatient?: Patient | null
   onAddPatient:    (p: Omit<Patient, "id">) => Promise<Patient>
+  onAddPatientWithPassword?: (p: Omit<Patient, "id">, password: string) => Promise<Patient>
+  onCreatePatientAccess?: (p: Patient, password: string) => Promise<Patient>
   onUpdatePatient: (p: Patient) => Promise<void>
   onNavigate:      (page: PageId) => void
   isSecretary?:    boolean   // secretária vê apenas steps 1-4 (sem dados clínicos)
@@ -87,6 +89,9 @@ interface FormState {
   emergencyName:    string
   emergencyRelation: string
   emergencyPhone:   string
+  createPortalAccess: boolean
+  portalPassword:   string
+  portalConfirmPassword: string
 
   // Step 5 — Saúde e Clínica
   bloodType:        string
@@ -115,6 +120,7 @@ const EMPTY: FormState = {
   motherName:"",motherOccupation:"",fatherName:"",fatherOccupation:"",
   guardianName:"",guardianCpf:"",spouseName:"",
   emergencyName:"",emergencyRelation:"",emergencyPhone:"",
+  createPortalAccess:false,portalPassword:"",portalConfirmPassword:"",
   bloodType:"",allergies:"",chronicDiseases:"",currentMeds:"",
   previousSurgeries:"",familyHistory:"",smokingStatus:"",alcoholUse:"",
   physicalActivity:"",observations:"",
@@ -218,6 +224,9 @@ function toForm(p: Patient): FormState {
     emergencyName: p.emergencyContact?.name ?? "",
     emergencyRelation: p.emergencyContact?.relationship ?? "",
     emergencyPhone: onlyDigits(p.emergencyContact?.phone ?? ""),
+    createPortalAccess: false,
+    portalPassword: "",
+    portalConfirmPassword: "",
 
     // ─── STEP 5 — Saúde e Clínica ───────────────────────
     bloodType: "",
@@ -283,7 +292,14 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 // ─── Component ────────────────────────────────────────────────────
 export function Registration({
-  patients, editingPatient, onAddPatient, onUpdatePatient, onNavigate, isSecretary = false,
+  patients,
+  editingPatient,
+  onAddPatient,
+  onAddPatientWithPassword,
+  onCreatePatientAccess,
+  onUpdatePatient,
+  onNavigate,
+  isSecretary = false,
 }: RegistrationProps) {
   const isEditing   = !!editingPatient
   const todayISO    = new Date().toISOString().slice(0, 10)
@@ -348,6 +364,19 @@ export function Registration({
       else if (!EMAIL_RE.test(email)) e.email = "E-mail inválido"
       if (form.emergencyPhone && !form.emergencyName)
         e.emergencyName = "Informe o nome do contato de emergência"
+      if (form.createPortalAccess) {
+        if (!form.portalPassword) e.portalPassword = "Senha obrigatória"
+        else if (form.portalPassword.length < 6) e.portalPassword = "Mínimo 6 caracteres"
+        if (form.portalPassword !== form.portalConfirmPassword) {
+          e.portalConfirmPassword = "Senhas não coincidem"
+        }
+        if (!isEditing && !onAddPatientWithPassword) {
+          e.portalPassword = "Criação de acesso indisponível"
+        }
+        if (isEditing && !onCreatePatientAccess) {
+          e.portalPassword = "Criação de acesso indisponível"
+        }
+      }
     }
     setErrors(e)
     return Object.keys(e).length === 0
@@ -411,7 +440,14 @@ export function Registration({
         updatedAt:    new Date().toISOString().slice(0, 10),
       }
       if (isEditing && editingPatient) {
-        await onUpdatePatient({ ...data, id: editingPatient.id })
+        const patient = { ...data, id: editingPatient.id }
+        if (form.createPortalAccess && onCreatePatientAccess) {
+          await onCreatePatientAccess(patient, form.portalPassword)
+        } else {
+          await onUpdatePatient(patient)
+        }
+      } else if (form.createPortalAccess && onAddPatientWithPassword) {
+        await onAddPatientWithPassword(data, form.portalPassword)
       } else {
         await onAddPatient(data)
       }
@@ -670,6 +706,37 @@ export function Registration({
                   value={form.emergencyRelation} onChange={(e) => set("emergencyRelation", e.target.value)} />
                 <Input label="Telefone do contato" placeholder="(00) 00000-0000"
                   value={formatPhoneBR(form.emergencyPhone)} onChange={(e) => set("emergencyPhone", onlyDigits(e.target.value))} />
+              </div>
+            </Section>
+
+            <Section title="Acesso do paciente">
+              <div className={`${styles.portalAccessBox} ${styles.marginTop}`}>
+                <CheckRow
+                  field="createPortalAccess"
+                  label={isEditing ? "Criar acesso ao portal para este paciente" : "Criar usuário paciente com e-mail e senha"}
+                />
+                <p className={styles.portalAccessText}>
+                  O paciente poderá entrar com o e-mail cadastrado e acessar dados vinculados ao CPF/e-mail.
+                </p>
+                {form.createPortalAccess && (
+                  <div className={styles.grid2}>
+                    <Input
+                      label="Senha de acesso"
+                      type="password"
+                      placeholder="Mínimo 6 caracteres"
+                      value={form.portalPassword}
+                      onChange={(e) => set("portalPassword", e.target.value)}
+                      error={errors.portalPassword}
+                    />
+                    <Input
+                      label="Confirmar senha"
+                      type="password"
+                      value={form.portalConfirmPassword}
+                      onChange={(e) => set("portalConfirmPassword", e.target.value)}
+                      error={errors.portalConfirmPassword}
+                    />
+                  </div>
+                )}
               </div>
             </Section>
 

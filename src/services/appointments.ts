@@ -46,6 +46,15 @@ export interface AppointmentDoctor {
   name: string
 }
 
+export interface DoctorAvailability {
+  doctorId: string
+  weekday: number
+  startTime: string
+  endTime: string
+  slotMinutes: number
+  active: boolean
+}
+
 const WEEKDAY_ENUM_VALUES = [
   "sunday",
   "monday",
@@ -97,6 +106,17 @@ function minutesToTime(value: number): string {
 
 function rangesOverlap(startA: number, endA: number, startB: number, endB: number): boolean {
   return startA < endB && endA > startB
+}
+
+function apiToAvailability(api: ApiDoctorAvailability): DoctorAvailability {
+  return {
+    doctorId: api.doctor_id,
+    weekday: normalizeWeekday(api.weekday),
+    startTime: api.start_time,
+    endTime: api.end_time,
+    slotMinutes: api.slot_minutes ?? 30,
+    active: api.active !== false,
+  }
 }
 
 function apiToAppointment(
@@ -274,6 +294,16 @@ export async function getAvailableSlots(
   if (date < localDate(new Date())) return []
 
   return getAvailableSlotsFromAvailability(doctorId, date)
+}
+
+export async function getDoctorAvailability(doctorId: string): Promise<DoctorAvailability[]> {
+  if (!doctorId) return []
+
+  const rows = await apiRequest<ApiDoctorAvailability[]>(
+    `/rest/v1/doctor_availability?doctor_id=eq.${encodeURIComponent(doctorId)}&active=eq.true&select=*&order=weekday.asc,start_time.asc`,
+  )
+
+  return (rows ?? []).map(apiToAvailability).filter((row) => row.weekday >= 0 && row.active)
 }
 
 async function getAvailableSlotsFromAvailability(

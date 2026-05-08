@@ -118,16 +118,20 @@
 
 .calendarShell {
   padding: 12px;
-  --calendar-event-confirmed-bg: #3f6f5a;
-  --calendar-event-confirmed-fg: #f6fbf8;
+  --calendar-event-confirmed-bg: #8a641e;
+  --calendar-event-confirmed-fg: #fff8e8;
   --calendar-event-pending-bg: #76521c;
   --calendar-event-pending-fg: #fff8e8;
   --calendar-event-completed-bg: #365f98;
   --calendar-event-completed-fg: #f5f9ff;
-  --calendar-event-cancelled-bg: #9b3434;
-  --calendar-event-cancelled-fg: #fff5f5;
+  --calendar-event-cancelled-bg: #4b5563;
+  --calendar-event-cancelled-fg: #f8fafc;
   --calendar-event-blocked-bg: #4b5563;
   --calendar-event-blocked-fg: #f8fafc;
+  --calendar-cell-bg: color-mix(in srgb, var(--card) 94%, var(--foreground) 6%);
+  --calendar-cell-alt-bg: color-mix(in srgb, var(--card) 90%, var(--foreground) 10%);
+  --calendar-past-bg: color-mix(in srgb, var(--muted) 76%, var(--background) 24%);
+  --calendar-hover-bg: color-mix(in srgb, var(--muted) 78%, var(--primary) 8%);
 }
 
 .availabilityNotice {
@@ -249,9 +253,9 @@
 }
 
 .summaryBlue { color: #2563eb; }
-.summaryGreen { color: #059669; }
+.summaryGreen { color: #64748b; }
 .summaryAmber { color: #d97706; }
-.summaryRed { color: var(--destructive); }
+.summaryRed { color: #64748b; }
 
 .legendItem {
   display: flex;
@@ -269,10 +273,10 @@
   flex: 0 0 auto;
 }
 
-.legendConfirmed { background: #3f6f5a; }
+.legendConfirmed { background: #8a641e; }
 .legendPending { background: #76521c; }
 .legendCompleted { background: #365f98; }
-.legendCancelled { background: #9b3434; }
+.legendCancelled { background: #4b5563; }
 
 .modalOverlay {
   position: fixed;
@@ -423,7 +427,7 @@
 }
 
 :global(.fc .fc-col-header-cell) {
-  background: color-mix(in srgb, var(--muted) 90%, var(--foreground) 10%);
+  background: color-mix(in srgb, var(--muted) 86%, var(--foreground) 14%);
 }
 
 :global(.fc .fc-col-header-cell-cushion),
@@ -435,11 +439,61 @@
 :global(.fc .fc-col-header-cell-cushion) {
   display: block;
   overflow: hidden;
-  padding: 7px 6px;
+  padding: 8px 6px;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
   font-weight: 800;
+}
+
+.availableDay,
+.availableSlot {
+  cursor: pointer;
+}
+
+.unavailableDay,
+.unavailableSlot {
+  cursor: not-allowed;
+}
+
+.pastHeader {
+  opacity: 0.48;
+}
+
+.pastDay,
+.pastSlot {
+  background: var(--calendar-past-bg) !important;
+  opacity: 0.42;
+}
+
+.pastDay :global(.fc-daygrid-day-frame),
+.pastSlot :global(.fc-timegrid-slot-frame) {
+  background: var(--calendar-past-bg) !important;
+}
+
+.pastDay :global(.fc-daygrid-day-number) {
+  color: var(--muted-foreground);
+}
+
+:global(.fc .fc-daygrid-day-frame) {
+  min-height: 104px;
+  padding: 4px;
+}
+
+:global(.fc .fc-daygrid-day-number) {
+  padding: 4px 6px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+:global(.fc .fc-daygrid-day-events) {
+  margin-top: 10px;
+}
+
+:global(.fc .fc-daygrid-more-link) {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 700;
 }
 
 :global(.fc .fc-timegrid-axis),
@@ -450,9 +504,14 @@
 }
 
 :global(.fc .fc-timegrid-slot) {
-  height: 32px;
-  background: color-mix(in srgb, var(--card) 94%, var(--foreground) 6%);
+  height: 24px;
+  background: var(--calendar-cell-bg);
   transition: background-color 140ms ease;
+}
+
+:global(.fc .fc-timegrid-col-frame),
+:global(.fc .fc-daygrid-day-frame) {
+  background: var(--calendar-cell-bg);
 }
 
 :global(.fc .fc-timegrid-slot-minor) {
@@ -468,7 +527,7 @@
 
 :global(.fc .fc-timegrid-col:not(.fc-day-disabled) .fc-timegrid-slot:hover),
 :global(.fc .fc-daygrid-day:not(.fc-day-disabled):hover) {
-  background: color-mix(in srgb, #16a34a 20%, var(--card) 80%) !important;
+  background: var(--calendar-hover-bg) !important;
 }
 
 :global(.fc .fc-col-header-cell.fc-day-today) {
@@ -487,7 +546,12 @@
 }
 
 :global(.fc .fc-day-today) {
-  background: color-mix(in srgb, var(--primary) 8%, var(--card)) !important;
+  background: color-mix(in srgb, var(--primary) 10%, var(--calendar-cell-bg)) !important;
+}
+
+:global(.fc .fc-day-disabled),
+:global(.fc .fc-timegrid-col.fc-day-disabled) {
+  background: var(--calendar-past-bg) !important;
 }
 
 :global(.fc .fc-timegrid-now-indicator-line),
@@ -505,7 +569,7 @@
 }
 
 :global(.fc .fc-timegrid-event) {
-  min-height: 28px;
+  min-height: 24px;
 }
 
 :global(.fc .fc-timegrid-event-harness) {
@@ -530,7 +594,7 @@
   grid-template-rows: auto auto;
   min-width: 0;
   height: 100%;
-  padding: 3px 6px 4px;
+  padding: 2px 6px 3px;
   line-height: 1.14;
 }
 
@@ -544,14 +608,14 @@
 }
 
 .eventTime {
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 800;
   letter-spacing: 0;
 }
 
 .eventPatient {
   margin-top: 1px;
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
   opacity: 0.94;
 }
