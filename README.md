@@ -47,7 +47,6 @@ O app usa IDs de banco como `string` para pacientes, equipe, agenda, prontuário
 
 Principais tabelas esperadas:
 
-
 ## Contrato De Dados
 
 O app usa IDs de banco como `string` para pacientes, equipe, agenda, prontuários, receitas e financeiro. Campos enviados ao Supabase seguem `snake_case`; o frontend converte para os modelos em `camelCase` nos arquivos em `src/services`.
@@ -64,4 +63,4 @@ Principais tabelas esperadas:
 
 ## Observações
 
-O diretório `backend/` não é usado pelo frontend atual. A integração ativa é feita pelos serviços em `src/services/*` usando Supabase REST e Edge Functions..
+O diretório `backend/` não é usado pelo frontend atual. A integração ativa é feita pelos serviços em `src/services/*` usando Supabase REST e Edge Functions.
