@@ -136,5 +136,5 @@ export interface Toast { id: string; message: string; variant: ToastVariant }
 // ─── NAVIGATION ───────────────────────────────────────────────────
 export type PageId =
   | "dashboard" | "patients" | "register" | "appointments"
-  | "records"   | "reports"  | "messages" | "financial"
+  | "availability" | "records" | "reports" | "messages" | "financial"
   | "settings"  | "patient-profile" | "team"

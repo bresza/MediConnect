@@ -5,6 +5,7 @@ import { Dashboard }      from "./pages/Dashboard/Dashboard"
 import { Patients }       from "./pages/Patients/Patients"
 import { Registration }   from "./pages/Registration/Registration"
 import { Appointments }   from "./pages/Appointments/Appointments"
+import { Availability }   from "./pages/Availability/Availability"
 import { Records }        from "./pages/Records/Records"
 import { Reports }        from "./pages/Reports/Reports"
 import { PatientProfile } from "./pages/PatientProfile/PatientProfile"
@@ -228,6 +229,9 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
             onUpdateAppointment={updateAppointment}
           />
         )
+
+      case "availability":
+        return <Availability currentUser={currentUser} />
 
       // ── Prontuários — bloqueado para secretária ──────────────────
       case "records":
