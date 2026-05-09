@@ -257,17 +257,10 @@ function addressToDoctorApi(address?: StaffMember["address"]): Record<string, un
 async function deleteAuthUserAt(
   path: string,
   userId: string,
-  email?: string,
 ): Promise<void> {
   await apiRequest(path, {
     method: "POST",
-    body: {
-      userId,
-      user_id: userId,
-      email: email || undefined,
-      hard_delete: true,
-      hardDelete: true,
-    },
+    body: { userId },
     logErrors: false,
   })
 }
@@ -296,6 +289,7 @@ function roleToStaffRole(role?: string | null): StaffRole | null {
     .toLowerCase()
     .trim()
   const roleMap: Record<string, StaffRole> = {
+    admin: "manager", administrador: "manager",
     medico: "doctor", doctor: "doctor",
     gestor: "manager", manager: "manager",
     secretaria: "secretary", secretary: "secretary",
@@ -514,7 +508,7 @@ async function deleteAuthUser(target: StaffDeleteTarget, relatedIds: string[]): 
 
   for (const id of ids) {
     try {
-      await deleteAuthUserAt("/functions/v1/delete-user", id, target.email)
+      await deleteAuthUserAt("/functions/v1/delete-user", id)
       removed = true
     } catch (err) {
       lastError = err
@@ -544,6 +538,7 @@ export async function deleteStaffMember(member: StaffDeleteTarget): Promise<void
   ].filter((id, index, all) => id && all.indexOf(id) === index)
 
   const authRemoved = await deleteAuthUser(member, relatedIds)
+  if (authRemoved) return
 
   try {
     if (relatedIds.length > 0) {
