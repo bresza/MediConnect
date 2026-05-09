@@ -208,7 +208,7 @@ export async function updateReport(report: Report): Promise<Report> {
 // ─────────────────────────────────────────────────────────────────
 interface ApiDoctor {
   id: string; full_name: string; email?: string; phone?: string
-  crm?: string; crm_uf?: string; crm_state?: string; specialty?: string
+  cpf?: string; crm?: string; crm_uf?: string; crm_state?: string; specialty?: string
   active?: boolean; created_at?: string
 }
 interface ApiProfile {
@@ -251,6 +251,24 @@ function addressToDoctorApi(address?: StaffMember["address"]): Record<string, un
     neighborhood: address.neighborhood,
     city: address.city,
     state: address.state,
+  })
+}
+
+async function deleteAuthUserAt(
+  path: string,
+  userId: string,
+  email?: string,
+): Promise<void> {
+  await apiRequest(path, {
+    method: "POST",
+    body: {
+      userId,
+      user_id: userId,
+      email: email || undefined,
+      hard_delete: true,
+      hardDelete: true,
+    },
+    logErrors: false,
   })
 }
 
@@ -469,22 +487,119 @@ export async function updateStaffMember(member: StaffMember): Promise<StaffMembe
   return member
 }
 
-export async function deleteStaffMember(id: string): Promise<void> {
-  try {
-    await apiRequest("/delete-user", {
-      method: "POST",
-      body: { userId: id },
-    })
-    return
-  } catch (err) {
-    if (!(err instanceof ApiError) || err.status !== 404) throw err
-    console.warn("[delete-user] endpoint documentado nao encontrado, tentando Edge Function:", err)
+type StaffDeleteTarget = Pick<StaffMember, "id" | "email"> & Partial<Pick<StaffMember, "cpf">>
+
+function staffDeleteFilter(member: StaffDeleteTarget, includeCpf = false): string {
+  const cpf = member.cpf?.replace(/\D/g, "")
+  const filters = [
+    member.id ? `id.eq.${encodeURIComponent(member.id)}` : "",
+    member.email ? `email.eq.${encodeURIComponent(member.email.trim())}` : "",
+    includeCpf && cpf ? `cpf.eq.${encodeURIComponent(cpf)}` : "",
+  ].filter(Boolean)
+
+  return filters.length > 1 ? `or=(${filters.join(",")})` : filters[0]
+}
+
+function idsFilter(ids: string[]): string {
+  const unique = ids.filter((id, index, all) => id && all.indexOf(id) === index)
+  return unique.length > 1
+    ? `id=in.(${unique.map((id) => encodeURIComponent(id)).join(",")})`
+    : `id=eq.${encodeURIComponent(unique[0] ?? "")}`
+}
+
+async function deleteAuthUser(target: StaffDeleteTarget, relatedIds: string[]): Promise<boolean> {
+  const ids = [target.id, ...relatedIds].filter((id, index, all) => id && all.indexOf(id) === index)
+  let removed = false
+  let lastError: unknown = null
+
+  for (const id of ids) {
+    try {
+      try {
+        await deleteAuthUserAt("/delete-user", id, target.email)
+      } catch (err) {
+        if (!(err instanceof ApiError) || (err.status !== 404 && err.status !== 0)) throw err
+        await deleteAuthUserAt("/functions/v1/delete-user", id, target.email)
+      }
+      removed = true
+    } catch (err) {
+      lastError = err
+      if (!(err instanceof ApiError) || (err.status !== 404 && err.status !== 500)) throw err
+    }
   }
 
-  await apiRequest("/functions/v1/delete-user", {
-    method: "POST",
-    body: { userId: id },
-  })
+  if (!removed && lastError) {
+    console.warn("[delete-user] falhou, usando fallback REST:", lastError)
+  }
+  return removed
+}
+
+export async function deleteStaffMember(member: StaffDeleteTarget): Promise<void> {
+  const doctorFilter = staffDeleteFilter(member, true)
+  const profileFilter = staffDeleteFilter(member)
+  if (!doctorFilter || !profileFilter) throw new Error("Profissional inválido para remoção.")
+
+  const [doctorRows, profileRows] = await Promise.all([
+    apiRequest<ApiDoctor[]>(`/rest/v1/doctors?${doctorFilter}&select=id,email,full_name,cpf`).catch(() => []),
+    apiRequest<ApiProfile[]>(`/rest/v1/profiles?${profileFilter}&select=id,email,full_name`).catch(() => []),
+  ])
+  const relatedIds = [
+    member.id,
+    ...(doctorRows ?? []).map((row) => row.id),
+    ...(profileRows ?? []).map((row) => row.id),
+  ].filter((id, index, all) => id && all.indexOf(id) === index)
+
+  const authRemoved = await deleteAuthUser(member, relatedIds)
+
+  try {
+    if (relatedIds.length > 0) {
+      await apiRequest(`/rest/v1/user_roles?user_id=in.(${relatedIds.map((id) => encodeURIComponent(id)).join(",")})`, {
+        method: "DELETE",
+        headers: { Prefer: "return=minimal" },
+      })
+    }
+  } catch (err) {
+    console.warn("[user_roles] remocao de papeis falhou ou registros inexistentes:", err)
+  }
+
+  try {
+    await apiRequest(`/rest/v1/doctors?${doctorFilter}`, {
+      method: "DELETE",
+      headers: { Prefer: "return=minimal" },
+    })
+  } catch (err) {
+    console.warn("[doctors] remocao de medico por filtro falhou ou registro inexistente:", err)
+  }
+
+  try {
+    if (relatedIds.length > 0) {
+      await apiRequest(`/rest/v1/doctors?${idsFilter(relatedIds)}`, {
+        method: "DELETE",
+        headers: { Prefer: "return=minimal" },
+      })
+    }
+  } catch (err) {
+    console.warn("[doctors] remocao de medico por id falhou ou registro inexistente:", err)
+  }
+
+  try {
+    await apiRequest(`/rest/v1/profiles?${profileFilter}`, {
+      method: "DELETE",
+      headers: { Prefer: "return=minimal" },
+    })
+  } catch (err) {
+    console.warn("[profiles] remocao de perfil por filtro falhou ou registro inexistente:", err)
+  }
+
+  if (relatedIds.length > 0) {
+    await apiRequest(`/rest/v1/profiles?${idsFilter(relatedIds)}`, {
+      method: "DELETE",
+      headers: { Prefer: "return=minimal" },
+    })
+  }
+
+  if (!authRemoved) {
+    throw new Error("Registros removidos das tabelas, mas a API não removeu o usuário de autenticação. Verifique a Edge Function delete-user.")
+  }
 }
 
 // ─── MEDICAL RECORDS ──────────────────────────────────────────────
