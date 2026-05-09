@@ -137,8 +137,8 @@ export async function createPatientAccount(payload: PatientSignupPayload): Promi
     })
   }
 
-  let res = await postRegisterPatient("/functions/v1/register-patient")
-  if (res.status === 404) res = await postRegisterPatient("/register-patient")
+  let res = await postRegisterPatient("/register-patient")
+  if (res.status === 404) res = await postRegisterPatient("/functions/v1/register-patient")
 
   if (!res.ok) {
     const raw = await res.text().catch(() => "")
@@ -178,8 +178,8 @@ export async function requestPasswordReset(emailInput: string): Promise<Password
   const email = emailInput.trim().toLowerCase()
   if (!email) throw new Error("Informe seu e-mail.")
 
-  let res = await requestPasswordResetAt("/functions/v1/request-password-reset", email)
-  if (res.status === 404) res = await requestPasswordResetAt("/request-password-reset", email)
+  let res = await requestPasswordResetAt("/request-password-reset", email)
+  if (res.status === 404) res = await requestPasswordResetAt("/functions/v1/request-password-reset", email)
 
   if (!res.ok) {
     const raw = await res.text().catch(() => "")
@@ -415,16 +415,24 @@ export async function login(payload: LoginPayload): Promise<LoginResponse> {
 
   if (!infoRes.ok) {
     const profile = await fetchProfileFallback(authData.access_token, authData.user.id, authData.user.email)
+    const patient = await fetchPatientLink(
+      authData.access_token,
+      authData.user.id,
+      authData.user.email,
+      profile?.cpf,
+      profile?.patient_id,
+    )
     const user: User = {
       id: authData.user.id,
       name: profile?.full_name ?? authData.user.email,
-      role: mapRole([], profile?.role),
+      role: patient ? "patient" : mapRole([], profile?.role),
       email: profile?.email ?? authData.user.email,
       crm: profile?.crm,
       specialty: profile?.specialty,
-      patientCpf: profile?.cpf ? onlyDigits(profile.cpf) : undefined,
-      phone: profile?.phone,
-      patientId: profile?.patient_id,
+      patientCpf: patient?.cpf ? onlyDigits(patient.cpf) : profile?.cpf ? onlyDigits(profile.cpf) : undefined,
+      phone: patient?.phone_mobile ?? profile?.phone,
+      patientId: patient?.id ?? profile?.patient_id,
+      dob: patient?.birth_date,
     }
     return { user: await withRoleLinks(user, authData.access_token), token: authData.access_token, clinicId: "default", clinicName: "Mediconnect" }
   }
@@ -433,7 +441,7 @@ export async function login(payload: LoginPayload): Promise<LoginResponse> {
   const user: User = {
     id:        authData.user.id,
     name:      info.profile?.full_name ?? authData.user.email,
-    role:      mapRole(info.roles ?? [], info.profile?.role),
+    role:      info.patient ? "patient" : mapRole(info.roles ?? [], info.profile?.role),
     email:     info.profile?.email ?? info.patient?.email ?? authData.user.email,
     crm:       info.profile?.crm,
     specialty: info.profile?.specialty,

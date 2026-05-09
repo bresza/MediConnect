@@ -429,10 +429,10 @@ async function getAvailableSlotsFromApi(
 
   let data: ApiAvailableSlotsResponse | undefined
   try {
-    data = await request("/functions/v1/get-available-slots")
+    data = await request("/get-available-slots")
   } catch (err) {
     if (!(err instanceof ApiError) || err.status !== 404) throw err
-    data = await request("/get-available-slots")
+    data = await request("/functions/v1/get-available-slots")
   }
 
   const today = localDate(new Date())
