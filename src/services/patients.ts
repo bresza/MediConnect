@@ -400,16 +400,25 @@ function isBlockedDependencyDelete(err: unknown): boolean {
   return err instanceof Error && /A API não removeu .* vinculados ao paciente/i.test(err.message)
 }
 
-async function deletePatientAuthUser(userId: string, email?: string): Promise<boolean> {
-  if (!userId) return false
+function isDeleteBlockedByDependency(err: unknown): boolean {
+  return err instanceof ApiError && (
+    err.status === 409 ||
+    /foreign key|violates|constraint|vinculad|depend/i.test(err.message)
+  )
+}
+
+async function deletePatientAuthUser(userId?: string, email?: string, patientId?: string): Promise<boolean> {
+  if (!userId && !email && !patientId) return false
 
   async function request(path: string): Promise<void> {
     await apiRequest(path, {
       method: "POST",
       body: {
-        userId,
-        user_id: userId,
+        userId: userId || undefined,
+        user_id: userId || undefined,
         email: email || undefined,
+        patientId: patientId || undefined,
+        patient_id: patientId || undefined,
         hard_delete: true,
         hardDelete: true,
       },
@@ -418,7 +427,7 @@ async function deletePatientAuthUser(userId: string, email?: string): Promise<bo
   }
 
   let lastError: unknown = null
-  for (const path of ["/functions/v1/delete-user", "/delete-user"]) {
+  for (const path of ["/delete-user", "/functions/v1/delete-user"]) {
     try {
       await request(path)
       return true
@@ -663,7 +672,7 @@ export async function updatePatient(patient: Patient): Promise<Patient> {
   return patientWithUser
 }
 
-async function deletePatientDependencies(id: string): Promise<void> {
+async function deletePatientDependencies(id: string, strictAppointments = true): Promise<void> {
   const patientId = encodeURIComponent(id)
   const isMissingResource = (err: unknown) =>
     err instanceof ApiError &&
@@ -726,6 +735,7 @@ async function deletePatientDependencies(id: string): Promise<void> {
         remaining = await listDependencyRows(table, true)
       }
       if (remaining.length > 0) {
+        if (table === "appointments" && !strictAppointments) return
         throw new Error(
           `A API não removeu ${remaining.length} registro(s) de ${table} vinculados ao paciente. ` +
           "O perfil gestor precisa ter permissão de DELETE nessa tabela antes de excluir o paciente.",
@@ -754,40 +764,37 @@ export async function deletePatient(id: string): Promise<void> {
   const profile = patient?.user_id ? null : await findProfileByEmail(patient?.email).catch(() => null)
   const userId = patient?.user_id ?? profile?.id ?? ""
 
-  try {
-    await deletePatientDependencies(id)
-  } catch (err) {
-    if (!isBlockedDependencyDelete(err)) throw err
-    if (!userId) throw err
-    const removedByApi = await deletePatientAuthUser(userId, patient?.email)
-    if (!removedByApi) throw err
+  if (await deletePatientAuthUser(userId, patient?.email, id)) {
     const stillExists = await findPatientById(id).catch(() => null)
     if (!stillExists) return
-    throw err
   }
 
   try {
     await deletePatientRecord(id, false)
     return
   } catch (err) {
-    if (!(err instanceof ApiError) || err.status !== 409) throw err
+    if (!isDeleteBlockedByDependency(err)) throw err
   }
 
-  await deletePatientDependencies(id)
   try {
-    await deletePatientRecord(id)
+    await deletePatientDependencies(id, false)
+  } catch (err) {
+    if (!isBlockedDependencyDelete(err)) throw err
+  }
+
+  try {
+    await deletePatientRecord(id, false)
     return
   } catch (err) {
-    if (!(err instanceof ApiError) || err.status !== 409) throw err
+    if (!isDeleteBlockedByDependency(err)) throw err
   }
 
-  if (!userId) {
-    throw new Error("A API bloqueou a exclusão porque ainda existem vínculos com este paciente.")
-  }
-
-  await deletePatientAuthUser(userId, patient?.email)
+  await deletePatientAuthUser(userId, patient?.email, id)
   const stillExists = await findPatientById(id).catch(() => null)
   if (stillExists) {
-    throw new Error("A API não removeu o paciente mesmo após a limpeza dos vínculos.")
+    throw new Error(
+      "A API bloqueou a exclusão porque ainda existem vínculos com este paciente. " +
+      "O endpoint delete-user também não removeu o registro; verifique as permissões service-role/RLS para appointments.",
+    )
   }
 }

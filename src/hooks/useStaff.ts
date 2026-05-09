@@ -44,9 +44,15 @@ export function useStaff(): UseStaffReturn {
   }, [])
 
   const deleteStaff = useCallback(async (id: string) => {
-    await deleteStaffMember(id)
-    setStaff((prev) => prev.filter((m) => m.id !== id))
-  }, [])
+    const member = staff.find((m) => m.id === id)
+    if (!member) throw new Error("Profissional não encontrado.")
+
+    await deleteStaffMember(member)
+    setStaff((prev) => prev.filter((m) =>
+      m.id !== member.id &&
+      m.email.toLowerCase() !== member.email.toLowerCase(),
+    ))
+  }, [staff])
 
   return { staff, isLoading, error, addStaff, updateStaff, deleteStaff, reload: load }
 }
