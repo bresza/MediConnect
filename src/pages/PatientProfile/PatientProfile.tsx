@@ -3,28 +3,24 @@ import { Avatar } from "../../components/ui/Avatar/Avatar"
 import { Button } from "../../components/ui/Button/Button"
 import { formatDate } from "../../utils"
 import { PrescriptionEditor } from "./PrescriptionEditor"
-import type { PageId, Patient, MedicalRecord, Appointment, Prescription, User } from "../../types"
+import type { PageId, Patient, Appointment, Prescription, User } from "../../types"
 import styles from "./PatientProfile.module.css"
 
 interface PatientProfileProps {
   patient: Patient
-  records: MedicalRecord[]
   appointments: Appointment[]
   prescriptions: Prescription[]
   currentUser: User
   onNavigate: (page: PageId) => void
   onEditPatient: (p: Patient) => void
-  onViewRecords?: (p: Patient) => void
   onAddPrescription: (p: Omit<Prescription, "id">) => void | Promise<void>
 }
 
-type Tab = "overview" | "personal" | "medical" | "records" | "prescriptions"
+type Tab = "overview" | "personal" | "prescriptions"
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "overview",      label: "Resumo"          },
   { id: "personal",      label: "Dados Pessoais"  },
-  { id: "medical",       label: "Histórico Médico" },
-  { id: "records",       label: "Prontuários"     },
   { id: "prescriptions", label: "Receitas"        },
 ]
 
@@ -73,38 +69,16 @@ function SectionCard({ title, children, action }: { title: string; children: Rea
   )
 }
 
-function Chip({ children, color = "neutral" }: { children: React.ReactNode; color?: "red" | "amber" | "blue" | "green" | "neutral" }) {
-  return <span className={`${styles.chip} ${styles[`chip${color.charAt(0).toUpperCase() + color.slice(1)}`]}`}>{children}</span>
-}
-
-function VitalCard({ label, value, unit, ref: refRange }: { label: string; value?: string | number | null; unit: string; ref?: string }) {
-  if (!value) return null
-  return (
-    <div className={styles.vitalCard}>
-      <span className={styles.vitalLabel}>{label}</span>
-      <div className={styles.vitalValueRow}>
-        <span className={styles.vitalValue}>{value}</span>
-        <span className={styles.vitalUnit}>{unit}</span>
-      </div>
-      {refRange && <span className={styles.vitalRef}>{refRange}</span>}
-    </div>
-  )
-}
-
 // ── Main component ─────────────────────────────────────────────────
 export function PatientProfile({
-  patient, records, appointments, prescriptions, currentUser,
-  onNavigate, onEditPatient, onViewRecords, onAddPrescription,
+  patient, appointments, prescriptions, currentUser,
+  onNavigate, onEditPatient, onAddPrescription,
 }: PatientProfileProps) {
   const [tab, setTab]               = useState<Tab>("overview")
   const [prescribing, setPrescribing] = useState(false)
 
   const isDoctor = currentUser.role === "doctor"
   const age = calcAge(patient.dob)
-
-  const patientRecords = records
-    .filter(r => r.patientId === patient.id)
-    .sort((a, b) => b.date.localeCompare(a.date))
 
   const patientAppts = appointments
     .filter(a => a.patientId === patient.id)
@@ -114,7 +88,6 @@ export function PatientProfile({
     .filter(p => p.patientId === patient.id)
     .sort((a, b) => b.date.localeCompare(a.date))
 
-  const latestRecord  = patientRecords[0]
   const nextAppt      = patientAppts.find(a => a.date >= new Date().toISOString().split("T")[0])
   const recentAppts   = patientAppts.slice(0, 5)
 
@@ -189,11 +162,6 @@ export function PatientProfile({
             </div>
             <div className={styles.heroStatDiv} />
             <div className={styles.heroStat}>
-              <span className={styles.heroStatValue}>{patientRecords.length}</span>
-              <span className={styles.heroStatLabel}>Prontuários</span>
-            </div>
-            <div className={styles.heroStatDiv} />
-            <div className={styles.heroStat}>
               <span className={styles.heroStatValue}>{patientRx.length}</span>
               <span className={styles.heroStatLabel}>Receitas</span>
             </div>
@@ -251,7 +219,6 @@ export function PatientProfile({
               onClick={() => setTab(t.id)}
             >
               {t.label}
-              {t.id === "records"       && patientRecords.length > 0 && <span className={styles.tabCount}>{patientRecords.length}</span>}
               {t.id === "prescriptions" && patientRx.length > 0      && <span className={styles.tabCount}>{patientRx.length}</span>}
             </button>
           ))}
@@ -267,40 +234,6 @@ export function PatientProfile({
 
             {/* Left column */}
             <div className={styles.overviewLeft}>
-
-              {/* Medical alerts */}
-              {(latestRecord?.allergies || latestRecord?.medications) && (
-                <div className={styles.alertCard}>
-                  <div className={styles.alertCardHeader}>
-                    <svg width="16" height="16" fill="none" stroke="#dc2626" strokeWidth="2"
-                      viewBox="0 0 24 24" strokeLinecap="round">
-                      <path d="M12 9v4M12 17h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-                    </svg>
-                    <span className={styles.alertCardTitle}>Alertas clínicos</span>
-                    <span className={styles.alertCardSub}>Baseado no último prontuário</span>
-                  </div>
-                  {latestRecord.allergies && (
-                    <div className={styles.alertRow}>
-                      <span className={styles.alertRowLabel}>Alergias</span>
-                      <div className={styles.chipRow}>
-                        {latestRecord.allergies.split(/[,;]+/).map(a => a.trim()).filter(Boolean).map(a => (
-                          <Chip key={a} color="red">{a}</Chip>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {latestRecord.medications && (
-                    <div className={styles.alertRow}>
-                      <span className={styles.alertRowLabel}>Medicamentos em uso</span>
-                      <div className={styles.chipRow}>
-                        {latestRecord.medications.split(/[,;]+/).map(m => m.trim()).filter(Boolean).map(m => (
-                          <Chip key={m} color="blue">{m}</Chip>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
 
               {/* Next appointment */}
               {nextAppt ? (
@@ -333,10 +266,7 @@ export function PatientProfile({
               )}
 
               {/* Recent appointments */}
-              <SectionCard
-                title="Últimas consultas"
-                action={<button className={styles.cardLink} onClick={() => setTab("records")}>Ver prontuários</button>}
-              >
+              <SectionCard title="Últimas consultas">
                 {recentAppts.length === 0 ? (
                   <p className={styles.empty}>Sem histórico de consultas.</p>
                 ) : (
@@ -361,28 +291,6 @@ export function PatientProfile({
 
             {/* Right column */}
             <div className={styles.overviewRight}>
-
-              {/* Vital signs */}
-              <SectionCard
-                title="Sinais vitais"
-                action={latestRecord
-                  ? <span className={styles.cardSub}>{formatDate(latestRecord.date)}</span>
-                  : undefined
-                }
-              >
-                {latestRecord?.vitalSigns ? (
-                  <div className={styles.vitalsGrid}>
-                    <VitalCard label="Pressão Arterial" value={latestRecord.vitalSigns.bloodPressure} unit="mmHg" ref="<120/80" />
-                    <VitalCard label="Freq. Cardíaca"   value={latestRecord.vitalSigns.heartRate}     unit="bpm"  ref="60–100" />
-                    <VitalCard label="Temperatura"      value={latestRecord.vitalSigns.temperature}   unit="°C"   ref="36–37,5" />
-                    <VitalCard label="Peso"             value={latestRecord.vitalSigns.weight}        unit="kg" />
-                    <VitalCard label="Altura"           value={latestRecord.vitalSigns.height}        unit="cm" />
-                    <VitalCard label="SpO₂"             value={latestRecord.vitalSigns.oxygenSaturation} unit="%" ref=">95%" />
-                  </div>
-                ) : (
-                  <p className={styles.empty}>Sinais vitais não registrados.</p>
-                )}
-              </SectionCard>
 
               {/* Quick contact */}
               <SectionCard title="Contato">
@@ -523,147 +431,6 @@ export function PatientProfile({
               <SectionCard title="Observações">
                 <p className={styles.obsText}>{patient.observations}</p>
               </SectionCard>
-            )}
-          </div>
-        )}
-
-        {/* ══ HISTÓRICO MÉDICO ═════════════════════════════════════ */}
-        {tab === "medical" && (
-          !latestRecord ? (
-            <div className={styles.emptyState}>
-              <svg width="40" height="40" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24" style={{ color: "var(--muted-foreground)", marginBottom: 12 }}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-              </svg>
-              <p className={styles.emptyStateTitle}>Nenhum prontuário encontrado</p>
-              <p className={styles.emptyStateSub}>O histórico médico será exibido após o primeiro atendimento.</p>
-            </div>
-          ) : (
-            <div className={styles.medicalGrid}>
-              <div className={styles.medicalBanner}>
-                <div>
-                  <p className={styles.medicalBannerLabel}>Referência: último atendimento</p>
-                  <p className={styles.medicalBannerDate}>{formatDate(latestRecord.date)} · {latestRecord.doctorName}</p>
-                </div>
-                <button className={styles.cardLink} onClick={() => setTab("records")}>Ver todos os prontuários</button>
-              </div>
-
-              <div className={styles.medicalCols}>
-                <div className={styles.medicalLeft}>
-                  <SectionCard title="Anamnese">
-                    <dl className={styles.infoList}>
-                      <InfoItem label="Queixa principal"   value={latestRecord.chiefComplaint} />
-                      <InfoItem label="Histórico atual"    value={latestRecord.currentHistory} />
-                      <InfoItem label="Hist. pessoal"      value={latestRecord.personalHistory} />
-                      <InfoItem label="Hist. familiar"     value={latestRecord.familyHistory} />
-                    </dl>
-                  </SectionCard>
-
-                  <SectionCard title="Alergias e medicamentos">
-                    {latestRecord.allergies ? (
-                      <div className={styles.medSection}>
-                        <span className={styles.medSectionLabel}>Alergias</span>
-                        <div className={styles.chipRow}>
-                          {latestRecord.allergies.split(/[,;]+/).map(a => a.trim()).filter(Boolean).map(a => (
-                            <Chip key={a} color="red">{a}</Chip>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                    {latestRecord.medications ? (
-                      <div className={styles.medSection}>
-                        <span className={styles.medSectionLabel}>Medicamentos em uso</span>
-                        <div className={styles.chipRow}>
-                          {latestRecord.medications.split(/[,;]+/).map(m => m.trim()).filter(Boolean).map(m => (
-                            <Chip key={m} color="blue">{m}</Chip>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                    {!latestRecord.allergies && !latestRecord.medications && (
-                      <p className={styles.empty}>Sem alergias ou medicamentos registrados.</p>
-                    )}
-                  </SectionCard>
-
-                  {latestRecord.physicalExam && (
-                    <SectionCard title="Exame físico">
-                      <p className={styles.obsText}>{latestRecord.physicalExam}</p>
-                    </SectionCard>
-                  )}
-                </div>
-
-                <div className={styles.medicalRight}>
-                  {latestRecord.vitalSigns && (
-                    <SectionCard title="Sinais vitais">
-                      <div className={styles.vitalsGrid}>
-                        <VitalCard label="Pressão Arterial" value={latestRecord.vitalSigns.bloodPressure} unit="mmHg" ref="<120/80" />
-                        <VitalCard label="Freq. Cardíaca"   value={latestRecord.vitalSigns.heartRate}     unit="bpm"  ref="60–100" />
-                        <VitalCard label="Temperatura"      value={latestRecord.vitalSigns.temperature}   unit="°C"   ref="36–37,5" />
-                        <VitalCard label="Peso"             value={latestRecord.vitalSigns.weight}        unit="kg" />
-                        <VitalCard label="Altura"           value={latestRecord.vitalSigns.height}        unit="cm" />
-                        <VitalCard label="SpO₂"             value={latestRecord.vitalSigns.oxygenSaturation} unit="%" ref=">95%" />
-                      </div>
-                    </SectionCard>
-                  )}
-
-                  <SectionCard title="Diagnóstico e conduta">
-                    <dl className={styles.infoList}>
-                      <InfoItem label="Diagnóstico"       value={latestRecord.diagnosis} />
-                      <InfoItem label="CID-10"            value={latestRecord.cid10} />
-                      <InfoItem label="Conduta"           value={latestRecord.treatmentPlan} />
-                      <InfoItem label="Prescrições"       value={latestRecord.prescriptions} />
-                      <InfoItem label="Exames solicitados" value={latestRecord.examRequests} />
-                      <InfoItem label="Retorno"           value={latestRecord.returnDate ? formatDate(latestRecord.returnDate) : undefined} />
-                    </dl>
-                  </SectionCard>
-                </div>
-              </div>
-            </div>
-          )
-        )}
-
-        {/* ══ PRONTUÁRIOS ══════════════════════════════════════════ */}
-        {tab === "records" && (
-          <div>
-            <div className={styles.listHeader}>
-              <p className={styles.listHeaderTitle}>{patientRecords.length} prontuário{patientRecords.length !== 1 ? "s" : ""}</p>
-              {onViewRecords && <Button size="sm" onClick={() => onViewRecords(patient)}>Abrir editor</Button>}
-            </div>
-            {patientRecords.length === 0 ? (
-              <div className={styles.emptyState}>
-                <p className={styles.emptyStateTitle}>Nenhum prontuário registrado</p>
-              </div>
-            ) : (
-              <div className={styles.timeline}>
-                {patientRecords.map((r, i) => (
-                  <div key={r.id} className={`${styles.timelineItem} ${i === patientRecords.length - 1 ? styles.timelineItemLast : ""}`}>
-                    <div className={styles.timelineDotWrap}>
-                      <div className={styles.timelineDot} />
-                      {i < patientRecords.length - 1 && <div className={styles.timelineLine} />}
-                    </div>
-                    <div className={styles.timelineCard}>
-                      <div className={styles.timelineCardTop}>
-                        <div>
-                          <p className={styles.timelineDate}>{formatDate(r.date)}</p>
-                          <p className={styles.timelineDoctor}>{r.doctorName}</p>
-                        </div>
-                        <div className={styles.timelineRight}>
-                          {r.cid10 && <span className={styles.cidTag}>{r.cid10}</span>}
-                          <span className={`${styles.statusTag} ${r.status === "finalized" ? styles.statusTagGreen : styles.statusTagAmber}`}>
-                            {r.status === "finalized" ? "Finalizado" : "Em aberto"}
-                          </span>
-                        </div>
-                      </div>
-                      <p className={styles.timelineComplaint}>{r.chiefComplaint}</p>
-                      {(r.diagnosis || r.allergies) && (
-                        <div className={styles.timelineDetails}>
-                          {r.diagnosis && <span>Diagnóstico: {r.diagnosis}</span>}
-                          {r.allergies && <span>Alergias: {r.allergies}</span>}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
             )}
           </div>
         )}

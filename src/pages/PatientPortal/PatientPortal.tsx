@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import {
-  getPatientMedicalRecordsByIdentity,
   getPatientPrescriptionsByIdentity,
   getPatientReportsByIdentity,
 } from "../../services/domain"
@@ -14,14 +13,13 @@ import { Avatar } from "../../components/ui/Avatar/Avatar"
 import { Button } from "../../components/ui/Button/Button"
 import { Modal } from "../../components/ui/Modal/Modal"
 import { formatAppointmentType, formatDate } from "../../utils"
-import type { Appointment, MedicalRecord, Patient, Prescription, Report, User } from "../../types"
+import type { Appointment, Patient, Prescription, Report, User } from "../../types"
 import styles from "./PatientPortal.module.css"
 
 interface PatientPortalProps {
   currentUser: User
   patient: Patient | null
   appointments: Appointment[]
-  records: MedicalRecord[]
   prescriptions: Prescription[]
 }
 
@@ -67,7 +65,6 @@ export function PatientPortal({
   currentUser,
   patient,
   appointments,
-  records: propRecords,
   prescriptions: propPrescriptions,
 }: PatientPortalProps) {
   const [resolvedPatient, setResolvedPatient] = useState<Patient | null>(patient)
@@ -76,7 +73,6 @@ export function PatientPortal({
   const [reportsLoading, setReportsLoading] = useState(true)
   const [apiAppointments, setApiAppointments] = useState<Appointment[]>([])
   const [appointmentsLoading, setAppointmentsLoading] = useState(true)
-  const [apiRecords, setApiRecords] = useState<MedicalRecord[]>([])
   const [apiPrescriptions, setApiPrescriptions] = useState<Prescription[]>([])
   const portalPatient = resolvedPatient ?? patient
   const rememberedPatientId = resolveRememberedPatientId({
@@ -173,16 +169,11 @@ export function PatientPortal({
 
   const loadClinicalData = useCallback(async () => {
     if (!patientId) {
-      setApiRecords([])
       setApiPrescriptions([])
       return
     }
 
-    const [patientRecords, patientPrescriptions] = await Promise.all([
-      getPatientMedicalRecordsByIdentity(patientIdentity).catch(() => []),
-      getPatientPrescriptionsByIdentity(patientIdentity).catch(() => []),
-    ])
-    setApiRecords(patientRecords)
+    const patientPrescriptions = await getPatientPrescriptionsByIdentity(patientIdentity).catch(() => [])
     setApiPrescriptions(patientPrescriptions)
   }, [patientId, patientIdentity])
 
@@ -194,14 +185,12 @@ export function PatientPortal({
   )
 
   const portalAppointments = apiAppointments.length > 0 ? apiAppointments : appointments
-  const portalRecords = apiRecords.length > 0 ? apiRecords : propRecords
   const portalPrescriptions = apiPrescriptions.length > 0 ? apiPrescriptions : propPrescriptions
 
   const consultations = portalAppointments.filter((appointment) =>
     appointment.type === "consultation" || appointment.type === "return")
   const exams = portalAppointments.filter((appointment) =>
     appointment.type === "exam" || appointment.type === "procedure")
-  const finalizedRecords = portalRecords.filter((record) => record.status === "finalized")
   const nextAppointment = portalAppointments
     .filter((appointment) => appointment.status !== "cancelled")
     .filter(isFutureAppointment)
@@ -328,22 +317,6 @@ export function PatientPortal({
                     </Button>
                     <Badge>{REPORT_STATUS[report.status] ?? report.status}</Badge>
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-
-        <Card className={styles.panel}>
-          <SectionTitle title="Atendimentos concluídos" count={finalizedRecords.length} />
-          {finalizedRecords.length === 0 ? (
-            <EmptyBlock title="Nenhum atendimento concluído" text="Registros finalizados podem aparecer aqui de forma resumida." />
-          ) : (
-            <div className={styles.list}>
-              {finalizedRecords.map((record) => (
-                <div key={record.id} className={styles.recordItem}>
-                  <p>{record.chiefComplaint}</p>
-                  <span>{formatDate(record.date)} • {record.doctorName}</span>
                 </div>
               ))}
             </div>

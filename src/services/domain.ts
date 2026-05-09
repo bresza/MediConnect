@@ -265,7 +265,7 @@ async function deleteAuthUserAt(
   })
 }
 
-const MEDICAL_RECORD_EXAM = "Prontuário Médico"
+const MEDICAL_RECORD_EXAM = "Registro Clínico"
 const PRESCRIPTION_EXAM = "Receita Médica"
 const FINANCIAL_RECORD_EXAM = "Registro Financeiro"
 

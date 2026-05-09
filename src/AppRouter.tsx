@@ -6,7 +6,6 @@ import { Patients }       from "./pages/Patients/Patients"
 import { Registration }   from "./pages/Registration/Registration"
 import { Appointments }   from "./pages/Appointments/Appointments"
 import { Availability }   from "./pages/Availability/Availability"
-import { Records }        from "./pages/Records/Records"
 import { Reports }        from "./pages/Reports/Reports"
 import { PatientProfile } from "./pages/PatientProfile/PatientProfile"
 import { PatientPortal }  from "./pages/PatientPortal/PatientPortal"
@@ -38,7 +37,7 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
     error: appointmentsError,
   } = useAppointments()
   const {
-    records, prescriptions, addRecord, updateRecord, addPrescription,
+    prescriptions, addPrescription,
     error: medicalDataError,
   } = useMedicalData()
   const {
@@ -51,7 +50,6 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
   const [sidebarOpen,      setSidebarOpen]      = useState(false)
   const [editingPatient,   setEditingPatient]   = useState<Patient | null>(null)
   const [viewingPatient,   setViewingPatient]   = useState<Patient | null>(null)
-  const [recordsPatientId, setRecordsPatientId] = useState<string | null>(null)
 
   if (!user) return null
   const currentUser = user
@@ -102,16 +100,13 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
   const visibleAppointments  = isPatient
     ? appointments.filter((a) => a.patientId === linkedPatientId)
     : doctorAppts
-  const visibleRecords       = isPatient
-    ? records.filter((r) => r.patientId === linkedPatientId)
-    : isDoctor ? records.filter((r) => doctorPatientIds!.has(r.patientId)) : records
   const visiblePrescriptions = isPatient
     ? prescriptions.filter((p) => p.patientId === linkedPatientId)
     : isDoctor ? prescriptions.filter((p) => doctorPatientIds!.has(p.patientId)) : prescriptions
   const dataErrors = [
     patientsError && `Pacientes: ${patientsError}`,
     appointmentsError && `Agenda: ${appointmentsError}`,
-    medicalDataError && `Prontuários/laudos: ${medicalDataError}`,
+    medicalDataError && `Laudos/receitas: ${medicalDataError}`,
     staffError && `Equipe: ${staffError}`,
   ].filter(Boolean)
 
@@ -119,7 +114,6 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
   function handleNavigate(page: PageId) {
     if (!canAccess(currentUser.role, page)) return
     if (page !== "register")        setEditingPatient(null)
-    if (page !== "records")         setRecordsPatientId(null)
     if (page !== "patient-profile") setViewingPatient(null)
     setActivePage(page)
     setSidebarOpen(false)
@@ -134,13 +128,6 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
   function handleEditPatient(patient: Patient) {
     setEditingPatient(patient)
     setActivePage("register")
-    setSidebarOpen(false)
-  }
-
-  function handleViewRecords(patient: Patient) {
-    if (!canAccess(currentUser.role, "records")) return  // secretária nunca acessa
-    setRecordsPatientId(patient.id)
-    setActivePage("records")
     setSidebarOpen(false)
   }
 
@@ -194,7 +181,6 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
             currentUser={currentUser}
             patient={portalPatient}
             appointments={visibleAppointments}
-            records={visibleRecords}
             prescriptions={visiblePrescriptions}
           />
         )
@@ -217,8 +203,6 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
             patients={visiblePatients}
             onNavigate={handleNavigate}
             onEditPatient={handleEditPatient}
-            // Secretária NÃO vê botão de prontuário
-            onViewRecords={canAccess(currentUser.role, "records") ? handleViewRecords : undefined}
             onViewProfile={handleViewProfile}
             // Somente gestão pode excluir pacientes
             onDeletePatient={canDo(currentUser.role, "delete_patients") ? handleDeletePatient : undefined}
@@ -232,22 +216,18 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
         return viewingPatient ? (
           <PatientProfile
             patient={viewingPatient}
-            records={visibleRecords}
             appointments={visibleAppointments}
             prescriptions={visiblePrescriptions}
             currentUser={currentUser}
             onNavigate={handleNavigate}
             onEditPatient={handleEditPatient}
-            // Secretária NÃO acessa prontuário dentro do perfil
-            onViewRecords={canAccess(currentUser.role, "records") ? handleViewRecords : undefined}
-            onAddPrescription={canDo(currentUser.role, "create_records") ? addPrescription : async () => {}}
+            onAddPrescription={canDo(currentUser.role, "create_reports") ? addPrescription : async () => {}}
           />
         ) : (
           <Patients
             patients={visiblePatients}
             onNavigate={handleNavigate}
             onEditPatient={handleEditPatient}
-            onViewRecords={canAccess(currentUser.role, "records") ? handleViewRecords : undefined}
             onViewProfile={handleViewProfile}
             onDeletePatient={canDo(currentUser.role, "delete_patients") ? handleDeletePatient : undefined}
             canCreatePatient={canAccess(currentUser.role, "register")}
@@ -287,21 +267,6 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
 
       case "availability":
         return <Availability currentUser={currentUser} />
-
-      // ── Prontuários — bloqueado para secretária ──────────────────
-      case "records":
-        return (
-          <Records
-            key={recordsPatientId ?? 0}
-            records={visibleRecords}
-            patients={visiblePatients}
-            filterPatientId={recordsPatientId}
-            currentUser={currentUser}
-            onAddRecord={canDo(currentUser.role, "create_records") ? addRecord : async () => {}}
-            onUpdateRecord={canDo(currentUser.role, "update_records") ? updateRecord : async () => {}}
-            onNavigate={handleNavigate}
-          />
-        )
 
       // ── Relatórios / Laudos ──────────────────────────────────────
       case "reports":

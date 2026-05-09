@@ -14,7 +14,6 @@ interface PatientsProps {
   patients: Patient[]
   onNavigate: (page: PageId) => void
   onEditPatient: (p: Patient) => void
-  onViewRecords?: (p: Patient) => void
   onViewProfile?: (p: Patient) => void
   onDeletePatient?: (id: string) => void | Promise<void>
   canCreatePatient?: boolean
@@ -38,7 +37,7 @@ const TrashIcon = () => (
   </svg>
 )
 
-export function Patients({ patients, onNavigate, onEditPatient, onViewRecords, onViewProfile, onDeletePatient, canCreatePatient = true }: PatientsProps) {
+export function Patients({ patients, onNavigate, onEditPatient, onViewProfile, onDeletePatient, canCreatePatient = true }: PatientsProps) {
   const [search, setSearch]             = useState("")
   const [filterStatus, setFilterStatus] = useState<"All" | "Active" | "Inactive">("All")
   const [confirmId, setConfirmId]       = useState<string | null>(null)
@@ -105,7 +104,6 @@ export function Patients({ patients, onNavigate, onEditPatient, onViewRecords, o
                       <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}>
                         <div className={styles.actions} onClick={(e) => e.stopPropagation()}>
                           <Button size="sm" variant="ghost" onClick={() => onEditPatient(p)}>Editar</Button>
-                          {onViewRecords && <Button size="sm" variant="ghost" onClick={() => onViewRecords(p)}>Prontuário</Button>}
                           {onDeletePatient && (
                             <button className={styles.deleteBtn} onClick={() => setConfirmId(p.id)} title="Remover paciente"><TrashIcon /></button>
                           )}
