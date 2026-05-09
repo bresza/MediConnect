@@ -218,6 +218,18 @@ interface ApiProfile {
 interface ApiUserRole {
   user_id: string; role: string
 }
+interface CreateUserWithPasswordResponse {
+  success?: boolean
+  user?: {
+    id: string
+    email: string
+    full_name: string
+    roles: string[]
+    email_confirmed_at: string | null
+  }
+  user_id?: string
+  message?: string
+}
 
 function compactPayload(payload: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(
@@ -227,6 +239,19 @@ function compactPayload(payload: Record<string, unknown>): Record<string, unknow
       value !== "",
     ),
   )
+}
+
+function addressToDoctorApi(address?: StaffMember["address"]): Record<string, unknown> {
+  if (!address) return {}
+  return compactPayload({
+    cep: address.zipCode,
+    street: address.street,
+    number: address.number,
+    complement: address.complement,
+    neighborhood: address.neighborhood,
+    city: address.city,
+    state: address.state,
+  })
 }
 
 const MEDICAL_RECORD_EXAM = "Prontuário Médico"
@@ -330,52 +355,76 @@ export async function createStaffMember(
     role:      roleMap[data.role] ?? "secretaria",
     cpf:       (doctorExtra?.cpf || data.cpf || "").replace(/\D/g, "") || undefined,
     create_patient_record: false,
+    crm:       data.role === "doctor" ? doctorExtra?.crmNum?.trim() : undefined,
+    crm_uf:    data.role === "doctor" ? doctorExtra?.crmUf?.trim().toUpperCase() : undefined,
+    specialty: data.role === "doctor" ? doctorExtra?.specialty?.trim() : undefined,
   }
 
   if (!payload.email)     throw new Error("E-mail obrigatório")
   if (!payload.password)  throw new Error("Senha obrigatória")
+  if (payload.password.length < 6) throw new Error("A senha deve ter pelo menos 6 caracteres")
   if (!payload.full_name) throw new Error("Nome obrigatório")
   if (!payload.phone)     throw new Error("Telefone obrigatório")
   if (!payload.cpf)       throw new Error("CPF obrigatório")
+  if (payload.role === "medico") {
+    if (!payload.crm)       throw new Error("CRM obrigatório")
+    if (!payload.crm_uf)    throw new Error("UF do CRM obrigatória")
+    if (!payload.specialty) throw new Error("Especialidade obrigatória")
+  }
 
   // Passo 1: criar usuário auth com senha/role no endpoint documentado da API
-  const res = await apiRequest<{
-  success?: boolean
-  user?: {
-    id: string
-    email: string
-    full_name: string
-    roles: string[]
-    email_confirmed_at: string | null
+  let res: CreateUserWithPasswordResponse
+  try {
+    res = await apiRequest<CreateUserWithPasswordResponse>("/functions/v1/create-user-with-password", {
+      method: "POST",
+      body: compactPayload(payload),
+      logErrors: false,
+    })
+  } catch (err) {
+    if (!(err instanceof ApiError) || err.status !== 404) throw err
+    res = await apiRequest<CreateUserWithPasswordResponse>("/create-user-with-password", {
+      method: "POST",
+      body: compactPayload(payload),
+    })
   }
-  message?: string
-}>("/functions/v1/create-user-with-password", {
-  method: "POST",
-  body: payload,
-})
 
-  if (!res?.user?.id) {
-  throw new Error(
-    res?.message || "Erro ao criar usuário na API"
-  )
-}
+  if (!res?.user?.id && !res?.user_id) {
+    throw new Error(res?.message || "Erro ao criar usuário na API")
+  }
 
-  const userId = res?.user?.id ?? ""
+  const userId = res?.user?.id ?? res?.user_id ?? ""
 
   // Passo 2: se médico, criar registro na tabela doctors
   if (data.role === "doctor" && doctorExtra) {
-    await apiRequest("/functions/v1/create-doctor", {
-      method: "POST",
-      body: {
-        email:        data.email,
-        full_name:    data.name,
-        cpf:          doctorExtra.cpf.replace(/\D/g, ""),
-        crm:          doctorExtra.crmNum,
-        crm_uf:       doctorExtra.crmUf.toUpperCase(),
-        specialty:    doctorExtra.specialty,
-        phone_mobile: data.phone || undefined,
-      },
+    const doctorPayload = compactPayload({
+      email:        data.email,
+      full_name:    data.name,
+      cpf:          doctorExtra.cpf.replace(/\D/g, ""),
+      crm:          doctorExtra.crmNum,
+      crm_uf:       doctorExtra.crmUf.toUpperCase(),
+      specialty:    doctorExtra.specialty,
+      phone:        data.phone || undefined,
+      phone_mobile: data.phone || undefined,
+      phone2:       data.phone2 || undefined,
+      rg:           data.rg || undefined,
+      active:       data.status !== "Inactive",
+      temp_password: data.tempPassword || password.trim(),
+      ...addressToDoctorApi(data.address),
     })
+
+    try {
+      await apiRequest("/functions/v1/create-doctor", {
+        method: "POST",
+        body: doctorPayload,
+        logErrors: false,
+      })
+    } catch (err) {
+      if (!(err instanceof ApiError) || err.status !== 404) throw err
+      await apiRequest("/create-doctor", {
+        method: "POST",
+        body: doctorPayload,
+      })
+    }
   }
 
   return {
@@ -739,14 +788,25 @@ function toE164BR(phone: string): string {
 export async function sendMessage(
   d: Omit<Message, "id"> & { phoneNumber: string },
 ): Promise<Message> {
-  await apiRequest<{ success?: boolean; message_sid?: string }>("/functions/v1/send-sms", {
-    method: "POST",
-    body: {
-      phone_number: toE164BR(d.phoneNumber),
-      message: d.content,
-      patient_id: String(d.patientId),
-    },
-  })
+  const body = {
+    phone_number: toE164BR(d.phoneNumber),
+    message: d.content,
+    patient_id: String(d.patientId),
+  }
+
+  try {
+    await apiRequest<{ success?: boolean; message_sid?: string }>("/functions/v1/send-sms", {
+      method: "POST",
+      body,
+      logErrors: false,
+    })
+  } catch (err) {
+    if (!(err instanceof ApiError) || err.status !== 404) throw err
+    await apiRequest<{ success?: boolean; message_sid?: string }>("/send-sms", {
+      method: "POST",
+      body,
+    })
+  }
 
   return {
     ...d,
