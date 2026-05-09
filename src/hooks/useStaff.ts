@@ -34,9 +34,9 @@ export function useStaff(): UseStaffReturn {
     password:    string,
     doctorExtra?: DoctorExtra,
   ) => {
-    const created = await createStaffMember(member, password, doctorExtra)
-    setStaff((prev) => [...prev, created])
-  }, [])
+    await createStaffMember(member, password, doctorExtra)
+    await load()
+  }, [load])
 
   const updateStaff = useCallback(async (updated: StaffMember) => {
     const saved = await updateStaffMember(updated)
