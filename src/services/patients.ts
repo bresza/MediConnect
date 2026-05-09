@@ -396,6 +396,15 @@ async function findPatientById(id?: string): Promise<ApiPatient | null> {
   return rows?.[0] ?? null
 }
 
+async function findPatientByEmail(email?: string): Promise<ApiPatient | null> {
+  if (!email) return null
+  const rows = await apiRequest<ApiPatient[]>(
+    `/rest/v1/patients?email=eq.${encodeURIComponent(email)}&select=*&limit=1`,
+    { logErrors: false },
+  ).catch(() => [])
+  return rows?.[0] ?? null
+}
+
 function isBlockedDependencyDelete(err: unknown): boolean {
   return err instanceof Error && /A API não removeu .* vinculados ao paciente/i.test(err.message)
 }
@@ -407,21 +416,63 @@ function isDeleteBlockedByDependency(err: unknown): boolean {
   )
 }
 
-async function deletePatientAuthUser(userId?: string, email?: string): Promise<boolean> {
+function isMissingResource(err: unknown): boolean {
+  return err instanceof ApiError &&
+    (err.status === 404 || (err.status === 400 && /schema|cache|could not find|not found|relation|table/i.test(err.message)))
+}
+
+async function deletePatientAuthUser(userId?: string): Promise<boolean> {
   if (!userId) return false
 
   await apiRequest("/functions/v1/delete-user", {
     method: "POST",
-    body: {
-      userId,
-      user_id: userId,
-      email: email || undefined,
-      hard_delete: true,
-      hardDelete: true,
-    },
+    body: { userId },
     logErrors: false,
   })
   return true
+}
+
+async function getDeletedPatientPlaceholderId(): Promise<string> {
+  const email = "paciente.removido@mediconnect.local"
+  const cpf = "52998224725"
+  const existing = await findPatientByEmail(email) ?? await findPatientByCpf(cpf)
+  if (existing?.id) return existing.id
+
+  const payload = compactPayload({
+    full_name: "Paciente removido",
+    cpf,
+    email,
+    phone_mobile: "00000000000",
+    birth_date: "1900-01-01",
+    created_by: getApiUserId() ?? undefined,
+  })
+  let created: ApiPatient[] | ApiPatient | undefined
+  try {
+    created = await apiRequest<ApiPatient[] | ApiPatient>("/rest/v1/patients", {
+      method: "POST",
+      headers: { Prefer: "return=representation" },
+      body: payload,
+      logErrors: false,
+    })
+  } catch (err) {
+    if (!isSchemaMismatch(err)) throw err
+    created = await apiRequest<ApiPatient[] | ApiPatient>("/rest/v1/patients", {
+      method: "POST",
+      headers: { Prefer: "return=representation" },
+      body: {
+        full_name: "Paciente removido",
+        cpf,
+        email,
+        phone_mobile: "00000000000",
+        birth_date: "1900-01-01",
+      },
+      logErrors: false,
+    })
+  }
+
+  const raw = extractCreatedPatient(created) ?? await findPatientByEmail(email) ?? await findPatientByCpf(cpf)
+  if (!raw?.id) throw new Error("A API não permitiu criar o paciente técnico para preservar vínculos antigos.")
+  return raw.id
 }
 
 function patientIdentityFilters(identity: PatientIdentity): string[] {
@@ -655,11 +706,8 @@ export async function updatePatient(patient: Patient): Promise<Patient> {
   return patientWithUser
 }
 
-async function deletePatientDependencies(id: string, strictAppointments = true): Promise<void> {
+async function deletePatientDependencies(id: string): Promise<void> {
   const patientId = encodeURIComponent(id)
-  const isMissingResource = (err: unknown) =>
-    err instanceof ApiError &&
-    (err.status === 404 || (err.status === 400 && /schema|cache|could not find|not found|relation|table/i.test(err.message)))
 
   const ignoreMissing = (err: unknown) => {
     if (isMissingResource(err)) return
@@ -692,6 +740,50 @@ async function deletePatientDependencies(id: string, strictAppointments = true):
 
   async function deleteRowsByPatient(table: string, required = false): Promise<void> {
     const rows = await listDependencyRows(table, required)
+
+    if (table === "appointments" && rows.length > 0) {
+      const placeholderPatientId = await getDeletedPatientPlaceholderId()
+      await apiRequest(`/rest/v1/appointments?patient_id=eq.${patientId}`, {
+        method: "PATCH",
+        headers: { Prefer: "return=minimal" },
+        body: {
+          patient_id: placeholderPatientId,
+          status: "cancelled",
+          notes: "Paciente original removido pelo perfil gestor.",
+        },
+        logErrors: false,
+      }).catch((err) => {
+        if (!isMissingResource(err)) {
+          console.warn("[patients] nao foi possivel desvincular agendamentos antes da exclusao:", err)
+        }
+      })
+
+      let remaining = await listDependencyRows(table, required)
+      if (remaining.length === 0) return
+
+      await Promise.all(remaining.map((row) =>
+        deleteRow(table, row.id, false).catch((err) => {
+          if (!isMissingResource(err)) {
+            console.warn("[patients] exclusao de agendamento vinculado falhou, mantendo tentativa por paciente_id:", err)
+          }
+        }),
+      ))
+      await apiRequest(`/rest/v1/${table}?patient_id=eq.${patientId}`, {
+        method: "DELETE",
+        headers: { Prefer: "return=minimal" },
+        logErrors: false,
+      }).catch(ignoreMissing)
+
+      remaining = await listDependencyRows(table, required)
+      if (remaining.length > 0) {
+        throw new Error(
+          `A API não removeu ${remaining.length} registro(s) de ${table} vinculados ao paciente. ` +
+          "O backend precisa permitir mover esses agendamentos para o paciente técnico de exclusão.",
+        )
+      }
+      return
+    }
+
     await Promise.all(rows.map((row) => deleteRow(table, row.id, required)))
 
     await apiRequest(`/rest/v1/${table}?patient_id=eq.${patientId}`, {
@@ -703,27 +795,13 @@ async function deletePatientDependencies(id: string, strictAppointments = true):
       throw err
     })
 
-    if (required) {
-      let remaining = await listDependencyRows(table, true)
-      if (remaining.length > 0 && table === "appointments") {
-        await apiRequest(`/rest/v1/appointments?patient_id=eq.${patientId}`, {
-          method: "PATCH",
-          headers: { Prefer: "return=minimal" },
-          body: {
-            patient_id: null,
-            status: "cancelled",
-          },
-          logErrors: false,
-        }).catch(ignoreMissing)
-        remaining = await listDependencyRows(table, true)
-      }
-      if (remaining.length > 0) {
-        if (table === "appointments" && !strictAppointments) return
-        throw new Error(
-          `A API não removeu ${remaining.length} registro(s) de ${table} vinculados ao paciente. ` +
-          "O perfil gestor precisa ter permissão de DELETE nessa tabela antes de excluir o paciente.",
-        )
-      }
+    const remaining = await listDependencyRows(table, required)
+
+    if (remaining.length > 0) {
+      throw new Error(
+        `A API não removeu ${remaining.length} registro(s) de ${table} vinculados ao paciente. ` +
+        "O perfil gestor precisa ter permissão de DELETE nessa tabela antes de excluir o paciente.",
+      )
     }
   }
 
@@ -744,25 +822,18 @@ async function deletePatientRecord(id: string, logErrors = true): Promise<void> 
 
 export async function deletePatient(id: string): Promise<void> {
   const patient = await findPatientById(id).catch(() => null)
-  const profile = patient?.user_id ? null : await findProfileByEmail(patient?.email).catch(() => null)
-  const userId = patient?.user_id ?? profile?.id ?? ""
+  const userId = patient?.user_id ?? ""
 
-  if (await deletePatientAuthUser(userId, patient?.email)) {
-    const stillExists = await findPatientById(id).catch(() => null)
-    if (!stillExists) return
-  }
-
-  try {
-    await deletePatientRecord(id, false)
+  if (userId) {
+    await deletePatientAuthUser(userId)
     return
-  } catch (err) {
-    if (!isDeleteBlockedByDependency(err)) throw err
   }
 
   try {
-    await deletePatientDependencies(id, false)
+    await deletePatientDependencies(id)
   } catch (err) {
     if (!isBlockedDependencyDelete(err)) throw err
+    throw err
   }
 
   try {
@@ -772,12 +843,13 @@ export async function deletePatient(id: string): Promise<void> {
     if (!isDeleteBlockedByDependency(err)) throw err
   }
 
-  await deletePatientAuthUser(userId, patient?.email)
-  const stillExists = await findPatientById(id).catch(() => null)
-  if (stillExists) {
-    throw new Error(
-      "A API bloqueou a exclusão porque ainda existem vínculos com este paciente. " +
-      "O paciente também não possui user_id válido para acionar a Edge Function delete-user.",
-    )
+  await deletePatientDependencies(id)
+  try {
+    await deletePatientRecord(id)
+    return
+  } catch (err) {
+    if (!isDeleteBlockedByDependency(err)) throw err
   }
+
+  throw new Error("A API bloqueou a exclusão porque ainda existem vínculos com este paciente sem user_id.")
 }
