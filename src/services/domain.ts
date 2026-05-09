@@ -514,12 +514,7 @@ async function deleteAuthUser(target: StaffDeleteTarget, relatedIds: string[]): 
 
   for (const id of ids) {
     try {
-      try {
-        await deleteAuthUserAt("/delete-user", id, target.email)
-      } catch (err) {
-        if (!(err instanceof ApiError) || (err.status !== 404 && err.status !== 0)) throw err
-        await deleteAuthUserAt("/functions/v1/delete-user", id, target.email)
-      }
+      await deleteAuthUserAt("/functions/v1/delete-user", id, target.email)
       removed = true
     } catch (err) {
       lastError = err
@@ -528,7 +523,7 @@ async function deleteAuthUser(target: StaffDeleteTarget, relatedIds: string[]): 
   }
 
   if (!removed && lastError) {
-    console.warn("[delete-user] falhou, usando fallback REST:", lastError)
+    console.warn("[functions/v1/delete-user] falhou, usando fallback REST:", lastError)
   }
   return removed
 }

@@ -407,38 +407,21 @@ function isDeleteBlockedByDependency(err: unknown): boolean {
   )
 }
 
-async function deletePatientAuthUser(userId?: string, email?: string, patientId?: string): Promise<boolean> {
-  if (!userId && !email && !patientId) return false
+async function deletePatientAuthUser(userId?: string, email?: string): Promise<boolean> {
+  if (!userId) return false
 
-  async function request(path: string): Promise<void> {
-    await apiRequest(path, {
-      method: "POST",
-      body: {
-        userId: userId || undefined,
-        user_id: userId || undefined,
-        email: email || undefined,
-        patientId: patientId || undefined,
-        patient_id: patientId || undefined,
-        hard_delete: true,
-        hardDelete: true,
-      },
-      logErrors: false,
-    })
-  }
-
-  let lastError: unknown = null
-  for (const path of ["/delete-user", "/functions/v1/delete-user"]) {
-    try {
-      await request(path)
-      return true
-    } catch (err) {
-      lastError = err
-      if (!(err instanceof ApiError) || (err.status !== 404 && err.status !== 0)) throw err
-    }
-  }
-
-  console.warn("[delete-user] endpoint indisponivel, usando fallback REST:", lastError)
-  return false
+  await apiRequest("/functions/v1/delete-user", {
+    method: "POST",
+    body: {
+      userId,
+      user_id: userId,
+      email: email || undefined,
+      hard_delete: true,
+      hardDelete: true,
+    },
+    logErrors: false,
+  })
+  return true
 }
 
 function patientIdentityFilters(identity: PatientIdentity): string[] {
@@ -764,7 +747,7 @@ export async function deletePatient(id: string): Promise<void> {
   const profile = patient?.user_id ? null : await findProfileByEmail(patient?.email).catch(() => null)
   const userId = patient?.user_id ?? profile?.id ?? ""
 
-  if (await deletePatientAuthUser(userId, patient?.email, id)) {
+  if (await deletePatientAuthUser(userId, patient?.email)) {
     const stillExists = await findPatientById(id).catch(() => null)
     if (!stillExists) return
   }
@@ -789,12 +772,12 @@ export async function deletePatient(id: string): Promise<void> {
     if (!isDeleteBlockedByDependency(err)) throw err
   }
 
-  await deletePatientAuthUser(userId, patient?.email, id)
+  await deletePatientAuthUser(userId, patient?.email)
   const stillExists = await findPatientById(id).catch(() => null)
   if (stillExists) {
     throw new Error(
       "A API bloqueou a exclusão porque ainda existem vínculos com este paciente. " +
-      "O endpoint delete-user também não removeu o registro; verifique as permissões service-role/RLS para appointments.",
+      "O paciente também não possui user_id válido para acionar a Edge Function delete-user.",
     )
   }
 }
