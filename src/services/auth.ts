@@ -3,7 +3,7 @@ import type { User, UserRole } from "../types"
 
 export interface LoginPayload  { email: string; password: string }
 export interface PatientSignupPayload {
-  name: string; email: string; cpf: string; phone: string; dob?: string
+  name: string; email: string; password: string; cpf: string; phone: string; dob?: string
 }
 export interface PatientSignupResponse {
   success: boolean
@@ -105,16 +105,20 @@ function localDevLogin(payload: LoginPayload): LoginResponse | null {
 export async function createPatientAccount(payload: PatientSignupPayload): Promise<PatientSignupResponse> {
   const name = payload.name.trim()
   const email = payload.email.trim().toLowerCase()
+  const password = payload.password.trim()
   const cpf = onlyDigits(payload.cpf)
   const phone = onlyDigits(payload.phone)
 
   if (!name) throw new Error("Informe seu nome completo.")
   if (!email) throw new Error("Informe seu e-mail.")
+  if (!password) throw new Error("Informe uma senha.")
+  if (password.length < 6) throw new Error("A senha deve ter pelo menos 6 caracteres.")
   if (cpf.length !== 11) throw new Error("Informe um CPF válido com 11 dígitos.")
   if (!phone) throw new Error("Informe seu telefone.")
 
   const requestBody = {
     email,
+    password,
     full_name: name,
     phone_mobile: phone,
     cpf,
@@ -152,7 +156,7 @@ export async function createPatientAccount(payload: PatientSignupPayload): Promi
     patient_id: data?.patient_id,
     user_id: data?.user_id,
     email: data?.email ?? email,
-    message: data?.message ?? "Cadastro realizado com sucesso. Verifique seu e-mail para acessar a plataforma.",
+    message: data?.message ?? "Conta criada com sucesso. Entre com seu e-mail e senha.",
   }
 }
 

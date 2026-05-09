@@ -81,7 +81,7 @@ const TABS: { id: TabId; label: string; singular: string }[] = [
 ]
 
 // ─── Password input helper ────────────────────────────────────────
-function PasswordInput({ label, value, show, onToggle, onChange, error, placeholder = "Mínimo 8 caracteres" }: {
+function PasswordInput({ label, value, show, onToggle, onChange, error, placeholder = "Mínimo 6 caracteres" }: {
   label: string; value: string; show: boolean; onToggle: () => void
   onChange: (v: string) => void; error?: string; placeholder?: string
 }) {
@@ -163,7 +163,7 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast }: TeamProps) {
     }
     if (!editingMember) {
       if (!form.password)             e.password        = "Senha obrigatória"
-      else if (form.password.length < 8) e.password     = "Mínimo 8 caracteres"
+      else if (form.password.length < 6) e.password     = "Mínimo 6 caracteres"
       if (!form.confirmPassword)      e.confirmPassword = "Confirmação obrigatória"
       else if (form.password !== form.confirmPassword) e.confirmPassword = "Senhas não coincidem"
     }

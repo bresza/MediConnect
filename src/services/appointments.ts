@@ -1,4 +1,4 @@
-import { apiRequest, getApiUserId } from "./api"
+import { ApiError, apiRequest, getApiUserId } from "./api"
 import type {
   Appointment,
   AppointmentStatus,
@@ -40,6 +40,19 @@ interface ApiDoctorException {
   start_time?: string | null
   end_time?: string | null
 }
+interface ApiAvailableSlot {
+  time?: string
+  start_time?: string
+  start?: string
+  scheduled_at?: string
+}
+type ApiAvailableSlotsResponse =
+  | string[]
+  | ApiAvailableSlot[]
+  | {
+      slots?: Array<string | ApiAvailableSlot>
+      data?: Array<string | ApiAvailableSlot> | { slots?: Array<string | ApiAvailableSlot> }
+    }
 
 export interface AppointmentDoctor {
   id: string
@@ -171,6 +184,7 @@ function appointmentToApi(
     doctor_id: a.doctorId,
     scheduled_at: scheduledAt,
     duration_minutes: a.duration,
+    appointment_type: a.type,
   }
 
   if (!isCreate) {
@@ -289,9 +303,16 @@ export async function deleteAppointment(
 export async function getAvailableSlots(
   doctorId: string,
   date: string,
+  appointmentType = "presencial",
 ): Promise<string[]> {
   if (!doctorId || !date) return []
   if (date < localDate(new Date())) return []
+
+  try {
+    return await getAvailableSlotsFromApi(doctorId, date, appointmentType)
+  } catch (err) {
+    if (!(err instanceof ApiError) || err.status !== 404) throw err
+  }
 
   return getAvailableSlotsFromAvailability(doctorId, date)
 }
@@ -363,6 +384,64 @@ async function getAvailableSlotsFromAvailability(
 
       return slots
     })
+    .filter((time, index, all) => all.indexOf(time) === index)
+    .sort()
+}
+
+function slotToTime(slot: string | ApiAvailableSlot): string | null {
+  const raw = typeof slot === "string"
+    ? slot
+    : slot.time ?? slot.start_time ?? slot.start ?? slot.scheduled_at ?? ""
+  if (!raw) return null
+  if (/^\d{2}:\d{2}/.test(raw)) return raw.slice(0, 5)
+
+  const parsed = new Date(raw)
+  if (Number.isNaN(parsed.getTime())) return null
+  return localTime(parsed)
+}
+
+function extractSlots(data: ApiAvailableSlotsResponse | undefined): Array<string | ApiAvailableSlot> {
+  if (!data) return []
+  if (Array.isArray(data)) return data
+  if (Array.isArray(data.slots)) return data.slots
+  if (Array.isArray(data.data)) return data.data
+  if (data.data && typeof data.data === "object" && Array.isArray(data.data.slots)) return data.data.slots
+  return []
+}
+
+async function getAvailableSlotsFromApi(
+  doctorId: string,
+  date: string,
+  appointmentType: string,
+): Promise<string[]> {
+  async function request(path: string) {
+    return apiRequest<ApiAvailableSlotsResponse>(path, {
+      method: "POST",
+      body: {
+        doctor_id: doctorId,
+        start_date: date,
+        end_date: date,
+        appointment_type: appointmentType,
+      },
+      logErrors: false,
+    })
+  }
+
+  let data: ApiAvailableSlotsResponse | undefined
+  try {
+    data = await request("/functions/v1/get-available-slots")
+  } catch (err) {
+    if (!(err instanceof ApiError) || err.status !== 404) throw err
+    data = await request("/get-available-slots")
+  }
+
+  const today = localDate(new Date())
+  const nowMinutes = timeToMinutes(localTime(new Date()))
+
+  return extractSlots(data)
+    .map(slotToTime)
+    .filter((time): time is string => Boolean(time))
+    .filter((time) => date !== today || timeToMinutes(time) > nowMinutes)
     .filter((time, index, all) => all.indexOf(time) === index)
     .sort()
 }
