@@ -673,7 +673,7 @@ export function Registration({
                   value={form.cnh} onChange={(e) => set("cnh", e.target.value)} />
                 <Input label="Passaporte" placeholder="Número do passaporte"
                   value={form.passport} onChange={(e) => set("passport", e.target.value)} />
-                <Input label="Código legado/prontuário" placeholder="Código anterior (migração)"
+                <Input label="Código legado" placeholder="Código anterior (migração)"
                   value={form.legacyCode} onChange={(e) => set("legacyCode", e.target.value)} />
               </div>
             </Section>

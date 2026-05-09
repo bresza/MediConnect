@@ -155,7 +155,7 @@ export function Settings({ currentUser }: SettingsProps) {
               <div className={styles.textBlock}>
                 <p>
                   A Mediconnect centraliza o fluxo da clínica com cadastro de pacientes,
-                  agenda, prontuários, laudos, receitas, equipe, financeiro, comunicação
+                  agenda, laudos, receitas, equipe, financeiro, comunicação
                   e relatórios gerenciais.
                 </p>
                 <p>
@@ -189,7 +189,7 @@ export function Settings({ currentUser }: SettingsProps) {
                 </div>
                 <div className={styles.infoItem}>
                   <span>Módulos conectados</span>
-                  <strong>Pacientes, agenda, laudos, prontuários, equipe e financeiro</strong>
+                  <strong>Pacientes, agenda, laudos, equipe e financeiro</strong>
                 </div>
               </div>
 

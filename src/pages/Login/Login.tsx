@@ -11,7 +11,6 @@ interface LoginProps {
 
 const FEATURE_LIST = [
   "Agendamento inteligente com detecção de conflitos",
-  "Prontuário eletrônico completo",
   "Gestão financeira e faturamento",
   "Comunicação integrada com pacientes",
   "Relatórios e laudos médicos",
