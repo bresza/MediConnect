@@ -309,6 +309,24 @@ function apiProfileToStaff(api: ApiProfile, role: StaffRole): StaffMember {
   }
 }
 
+function normalizeStaffText(value?: string | null): string {
+  return (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+}
+
+function staffIdentityKeys(member: StaffMember): string[] {
+  const email = normalizeStaffText(member.email)
+  const name = normalizeStaffText(member.name)
+  return [
+    member.id ? `id:${member.id}` : "",
+    email ? `email:${email}` : "",
+    name ? `role-name:${member.role}:${name}` : "",
+  ].filter(Boolean)
+}
+
 export async function getStaff(): Promise<StaffMember[]> {
   const [doctors, profiles, userRoles] = await Promise.all([
     apiRequest<ApiDoctor[]>("/rest/v1/doctors?select=*&order=full_name.asc"),
@@ -328,8 +346,17 @@ export async function getStaff(): Promise<StaffMember[]> {
     })
     .filter((member): member is StaffMember => member !== null)
 
-  const ids = new Set(doctorStaff.map((d) => d.id))
-  return [...doctorStaff, ...profileStaff.filter((p) => !ids.has(p.id))]
+  const seen = new Set<string>()
+  const addUnique = (members: StaffMember[]) => members.filter((member) => {
+    const keys = staffIdentityKeys(member)
+    if (keys.some((key) => seen.has(key))) return false
+    keys.forEach((key) => seen.add(key))
+    return true
+  })
+
+  // Doctors carrega CRM/especialidade; quando existir profile com o mesmo email/nome,
+  // mantemos o registro medico mais completo e ocultamos o duplicado de profiles.
+  return [...addUnique(doctorStaff), ...addUnique(profileStaff)]
     .sort((a, b) => a.name.localeCompare(b.name))
 }
 
@@ -384,17 +411,18 @@ export async function createStaffMember(
     if (!payload.specialty) throw new Error("Especialidade obrigatória")
   }
 
-  // Passo 1: criar usuário auth com senha/role no endpoint documentado da API
+  // Passo 1: criar usuário auth com senha/role pela Edge Function da API.
+  // O caminho raiz existe na documentação, mas no Supabase real pode falhar por CORS.
   let res: CreateUserWithPasswordResponse
   try {
-    res = await apiRequest<CreateUserWithPasswordResponse>("/create-user-with-password", {
+    res = await apiRequest<CreateUserWithPasswordResponse>("/functions/v1/create-user-with-password", {
       method: "POST",
       body: compactPayload(payload),
       logErrors: false,
     })
   } catch (err) {
     if (!(err instanceof ApiError) || err.status !== 404) throw err
-    res = await apiRequest<CreateUserWithPasswordResponse>("/functions/v1/create-user-with-password", {
+    res = await apiRequest<CreateUserWithPasswordResponse>("/create-user-with-password", {
       method: "POST",
       body: compactPayload(payload),
     })
@@ -425,14 +453,14 @@ export async function createStaffMember(
     })
 
     try {
-      await apiRequest("/create-doctor", {
+      await apiRequest("/functions/v1/create-doctor", {
         method: "POST",
         body: doctorPayload,
         logErrors: false,
       })
     } catch (err) {
       if (!(err instanceof ApiError) || err.status !== 404) throw err
-      await apiRequest("/functions/v1/create-doctor", {
+      await apiRequest("/create-doctor", {
         method: "POST",
         body: doctorPayload,
       })
