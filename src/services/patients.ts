@@ -303,12 +303,12 @@ async function createPatientUserWithPassword(
 
 async function createPatientUser(payload: Record<string, unknown>): Promise<CreateUserWithPasswordResponse> {
   try {
-    return await createPatientUserWithPassword("/functions/v1/create-user-with-password", payload)
+    return await createPatientUserWithPassword("/create-user-with-password", payload)
   } catch (err) {
     if (!(err instanceof ApiError) || err.status !== 404) throw err
   }
 
-  return createPatientUserWithPassword("/create-user-with-password", payload)
+  return createPatientUserWithPassword("/functions/v1/create-user-with-password", payload)
 }
 
 function createdUserId(response: CreateUserWithPasswordResponse): string {

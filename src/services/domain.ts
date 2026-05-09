@@ -375,14 +375,14 @@ export async function createStaffMember(
   // Passo 1: criar usuário auth com senha/role no endpoint documentado da API
   let res: CreateUserWithPasswordResponse
   try {
-    res = await apiRequest<CreateUserWithPasswordResponse>("/functions/v1/create-user-with-password", {
+    res = await apiRequest<CreateUserWithPasswordResponse>("/create-user-with-password", {
       method: "POST",
       body: compactPayload(payload),
       logErrors: false,
     })
   } catch (err) {
     if (!(err instanceof ApiError) || err.status !== 404) throw err
-    res = await apiRequest<CreateUserWithPasswordResponse>("/create-user-with-password", {
+    res = await apiRequest<CreateUserWithPasswordResponse>("/functions/v1/create-user-with-password", {
       method: "POST",
       body: compactPayload(payload),
     })
@@ -413,14 +413,14 @@ export async function createStaffMember(
     })
 
     try {
-      await apiRequest("/functions/v1/create-doctor", {
+      await apiRequest("/create-doctor", {
         method: "POST",
         body: doctorPayload,
         logErrors: false,
       })
     } catch (err) {
       if (!(err instanceof ApiError) || err.status !== 404) throw err
-      await apiRequest("/create-doctor", {
+      await apiRequest("/functions/v1/create-doctor", {
         method: "POST",
         body: doctorPayload,
       })
@@ -795,14 +795,14 @@ export async function sendMessage(
   }
 
   try {
-    await apiRequest<{ success?: boolean; message_sid?: string }>("/functions/v1/send-sms", {
+    await apiRequest<{ success?: boolean; message_sid?: string }>("/send-sms", {
       method: "POST",
       body,
       logErrors: false,
     })
   } catch (err) {
     if (!(err instanceof ApiError) || err.status !== 404) throw err
-    await apiRequest<{ success?: boolean; message_sid?: string }>("/send-sms", {
+    await apiRequest<{ success?: boolean; message_sid?: string }>("/functions/v1/send-sms", {
       method: "POST",
       body,
     })
