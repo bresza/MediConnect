@@ -21,7 +21,6 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
   const [mode,         setMode]         = useState<"login" | "signup">("login")
   const [email,        setEmail]        = useState("")
   const [password,     setPassword]     = useState("")
-  const [confirmPassword, setConfirmPassword] = useState("")
   const [name,         setName]         = useState("")
   const [cpf,          setCpf]          = useState("")
   const [phone,        setPhone]        = useState("")
@@ -35,17 +34,13 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
     e.preventDefault()
     if (!email.trim()) { setError("Preencha seu e-mail."); return }
     if (mode === "login" && !password.trim()) { setError("Preencha sua senha."); return }
-    if (mode === "signup" && !password.trim()) { setError("Crie uma senha para acessar o portal."); return }
-    if (mode === "signup" && password.trim().length < 6) { setError("A senha deve ter pelo menos 6 caracteres."); return }
-    if (mode === "signup" && password !== confirmPassword) { setError("As senhas não coincidem."); return }
     setError(null); setSuccess(null); setIsLoading(true)
     try {
       if (mode === "signup") {
-        const response = await createPatientAccount({ name, email, password, cpf, phone, dob })
-        setSuccess(response.message ?? "Conta criada com sucesso. Entre com seu e-mail e senha.")
+        const response = await createPatientAccount({ name, email, cpf, phone, dob })
+        setSuccess(response.message ?? "Cadastro realizado com sucesso. Verifique seu e-mail para acessar a plataforma.")
         setMode("login")
         setPassword("")
-        setConfirmPassword("")
         setName("")
         setCpf("")
         setPhone("")
@@ -83,7 +78,6 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
     setError(null)
     setSuccess(null)
     setPassword("")
-    setConfirmPassword("")
   }
 
   return (
@@ -134,7 +128,7 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
             <p className={styles.formSub}>
               {mode === "login"
                 ? "Faça login para acessar o sistema"
-                : "Cadastre-se com e-mail e senha para acessar o portal"}
+                : "Cadastre-se pelo e-mail para receber o acesso ao portal"}
             </p>
           </div>
 
@@ -160,7 +154,7 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
             {mode === "signup" && (
               <>
                 <p className={styles.signupHint}>
-                  O cadastro usa o endpoint público da API e cria o acesso com o e-mail e senha informados.
+                  O cadastro usa o endpoint público da API e cria o perfil do paciente com o e-mail informado.
                 </p>
                 <div className={styles.fieldGroup}>
                   <label className={styles.label}>Nome completo</label>
@@ -206,26 +200,6 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
                 className={styles.input} autoComplete="username"
               />
             </div>
-            {mode === "signup" && (
-              <div className={styles.signupGrid}>
-                <div className={styles.fieldGroup}>
-                  <label className={styles.label}>Senha</label>
-                  <input
-                    type={showPassword ? "text" : "password"} placeholder="Mínimo 6 caracteres" value={password}
-                    onChange={(e) => { setPassword(e.target.value); setError(null); setSuccess(null) }}
-                    className={styles.input} autoComplete="new-password"
-                  />
-                </div>
-                <div className={styles.fieldGroup}>
-                  <label className={styles.label}>Confirmar senha</label>
-                  <input
-                    type={showPassword ? "text" : "password"} placeholder="Repita a senha" value={confirmPassword}
-                    onChange={(e) => { setConfirmPassword(e.target.value); setError(null); setSuccess(null) }}
-                    className={styles.input} autoComplete="new-password"
-                  />
-                </div>
-              </div>
-            )}
             {mode === "login" && (
               <div className={styles.fieldGroup}>
                 <div className={styles.labelRow}>
