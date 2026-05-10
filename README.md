@@ -15,7 +15,39 @@ Crie um `.env` baseado em `.env.example`:
 ```env
 VITE_SUPABASE_URL=https://seu-projeto.supabase.co
 VITE_SUPABASE_ANON_KEY=sua-chave-anon
+
+# Defaults de UI do assistente (opcionais)
+VITE_OPENAI_MODEL=gpt-4o-mini
+VITE_OPENAI_MAX_TOKENS=600
 ```
+
+## Assistente (ChatGPT)
+
+O widget de IA disponivel em todas as telas autenticadas chama a Edge Function
+[`supabase/functions/ai-chat`](./supabase/functions/ai-chat/README.md), que
+guarda a chave da OpenAI como **secret** do projeto Supabase. A chave nunca
+sai do servidor e nao aparece no bundle do front.
+
+Setup (uma unica vez):
+
+```bash
+# Login + link com o projeto
+supabase login
+supabase link --project-ref SEU_PROJECT_REF
+
+# Guarda a chave como secret no servidor
+supabase secrets set OPENAI_API_KEY=sk-sua-chave-aqui
+
+# (opcional) restringe CORS ao seu dominio
+supabase secrets set AI_CHAT_ALLOWED_ORIGIN=https://app.suaclinica.com
+
+# Deploy — o flag --no-verify-jwt e obrigatorio porque a funcao valida o
+# Bearer JWT manualmente e precisa responder o preflight CORS do browser.
+supabase functions deploy ai-chat --no-verify-jwt
+```
+
+Se voce nao quiser deploy via Supabase agora, o widget exibe uma mensagem
+clara avisando que a funcao nao esta implantada.
 
 O frontend consome diretamente:
 

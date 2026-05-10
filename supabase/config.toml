@@ -1,0 +1,7 @@
+# Configuracao das Edge Functions do projeto.
+# A funcao ai-chat valida o Bearer JWT manualmente no codigo,
+# entao desligamos `verify_jwt` no gateway para que o preflight
+# CORS (OPTIONS sem Authorization) nao seja rejeitado.
+
+[functions.ai-chat]
+verify_jwt = false
