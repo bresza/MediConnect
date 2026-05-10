@@ -1,3 +1,5 @@
+export { formatCpfBR as formatCpf, formatPhoneBR as formatPhone, formatZipCodeBR as formatZipCode, onlyDigits } from "./masks"
+
 // ─── Time helpers ─────────────────────────────────────────────────
 export function timeToMinutes(time: string): number {
   const [h, m] = time.split(":").map(Number)
@@ -84,4 +86,28 @@ const PAYMENT_METHOD_LABELS: Record<string, string> = {
 
 export function formatPaymentMethod(method: string): string {
   return PAYMENT_METHOD_LABELS[method] ?? method
+}
+
+export function isValidEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
+}
+
+export function isValidCpf(value: string): boolean {
+  const cpf = value.replace(/\D/g, "")
+  if (cpf.length !== 11 || /^(\d)\1{10}$/.test(cpf)) return false
+
+  const calcDigit = (length: number) => {
+    let sum = 0
+    for (let i = 0; i < length; i += 1) {
+      sum += Number(cpf[i]) * (length + 1 - i)
+    }
+    const rest = (sum * 10) % 11
+    return rest === 10 ? 0 : rest
+  }
+
+  return calcDigit(9) === Number(cpf[9]) && calcDigit(10) === Number(cpf[10])
+}
+
+export function hasAtLeastTwoNames(value: string): boolean {
+  return value.trim().split(/\s+/).filter(Boolean).length >= 2
 }

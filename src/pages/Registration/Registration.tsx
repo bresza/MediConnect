@@ -6,6 +6,7 @@ import { Input }    from "../../components/ui/Input/Input"
 import { Select }   from "../../components/ui/Select/Select"
 import { Section }  from "../../components/ui/Section/Section"
 import type { PageId, Patient } from "../../types"
+import { formatCpf, formatPhone, formatZipCode, hasAtLeastTwoNames, isValidCpf, isValidEmail, onlyDigits } from "../../utils"
 import styles from "./Registration.module.css"
 
 interface RegistrationProps {
@@ -177,7 +178,7 @@ function toForm(p: Patient): FormState {
     photoUrl: p.photoUrl ?? "",
 
     // ─── STEP 2 — Documentos ────────────────────────────
-    cpf: p.cpf ?? "",
+    cpf: formatCpf(p.cpf ?? ""),
     rg: p.rg ?? "",
     rgIssuer: "",
     rgState: "",
@@ -193,7 +194,7 @@ function toForm(p: Patient): FormState {
     legacyCode: "",
 
     // ─── STEP 3 — Endereço ──────────────────────────────
-    zipCode: p.address?.zipCode ?? "",
+    zipCode: formatZipCode(p.address?.zipCode ?? ""),
     street: p.address?.street ?? "",
     addressNumber: p.address?.number ?? "",
     complement: p.address?.complement ?? "",
@@ -203,9 +204,9 @@ function toForm(p: Patient): FormState {
     reference: p.address?.reference ?? "",
 
     // ─── STEP 4 — Contato e Família ─────────────────────
-    phone: p.phone ?? "",
-    landline: p.landline ?? "",
-    alternativePhone: p.alternativePhone ?? "",
+    phone: formatPhone(p.phone ?? ""),
+    landline: formatPhone(p.landline ?? ""),
+    alternativePhone: formatPhone(p.alternativePhone ?? ""),
     email: p.email ?? "",
 
     preferredChannel: fromChannel(p.preferredChannel),
@@ -217,12 +218,12 @@ function toForm(p: Patient): FormState {
     fatherName: p.fatherName ?? "",
     fatherOccupation: p.fatherOccupation ?? "",
     guardianName: p.guardianName ?? "",
-    guardianCpf: p.guardianCpf ?? "",
+    guardianCpf: formatCpf(p.guardianCpf ?? ""),
     spouseName: p.spouseName ?? "",
 
     emergencyName: p.emergencyContact?.name ?? "",
     emergencyRelation: p.emergencyContact?.relationship ?? "",
-    emergencyPhone: p.emergencyContact?.phone ?? "",
+    emergencyPhone: formatPhone(p.emergencyContact?.phone ?? ""),
     createPortalAccess: false,
     portalPassword: "",
     portalConfirmPassword: "",
@@ -241,10 +242,11 @@ function toForm(p: Patient): FormState {
   }
 }
 
-function toGender(v: string): Patient["gender"] {
+function toGender(v: string): Patient["gender"] | undefined {
   if (v === "Masculino") return "Male"
   if (v === "Feminino")  return "Female"
-  return "Other"
+  if (v === "Outro") return "Other"
+  return undefined
 }
 function toMarital(v: string): Patient["maritalStatus"] | undefined {
   const m: Record<string, Patient["maritalStatus"]> = {
@@ -309,7 +311,6 @@ const BR_STATES      = ["AC","AL","AM","AP","BA","CE","DF","ES","GO","MA","MG","
 const RELATIONS      = ["Cônjuge","Pai","Mãe","Filho(a)","Irmão/Irmã","Avô/Avó","Amigo(a)","Outro"]
 const RELIGIONS      = ["Católico","Evangélico","Espírita","Budista","Sem religião","Outro"]
 const TODAY = new Date().toISOString().slice(0, 10)
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 // ─── Component ────────────────────────────────────────────────────
 export function Registration({
@@ -364,24 +365,25 @@ export function Registration({
     const e: Partial<Record<keyof FormState, string>> = {}
     if (targetStep === 1) {
       if (!form.name.trim()) e.name   = "Nome completo é obrigatório"
-      if (!form.gender)      e.gender = "Sexo é obrigatório"
+      else if (!hasAtLeastTwoNames(form.name)) e.name = "Informe pelo menos dois nomes"
       if (!form.dob)         e.dob    = "Data de nascimento é obrigatória"
       else if (form.dob > TODAY) e.dob = "Data de nascimento deve estar no passado"
     }
     if (targetStep === 2) {
-      const cpf = form.cpf.replace(/\D/g, "")
+      const cpf = onlyDigits(form.cpf)
       if (!cpf)  e.cpf = "CPF é obrigatório"
       else if (cpf.length !== 11) e.cpf = "CPF deve ter 11 dígitos"
-      else if (patients.some((p) => p.cpf.replace(/\D/g,"") === cpf && p.id !== editingPatient?.id))
+      else if (!isValidCpf(cpf)) e.cpf = "CPF inválido"
+      else if (patients.some((p) => onlyDigits(p.cpf) === cpf && p.id !== editingPatient?.id))
         e.cpf = "CPF já cadastrado no sistema"
     }
     if (targetStep === 4) {
-      const phone = form.phone.replace(/\D/g, "")
+      const phone = onlyDigits(form.phone)
       const email = form.email.trim()
       if (!phone)        e.phone = "Celular é obrigatório"
-      else if (phone.length < 10 || phone.length > 11) e.phone = "Celular deve ter DDD e número"
+      else if (phone.length !== 11) e.phone = "Celular deve estar no formato (00)-00000-0000"
       if (!email) e.email = "E-mail é obrigatório"
-      else if (!EMAIL_RE.test(email)) e.email = "E-mail inválido"
+      else if (!isValidEmail(email)) e.email = "E-mail inválido"
       if (form.emergencyPhone && !form.emergencyName)
         e.emergencyName = "Informe o nome do contato de emergência"
       if (form.createPortalAccess) {
@@ -427,13 +429,13 @@ export function Registration({
       occupation:             form.occupation || undefined,
       isVip:                  form.isVip,
       photoUrl:               form.photoUrl || undefined,
-      cpf:                    form.cpf.replace(/\D/g, ""),
+      cpf:                    onlyDigits(form.cpf),
       rg:                     form.rg || undefined,
       healthInsurance:        form.healthInsurance && form.healthInsurance !== "Nenhum (Particular)" ? form.healthInsurance : undefined,
       healthInsuranceNumber:  form.healthInsuranceNumber || undefined,
-      phone:                  form.phone.replace(/\D/g, ""),
-      landline:               form.landline || undefined,
-      alternativePhone:       form.alternativePhone || undefined,
+      phone:                  onlyDigits(form.phone),
+      landline:               onlyDigits(form.landline) || undefined,
+      alternativePhone:       onlyDigits(form.alternativePhone) || undefined,
       email:                  form.email.trim(),
       preferredChannel:       toChannel(form.preferredChannel),
       communicationFrequency: toFrequency(form.communicationFrequency),
@@ -443,12 +445,12 @@ export function Registration({
       fatherName:             form.fatherName || undefined,
       fatherOccupation:       form.fatherOccupation || undefined,
       guardianName:           form.guardianName || undefined,
-      guardianCpf:            form.guardianCpf || undefined,
+      guardianCpf:            onlyDigits(form.guardianCpf) || undefined,
       spouseName:             form.spouseName || undefined,
       emergencyContact: form.emergencyName ? {
         name:         form.emergencyName,
         relationship: form.emergencyRelation,
-        phone:        form.emergencyPhone,
+        phone:        onlyDigits(form.emergencyPhone),
       } : undefined,
       address: form.street ? {
         zipCode:      form.zipCode,
@@ -627,7 +629,7 @@ export function Registration({
                 </div>
               </div>
               <div className={`${styles.grid3} ${styles.marginTop}`}>
-                <Select label="Sexo biológico" required options={GENDERS}
+                <Select label="Sexo biológico" options={GENDERS}
                   value={form.gender} onChange={(e) => set("gender", e.target.value)} />
                 <Input label="Data de nascimento" type="date" required max={TODAY}
                   value={form.dob} onChange={(e) => set("dob", e.target.value)} error={errors.dob} />
@@ -660,7 +662,8 @@ export function Registration({
             <Section title="Documentos de identificação">
               <div className={`${styles.grid3} ${styles.marginTop}`}>
                 <Input label="CPF" required placeholder="000.000.000-00"
-                  value={form.cpf} onChange={(e) => set("cpf", e.target.value)} error={errors.cpf} />
+                  value={form.cpf} onChange={(e) => set("cpf", formatCpf(e.target.value))}
+                  error={errors.cpf} maxLength={14} inputMode="numeric" pattern="[0-9.-]*" />
                 <Input label="RG" placeholder="0000000"
                   value={form.rg} onChange={(e) => set("rg", e.target.value)} />
                 <Input label="Órgão emissor RG" placeholder="SSP"
@@ -702,8 +705,9 @@ export function Registration({
             <div className={`${styles.grid3} ${styles.marginTop}`}>
               <Input label="CEP" placeholder="00000-000"
                 value={form.zipCode}
-                onChange={(e) => set("zipCode", e.target.value)}
-                onBlur={handleCepBlur} />
+                onChange={(e) => set("zipCode", formatZipCode(e.target.value))}
+                onBlur={handleCepBlur}
+                maxLength={9} inputMode="numeric" pattern="[0-9-]*" />
               <Input label="Logradouro / Rua" placeholder="Nome da rua"
                 value={form.street} onChange={(e) => set("street", e.target.value)}
                 className={styles.colSpan2} />
@@ -729,12 +733,15 @@ export function Registration({
           <>
             <Section title="Contatos">
               <div className={`${styles.grid3} ${styles.marginTop}`}>
-                <Input label="Celular" required placeholder="(00) 00000-0000"
-                  value={form.phone} onChange={(e) => set("phone", e.target.value)} error={errors.phone} />
-                <Input label="Telefone fixo" placeholder="(00) 0000-0000"
-                  value={form.landline} onChange={(e) => set("landline", e.target.value)} />
-                <Input label="Telefone alternativo" placeholder="(00) 00000-0000"
-                  value={form.alternativePhone} onChange={(e) => set("alternativePhone", e.target.value)} />
+                <Input label="Celular" required placeholder="(00)-00000-0000"
+                  value={form.phone} onChange={(e) => set("phone", formatPhone(e.target.value))}
+                  error={errors.phone} maxLength={15} inputMode="numeric" pattern="[0-9()-]*" />
+                <Input label="Telefone fixo" placeholder="(00)-00000-0000"
+                  value={form.landline} onChange={(e) => set("landline", formatPhone(e.target.value))}
+                  maxLength={15} inputMode="numeric" pattern="[0-9()-]*" />
+                <Input label="Telefone alternativo" placeholder="(00)-00000-0000"
+                  value={form.alternativePhone} onChange={(e) => set("alternativePhone", formatPhone(e.target.value))}
+                  maxLength={15} inputMode="numeric" pattern="[0-9()-]*" />
                 <Input label="E-mail" type="email" required placeholder="exemplo@email.com"
                   value={form.email} onChange={(e) => set("email", e.target.value)} error={errors.email} />
                 <Select label="Canal de comunicação preferido" options={CHANNELS}
@@ -753,8 +760,9 @@ export function Registration({
                   value={form.emergencyName} onChange={(e) => set("emergencyName", e.target.value)} />
                 <Select label="Grau de parentesco" options={RELATIONS}
                   value={form.emergencyRelation} onChange={(e) => set("emergencyRelation", e.target.value)} />
-                <Input label="Telefone do contato" placeholder="(00) 00000-0000"
-                  value={form.emergencyPhone} onChange={(e) => set("emergencyPhone", e.target.value)} />
+                <Input label="Telefone do contato" placeholder="(00)-00000-0000"
+                  value={form.emergencyPhone} onChange={(e) => set("emergencyPhone", formatPhone(e.target.value))}
+                  maxLength={15} inputMode="numeric" pattern="[0-9()-]*" />
               </div>
             </Section>
 
@@ -802,7 +810,8 @@ export function Registration({
                 <Input label="Nome do responsável (menores/incapazes)"
                   value={form.guardianName} onChange={(e) => set("guardianName", e.target.value)} />
                 <Input label="CPF do responsável"
-                  value={form.guardianCpf} onChange={(e) => set("guardianCpf", e.target.value)} />
+                  value={form.guardianCpf} onChange={(e) => set("guardianCpf", formatCpf(e.target.value))}
+                  maxLength={14} inputMode="numeric" pattern="[0-9.-]*" />
                 <Input label="Nome do cônjuge/companheiro(a)"
                   value={form.spouseName} onChange={(e) => set("spouseName", e.target.value)} />
               </div>

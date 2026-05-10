@@ -12,7 +12,7 @@ import { Badge } from "../../components/ui/Badge/Badge"
 import { Avatar } from "../../components/ui/Avatar/Avatar"
 import { Button } from "../../components/ui/Button/Button"
 import { Modal } from "../../components/ui/Modal/Modal"
-import { formatAppointmentType, formatDate } from "../../utils"
+import { formatAppointmentType, formatCpf, formatDate } from "../../utils"
 import type { Appointment, Patient, Prescription, Report, User } from "../../types"
 import styles from "./PatientPortal.module.css"
 
@@ -219,7 +219,7 @@ export function PatientPortal({
             </p>
             <div className={styles.unlinkedMeta}>
               <span>{currentUser.email}</span>
-              {currentUser.patientCpf && <span>CPF {currentUser.patientCpf}</span>}
+              {currentUser.patientCpf && <span>CPF {formatCpf(currentUser.patientCpf)}</span>}
             </div>
           </div>
         </Card>

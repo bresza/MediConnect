@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { Avatar } from "../../components/ui/Avatar/Avatar"
 import { Button } from "../../components/ui/Button/Button"
-import { formatDate } from "../../utils"
+import { formatCpf, formatDate } from "../../utils"
 import { PrescriptionEditor } from "./PrescriptionEditor"
 import type { PageId, Patient, Appointment, Prescription, User } from "../../types"
 import styles from "./PatientProfile.module.css"
@@ -134,13 +134,13 @@ export function PatientProfile({
                 )}
               </div>
               <p className={styles.heroDemographic}>
-                {GENDER_MAP[patient.gender] ?? patient.gender} · {age} anos · {patient.dob ? formatDate(patient.dob) : "—"}
+                {[patient.gender ? GENDER_MAP[patient.gender] : undefined, `${age} anos`, patient.dob ? formatDate(patient.dob) : "—"].filter(Boolean).join(" · ")}
                 {patient.occupation ? ` · ${patient.occupation}` : ""}
               </p>
               <p className={styles.heroInsurance}>
                 {patient.healthInsurance ?? "Particular"}
                 {patient.healthInsuranceNumber ? ` · Nº ${patient.healthInsuranceNumber}` : ""}
-                {" · "} CPF: {patient.cpf}
+                {" · "} CPF: {formatCpf(patient.cpf)}
               </p>
               <div className={styles.heroBadges}>
                 <span className={`${styles.statusBadge} ${patient.status === "Active" ? styles.statusActive : styles.statusInactive}`}>
@@ -359,9 +359,9 @@ export function PatientProfile({
               <dl className={styles.infoGrid}>
                 <InfoItem label="Nome completo"      value={patient.name} />
                 <InfoItem label="Nome social"        value={patient.socialName} />
-                <InfoItem label="CPF"                value={patient.cpf} />
+                <InfoItem label="CPF"                value={formatCpf(patient.cpf)} />
                 <InfoItem label="RG"                 value={patient.rg} />
-                <InfoItem label="Sexo"               value={GENDER_MAP[patient.gender]} />
+                <InfoItem label="Sexo"               value={patient.gender ? GENDER_MAP[patient.gender] : undefined} />
                 <InfoItem label="Data de nascimento" value={patient.dob ? formatDate(patient.dob) : undefined} />
                 <InfoItem label="Idade"              value={`${age} anos`} />
                 <InfoItem label="Estado civil"       value={patient.maritalStatus ? MARITAL_MAP[patient.maritalStatus] : undefined} />
@@ -421,7 +421,7 @@ export function PatientProfile({
                   <InfoItem label="Pai"              value={patient.fatherName} />
                   <InfoItem label="Profissão do pai" value={patient.fatherOccupation} />
                   <InfoItem label="Responsável"      value={patient.guardianName} />
-                  <InfoItem label="CPF do responsável" value={patient.guardianCpf} />
+                  <InfoItem label="CPF do responsável" value={patient.guardianCpf ? formatCpf(patient.guardianCpf) : undefined} />
                   <InfoItem label="Cônjuge"          value={patient.spouseName} />
                 </dl>
               </SectionCard>

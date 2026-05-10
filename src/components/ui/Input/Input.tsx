@@ -20,13 +20,16 @@ interface InputProps {
   autoComplete?: string
   min?:          string
   max?:          string
+  maxLength?:    number
+  inputMode?:    "none" | "text" | "tel" | "url" | "email" | "numeric" | "decimal" | "search"
+  pattern?:      string
   readOnly?:     boolean
 }
 
 export function Input({
   label, id, name, type = "text", placeholder, value, onChange, onBlur,
   required, disabled, error, hint, className = "", children,
-  defaultValue, autoComplete, min, max, readOnly,
+  defaultValue, autoComplete, min, max, maxLength, inputMode, pattern, readOnly,
 }: InputProps) {
   const inputId = id ?? name
   return (
@@ -41,7 +44,8 @@ export function Input({
           id={inputId} name={name} type={type} placeholder={placeholder}
           value={value} defaultValue={defaultValue} onChange={onChange} onBlur={onBlur}
           required={required} disabled={disabled} readOnly={readOnly}
-          autoComplete={autoComplete} min={min} max={max}
+          autoComplete={autoComplete} min={min} max={max} maxLength={maxLength}
+          inputMode={inputMode} pattern={pattern}
           className={`${styles.input} ${error ? styles.inputError : ""} ${disabled ? styles.inputDisabled : ""}`}
         />
       )}

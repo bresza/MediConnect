@@ -12,6 +12,7 @@ import { Section } from "../../components/ui/Section/Section"
 import type { StaffMember, StaffRole, StaffStatus } from "../../types"
 import type { UseToastReturn } from "../../hooks/useToast"
 import type { UseStaffReturn } from "../../hooks/useStaff"
+import { formatCpf, formatPhone, hasAtLeastTwoNames, isValidCpf, isValidEmail, onlyDigits } from "../../utils"
 import styles from "./Team.module.css"
 
 type TabId = StaffRole
@@ -47,7 +48,7 @@ const EMPTY_FORM: StaffForm = {
 function memberToForm(m: StaffMember): StaffForm {
   const [crmNum = "", crmUf = ""] = (m.crm ?? "").split("-")
   return {
-    name: m.name, email: m.email, phone: m.phone, status: m.status,
+    name: m.name, email: m.email, phone: formatPhone(m.phone), status: m.status,
     cpf: "", crmNum, crmUf, specialty: m.specialty ?? "",
     department: m.department ?? "", password: "", confirmPassword: "",
   }
@@ -152,10 +153,15 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast }: TeamProps) {
   function validate(): boolean {
     const e: Partial<Record<keyof StaffForm, string>> = {}
     if (!form.name.trim())  e.name  = "Nome obrigatório"
+    else if (!hasAtLeastTwoNames(form.name)) e.name = "Informe pelo menos dois nomes"
     if (!form.email.trim()) e.email = "E-mail obrigatório"
+    else if (!isValidEmail(form.email)) e.email = "E-mail inválido"
     if (!form.phone.trim()) e.phone = "Telefone obrigatório"
+    else if (onlyDigits(form.phone).length !== 11) e.phone = "Telefone deve estar no formato (00)-00000-0000"
     // CPF é obrigatório na criação porque o endpoint de usuário exige validação.
     if (!editingMember && !form.cpf.trim()) e.cpf = "CPF obrigatório"
+    else if (!editingMember && onlyDigits(form.cpf).length !== 11) e.cpf = "CPF deve ter 11 dígitos"
+    else if (!editingMember && !isValidCpf(form.cpf)) e.cpf = "CPF inválido"
     if (activeTab === "doctor") {
       if (!form.crmNum.trim())    e.crmNum    = "CRM obrigatório"
       if (!form.crmUf.trim())     e.crmUf     = "UF obrigatória"
@@ -178,10 +184,10 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast }: TeamProps) {
       const base = {
         name:       form.name.trim(),
         email:      form.email.trim(),
-        phone:      form.phone.trim(),
+        phone:      onlyDigits(form.phone),
         status:     form.status,
         role:       activeTab,
-        cpf:        form.cpf.replace(/\D/g, ""),
+        cpf:        onlyDigits(form.cpf),
         crm:        activeTab === "doctor" ? `${form.crmNum}-${form.crmUf}` : undefined,
         specialty:  activeTab === "doctor" ? form.specialty : undefined,
         department: activeTab !== "doctor" ? form.department.trim() : undefined,
@@ -319,8 +325,8 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast }: TeamProps) {
                 error={errors.name} required className={styles.colSpan2} />
               <Input label="E-mail" type="email" value={form.email} onChange={(e) => handleChange("email", e.target.value)}
                 error={errors.email} required />
-              <Input label="Telefone" value={form.phone} onChange={(e) => handleChange("phone", e.target.value)}
-                error={errors.phone} required placeholder="(00) 00000-0000" />
+              <Input label="Telefone" value={form.phone} onChange={(e) => handleChange("phone", formatPhone(e.target.value))}
+                error={errors.phone} required placeholder="(00)-00000-0000" maxLength={15} inputMode="numeric" pattern="[0-9()-]*" />
               <Select label="Status" value={form.status} onChange={(e) => handleChange("status", e.target.value)} options={["Active", "Inactive"]} />
             </div>
           </Section>
@@ -329,8 +335,9 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast }: TeamProps) {
           {activeTab === "doctor" && (
             <Section title="Dados profissionais">
               <div className={styles.grid2}>
-                <Input label="CPF" value={form.cpf} onChange={(e) => handleChange("cpf", e.target.value)}
-                  error={errors.cpf} required placeholder="000.000.000-00" className={styles.colSpan2} />
+                <Input label="CPF" value={form.cpf} onChange={(e) => handleChange("cpf", formatCpf(e.target.value))}
+                  error={errors.cpf} required placeholder="000.000.000-00" className={styles.colSpan2}
+                  maxLength={14} inputMode="numeric" pattern="[0-9.-]*" />
                 <Input label="Número CRM" value={form.crmNum} onChange={(e) => handleChange("crmNum", e.target.value)}
                   error={errors.crmNum} required placeholder="Ex: 123456" />
                 <Select label="UF do CRM" value={form.crmUf} onChange={(e) => handleChange("crmUf", e.target.value)}
@@ -345,8 +352,8 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast }: TeamProps) {
           {(activeTab === "secretary" || activeTab === "manager") && (
             <Section title="Dados profissionais">
               <div className={styles.grid2}>
-                <Input label="CPF" required value={form.cpf} onChange={(e) => handleChange("cpf", e.target.value)}
-                  error={errors.cpf} placeholder="000.000.000-00" />
+                <Input label="CPF" required value={form.cpf} onChange={(e) => handleChange("cpf", formatCpf(e.target.value))}
+                  error={errors.cpf} placeholder="000.000.000-00" maxLength={14} inputMode="numeric" pattern="[0-9.-]*" />
                 <Input label="Departamento" value={form.department} onChange={(e) => handleChange("department", e.target.value)}
                   placeholder={activeTab === "secretary" ? "Ex: Recepção" : "Ex: Gestão Geral"} />
               </div>

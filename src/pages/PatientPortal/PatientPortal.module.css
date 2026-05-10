@@ -8,6 +8,7 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--card);
+  min-width: 0;
 }
 
 .identity {
@@ -40,7 +41,7 @@
 
 .heroStats {
   display: grid;
-  grid-template-columns: repeat(3, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(120px, 100%), 1fr));
   gap: 10px;
 }
 
@@ -65,7 +66,7 @@
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
   gap: 14px;
 }
 
@@ -215,7 +216,7 @@
 
 .reportMeta {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
   gap: 10px;
 }
 

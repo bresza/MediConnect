@@ -1,12 +1,8 @@
 .statsGrid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
   gap: 12px;
   margin-bottom: 24px;
-}
-
-@media (max-width: 639px) {
-  .statsGrid { grid-template-columns: 1fr; }
 }
 
 .statCard { padding: 16px 18px; }
@@ -41,7 +37,7 @@
 }
 
 @media (min-width: 1024px) {
-  .layout { grid-template-columns: 1fr 260px; }
+  .layout { grid-template-columns: minmax(0, 1fr) minmax(240px, 320px); }
 }
 
 /* ── Table ────────────────────────────────────────────────────── */

@@ -79,7 +79,7 @@
 }
 
 @media (min-width: 1024px) {
-  .editorLayout { grid-template-columns: 1fr 260px; }
+  .editorLayout { grid-template-columns: minmax(0, 1fr) minmax(240px, 320px); }
 }
 
 /* ── Editor toolbar ───────────────────────────────────────────── */
@@ -111,7 +111,7 @@
 /* ── Editor meta bar ──────────────────────────────────────────── */
 .editorMeta {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
   gap: 12px;
   padding: 16px;
   border-bottom: 1px solid var(--border);

@@ -5,7 +5,7 @@ import { Badge } from "../../components/ui/Badge/Badge"
 import { Avatar } from "../../components/ui/Avatar/Avatar"
 import { Button } from "../../components/ui/Button/Button"
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog/ConfirmDialog"
-import { formatDate } from "../../utils"
+import { formatCpf, formatDate } from "../../utils"
 import type { PageId, Patient } from "../../types"
 import type { UseToastReturn } from "../../hooks/useToast"
 import styles from "./Patients.module.css"
@@ -97,7 +97,7 @@ export function Patients({ patients, onNavigate, onEditPatient, onViewProfile, o
                           <div><p className={styles.patientName}>{p.name}</p><p className={styles.patientEmail}>{p.email}</p></div>
                         </div>
                       </td>
-                      <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}>{p.cpf}</td>
+                      <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}>{formatCpf(p.cpf)}</td>
                       <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}>{p.healthInsurance ?? "—"}</td>
                       <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}>{p.lastVisit ? formatDate(p.lastVisit) : "—"}</td>
                       <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}><Badge>{p.status}</Badge></td>

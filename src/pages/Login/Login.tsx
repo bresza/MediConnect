@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { createPatientAccount, login as authLogin, requestPasswordReset } from "../../services/auth"
 import type { LoginResponse } from "../../services/auth"
+import { formatCpf, formatPhone, hasAtLeastTwoNames, isValidCpf, isValidEmail } from "../../utils"
 import styles from "./Login.module.css"
 
 interface LoginProps {
@@ -20,7 +21,6 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
   const [mode,         setMode]         = useState<"login" | "signup">("login")
   const [email,        setEmail]        = useState("")
   const [password,     setPassword]     = useState("")
-  const [confirmPassword, setConfirmPassword] = useState("")
   const [name,         setName]         = useState("")
   const [cpf,          setCpf]          = useState("")
   const [phone,        setPhone]        = useState("")
@@ -33,18 +33,19 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!email.trim()) { setError("Preencha seu e-mail."); return }
+    if (!isValidEmail(email)) { setError("Informe um e-mail válido."); return }
     if (mode === "login" && !password.trim()) { setError("Preencha sua senha."); return }
-    if (mode === "signup" && !password.trim()) { setError("Crie uma senha para acessar o portal."); return }
-    if (mode === "signup" && password.trim().length < 6) { setError("A senha deve ter pelo menos 6 caracteres."); return }
-    if (mode === "signup" && password !== confirmPassword) { setError("As senhas não coincidem."); return }
+    if (mode === "signup" && !hasAtLeastTwoNames(name)) { setError("Informe seu nome completo com pelo menos dois nomes."); return }
+    if (mode === "signup" && cpf.replace(/\D/g, "").length !== 11) { setError("CPF deve ter 11 dígitos."); return }
+    if (mode === "signup" && !isValidCpf(cpf)) { setError("CPF inválido."); return }
+    if (mode === "signup" && phone.replace(/\D/g, "").length !== 11) { setError("Telefone deve estar no formato (00)-00000-0000."); return }
     setError(null); setSuccess(null); setIsLoading(true)
     try {
       if (mode === "signup") {
-        const response = await createPatientAccount({ name, email, password, cpf, phone, dob })
-        setSuccess(response.message ?? "Conta criada com sucesso. Entre com seu e-mail e senha.")
+        const response = await createPatientAccount({ name, email, cpf, phone, dob })
+        setSuccess(response.message ?? "Cadastro realizado. Verifique seu e-mail para acessar o portal.")
         setMode("login")
         setPassword("")
-        setConfirmPassword("")
         setName("")
         setCpf("")
         setPhone("")
@@ -68,6 +69,7 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
 
   async function handlePasswordReset() {
     if (!email.trim()) { setError("Informe seu e-mail para recuperar a senha."); return }
+    if (!isValidEmail(email)) { setError("Informe um e-mail válido."); return }
     setError(null); setSuccess(null); setIsLoading(true)
     try {
       const response = await requestPasswordReset(email)
@@ -82,7 +84,6 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
     setError(null)
     setSuccess(null)
     setPassword("")
-    setConfirmPassword("")
   }
 
   return (
@@ -133,7 +134,7 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
             <p className={styles.formSub}>
               {mode === "login"
                 ? "Faça login para acessar o sistema"
-                : "Cadastre-se com e-mail e senha para acessar o portal"}
+                : "Cadastre-se para receber o link de acesso por e-mail"}
             </p>
           </div>
 
@@ -159,7 +160,7 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
             {mode === "signup" && (
               <>
                 <p className={styles.signupHint}>
-                  O cadastro usa o endpoint público da API e cria o perfil do paciente com e-mail e senha.
+                  O cadastro usa o endpoint público da API e envia o link de acesso para o e-mail do paciente.
                 </p>
                 <div className={styles.fieldGroup}>
                   <label className={styles.label}>Nome completo</label>
@@ -174,8 +175,8 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
                     <label className={styles.label}>CPF</label>
                     <input
                       type="text" placeholder="000.000.000-00" value={cpf}
-                      onChange={(e) => { setCpf(e.target.value); setError(null); setSuccess(null) }}
-                      className={styles.input} autoComplete="off"
+                      onChange={(e) => { setCpf(formatCpf(e.target.value)); setError(null); setSuccess(null) }}
+                      className={styles.input} autoComplete="off" inputMode="numeric" maxLength={14} pattern="[0-9.-]*"
                     />
                   </div>
                   <div className={styles.fieldGroup}>
@@ -190,9 +191,9 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
                 <div className={styles.fieldGroup}>
                   <label className={styles.label}>Telefone</label>
                   <input
-                    type="tel" placeholder="(00) 00000-0000" value={phone}
-                    onChange={(e) => { setPhone(e.target.value); setError(null); setSuccess(null) }}
-                    className={styles.input} autoComplete="tel"
+                    type="tel" placeholder="(00)-00000-0000" value={phone}
+                    onChange={(e) => { setPhone(formatPhone(e.target.value)); setError(null); setSuccess(null) }}
+                    className={styles.input} autoComplete="tel" inputMode="numeric" maxLength={15} pattern="[0-9()-]*"
                   />
                 </div>
               </>
@@ -205,26 +206,6 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
                 className={styles.input} autoComplete="username"
               />
             </div>
-            {mode === "signup" && (
-              <div className={styles.signupGrid}>
-                <div className={styles.fieldGroup}>
-                  <label className={styles.label}>Senha</label>
-                  <input
-                    type={showPassword ? "text" : "password"} placeholder="Mínimo 6 caracteres" value={password}
-                    onChange={(e) => { setPassword(e.target.value); setError(null); setSuccess(null) }}
-                    className={styles.input} autoComplete="new-password"
-                  />
-                </div>
-                <div className={styles.fieldGroup}>
-                  <label className={styles.label}>Confirmar senha</label>
-                  <input
-                    type={showPassword ? "text" : "password"} placeholder="Repita a senha" value={confirmPassword}
-                    onChange={(e) => { setConfirmPassword(e.target.value); setError(null); setSuccess(null) }}
-                    className={styles.input} autoComplete="new-password"
-                  />
-                </div>
-              </div>
-            )}
             {mode === "login" && (
               <div className={styles.fieldGroup}>
                 <div className={styles.labelRow}>

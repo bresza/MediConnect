@@ -7,6 +7,7 @@ import { Button } from "../../components/ui/Button/Button"
 import { getProfileSettings, updateProfileSettings } from "../../services/settings"
 import type { ProfileSettings } from "../../services/settings"
 import type { User } from "../../types"
+import { formatPhone, hasAtLeastTwoNames, onlyDigits } from "../../utils"
 import styles from "./Settings.module.css"
 
 interface SettingsProps {
@@ -36,7 +37,7 @@ export function Settings({ currentUser }: SettingsProps) {
     setIsLoading(true)
     setError(null)
     getProfileSettings(currentUser)
-      .then((settings) => { if (alive) setForm(settings) })
+      .then((settings) => { if (alive) setForm({ ...settings, phone: formatPhone(settings.phone) }) })
       .catch((err) => { if (alive) setError(err instanceof Error ? err.message : "Erro ao carregar configurações") })
       .finally(() => { if (alive) setIsLoading(false) })
     return () => { alive = false }
@@ -50,12 +51,13 @@ export function Settings({ currentUser }: SettingsProps) {
 
   async function handleSave() {
     if (!form.fullName.trim()) { setError("Nome obrigatório"); return }
+    if (!hasAtLeastTwoNames(form.fullName)) { setError("Informe pelo menos dois nomes"); return }
     setIsSaving(true)
     setError(null)
     setMessage(null)
     try {
-      const saved = await updateProfileSettings(form)
-      setForm(saved)
+      const saved = await updateProfileSettings({ ...form, phone: onlyDigits(form.phone) })
+      setForm({ ...saved, phone: formatPhone(saved.phone) })
       setMessage("Configurações salvas.")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao salvar configurações")
@@ -112,8 +114,11 @@ export function Settings({ currentUser }: SettingsProps) {
                   <Input
                     label="Telefone"
                     value={form.phone}
-                    onChange={(e) => setField("phone", e.target.value)}
-                    placeholder="(00) 00000-0000"
+                    onChange={(e) => setField("phone", formatPhone(e.target.value))}
+                    placeholder="(00)-00000-0000"
+                    maxLength={15}
+                    inputMode="numeric"
+                    pattern="[0-9()-]*"
                   />
                   <Input label="Perfil" value={form.role} disabled />
                 </div>

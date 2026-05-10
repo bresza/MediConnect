@@ -3,7 +3,7 @@ import type { User, UserRole } from "../types"
 
 export interface LoginPayload  { email: string; password: string }
 export interface PatientSignupPayload {
-  name: string; email: string; password: string; cpf: string; phone: string; dob?: string
+  name: string; email: string; cpf: string; phone: string; dob?: string
 }
 export interface PatientSignupResponse {
   success: boolean
@@ -34,6 +34,25 @@ function isNetworkFailure(err: unknown): boolean {
 
 function connectionMessage(): string {
   return "Não foi possível conectar ao Supabase configurado. Verifique se o projeto está ativo, se a URL em .env está correta e se sua rede permite acesso a supabase.co."
+}
+
+function extractErrorMessage(raw: string, fallback: string): string {
+  if (!raw) return fallback
+  try {
+    const parsed = JSON.parse(raw)
+    if (typeof parsed === "string") return extractErrorMessage(parsed, fallback)
+    return (
+      parsed?.detail ??
+      parsed?.message ??
+      parsed?.error_description ??
+      parsed?.msg ??
+      parsed?.title ??
+      parsed?.error ??
+      fallback
+    )
+  } catch {
+    return raw
+  }
 }
 
 async function fetchWithTimeout(
@@ -105,20 +124,16 @@ function localDevLogin(payload: LoginPayload): LoginResponse | null {
 export async function createPatientAccount(payload: PatientSignupPayload): Promise<PatientSignupResponse> {
   const name = payload.name.trim()
   const email = payload.email.trim().toLowerCase()
-  const password = payload.password.trim()
   const cpf = onlyDigits(payload.cpf)
   const phone = onlyDigits(payload.phone)
 
   if (!name) throw new Error("Informe seu nome completo.")
   if (!email) throw new Error("Informe seu e-mail.")
-  if (!password) throw new Error("Informe uma senha.")
-  if (password.length < 6) throw new Error("A senha deve ter pelo menos 6 caracteres.")
   if (cpf.length !== 11) throw new Error("Informe um CPF válido com 11 dígitos.")
   if (!phone) throw new Error("Informe seu telefone.")
 
   const requestBody = {
     email,
-    password,
     full_name: name,
     phone_mobile: phone,
     cpf,
@@ -137,17 +152,12 @@ export async function createPatientAccount(payload: PatientSignupPayload): Promi
     })
   }
 
-  let res = await postRegisterPatient("/register-patient")
-  if (res.status === 404) res = await postRegisterPatient("/functions/v1/register-patient")
+  let res = await postRegisterPatient("/functions/v1/register-patient")
+  if (res.status === 404) res = await postRegisterPatient("/register-patient")
 
   if (!res.ok) {
     const raw = await res.text().catch(() => "")
-    let message = raw || "Erro ao criar conta de paciente."
-    try {
-      const parsed = JSON.parse(raw)
-      message = parsed?.detail ?? parsed?.message ?? parsed?.error_description ?? parsed?.msg ?? parsed?.title ?? message
-    } catch { /* not json */ }
-    throw new Error(message)
+    throw new Error(extractErrorMessage(raw, "Erro ao criar conta de paciente."))
   }
 
   const data = await res.json().catch(() => null) as Partial<PatientSignupResponse> | null
@@ -156,7 +166,7 @@ export async function createPatientAccount(payload: PatientSignupPayload): Promi
     patient_id: data?.patient_id,
     user_id: data?.user_id,
     email: data?.email ?? email,
-    message: data?.message ?? "Conta criada com sucesso. Entre com seu e-mail e senha.",
+    message: data?.message ?? "Cadastro realizado. Verifique seu e-mail para acessar o portal.",
   }
 }
 
@@ -178,17 +188,12 @@ export async function requestPasswordReset(emailInput: string): Promise<Password
   const email = emailInput.trim().toLowerCase()
   if (!email) throw new Error("Informe seu e-mail.")
 
-  let res = await requestPasswordResetAt("/request-password-reset", email)
-  if (res.status === 404) res = await requestPasswordResetAt("/functions/v1/request-password-reset", email)
+  let res = await requestPasswordResetAt("/functions/v1/request-password-reset", email)
+  if (res.status === 404) res = await requestPasswordResetAt("/request-password-reset", email)
 
   if (!res.ok) {
     const raw = await res.text().catch(() => "")
-    let message = raw || "Não foi possível enviar o e-mail de recuperação."
-    try {
-      const parsed = JSON.parse(raw)
-      message = parsed?.detail ?? parsed?.message ?? parsed?.error_description ?? parsed?.msg ?? parsed?.title ?? message
-    } catch { /* not json */ }
-    throw new Error(message)
+    throw new Error(extractErrorMessage(raw, "Não foi possível enviar o e-mail de recuperação."))
   }
 
   const data = await res.json().catch(() => null) as Partial<PasswordResetResponse> | null
@@ -398,7 +403,7 @@ export async function login(payload: LoginPayload): Promise<LoginResponse> {
     if (/email not confirmed|confirm/i.test(message)) {
       throw new Error("Confirme o e-mail antes de fazer login.")
     }
-    throw new Error(message || "E-mail ou senha inválidos")
+    throw new Error(message || "E-mail ou senha inválidos. Se você acabou de criar sua conta de paciente, verifique o link enviado por e-mail ou use Esqueci minha senha para definir uma senha.")
   }
 
   const authData: SupabaseAuthResponse = await authRes.json()
