@@ -154,11 +154,15 @@ async function findAvailability(
 }
 
 export async function getAvailabilityDoctors(): Promise<AvailabilityDoctor[]> {
-  const data = await apiRequest<ApiDoctor[]>(
-    "/rest/v1/doctors?select=id,full_name,email,crm,specialty,active&active=eq.true&order=full_name.asc",
+  // Usamos `select=*` para nao depender de colunas opcionais (ex.: `active`) que podem nao
+  // existir em projetos antigos. O filtro de `active` e aplicado no client.
+  const data = await apiRequest<(ApiDoctor & { active?: boolean | null })[]>(
+    "/rest/v1/doctors?select=*&order=full_name.asc",
   )
 
-  return (data ?? []).map(apiToDoctor)
+  return (data ?? [])
+    .filter((doctor) => doctor.active !== false)
+    .map(apiToDoctor)
 }
 
 export async function getDoctorAvailability(doctorId: string): Promise<DoctorAvailability[]> {

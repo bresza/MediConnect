@@ -14,6 +14,14 @@ export interface PatientSignupResponse {
 }
 export interface LoginResponse {
   user: User; token: string; clinicId: string; clinicName: string
+  refreshToken: string | null
+  expiresAt: number | null
+}
+
+export interface RefreshSessionResponse {
+  token: string
+  refreshToken: string | null
+  expiresAt: number | null
 }
 export interface PasswordResetResponse {
   success: boolean
@@ -99,6 +107,36 @@ function localDevLogin(payload: LoginPayload): LoginResponse | null {
     token: `local-dev:${user.role}:${email}`,
     clinicId: "local",
     clinicName: "Mediconnect",
+    refreshToken: null,
+    expiresAt: null,
+  }
+}
+
+function expiresAtFromSeconds(expiresIn?: number | null): number | null {
+  if (!expiresIn || !Number.isFinite(expiresIn)) return null
+  return Date.now() + expiresIn * 1000
+}
+
+export async function refreshSession(refreshToken: string): Promise<RefreshSessionResponse> {
+  const res = await fetchWithTimeout(
+    `${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "apikey": SUPABASE_ANON_KEY },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    },
+  )
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err?.error_description ?? err?.message ?? "Sessão expirada. Faça login novamente.")
+  }
+
+  const data = await res.json() as Partial<SupabaseAuthResponse>
+  return {
+    token: data.access_token ?? "",
+    refreshToken: data.refresh_token ?? null,
+    expiresAt: expiresAtFromSeconds(data.expires_in),
   }
 }
 
@@ -137,16 +175,23 @@ export async function createPatientAccount(payload: PatientSignupPayload): Promi
     })
   }
 
-  let res = await postRegisterPatient("/register-patient")
-  if (res.status === 404) res = await postRegisterPatient("/functions/v1/register-patient")
+  // A documentacao oficial expoe a Edge Function em /functions/v1/...; o alias curto
+  // existia em ambientes antigos e e mantido apenas como fallback defensivo.
+  let res = await postRegisterPatient("/functions/v1/register-patient")
+  if (res.status === 404) res = await postRegisterPatient("/register-patient")
 
   if (!res.ok) {
     const raw = await res.text().catch(() => "")
-    let message = raw || "Erro ao criar conta de paciente."
-    try {
-      const parsed = JSON.parse(raw)
-      message = parsed?.detail ?? parsed?.message ?? parsed?.error_description ?? parsed?.msg ?? parsed?.title ?? message
-    } catch { /* not json */ }
+    const parsed = safeJsonParse(raw)
+
+    // Paciente ja existe no cadastro (criado pela secretaria sem senha): em vez
+    // de retornar erro, criamos apenas a credencial via create-user-with-password,
+    // deixando o backend vincular o user ao paciente existente pelo CPF/e-mail.
+    if (isExistingPatientError(parsed)) {
+      return claimExistingPatientAccount({ name, email, password, cpf, phone, dob: payload.dob })
+    }
+
+    const message = readableError(parsed) ?? raw ?? "Erro ao criar conta de paciente."
     throw new Error(message)
   }
 
@@ -157,6 +202,114 @@ export async function createPatientAccount(payload: PatientSignupPayload): Promi
     user_id: data?.user_id,
     email: data?.email ?? email,
     message: data?.message ?? "Conta criada com sucesso. Entre com seu e-mail e senha.",
+  }
+}
+
+interface ParsedError {
+  code?: string
+  error?: string
+  message?: string
+  detail?: string
+  error_description?: string
+  msg?: string
+  title?: string
+}
+
+function safeJsonParse(raw: string): ParsedError {
+  if (!raw) return {}
+  try {
+    return JSON.parse(raw) as ParsedError
+  } catch {
+    return {}
+  }
+}
+
+function readableError(parsed: ParsedError): string | undefined {
+  return parsed.detail ?? parsed.message ?? parsed.error_description ?? parsed.msg ?? parsed.title ?? parsed.error
+}
+
+// Detecta os codigos/mensagens que a API retorna quando o paciente ja consta no cadastro
+// (CPF ou e-mail), mas ainda nao possui credencial de acesso ao portal.
+function isExistingPatientError(parsed: ParsedError): boolean {
+  const code = (parsed.code ?? "").toUpperCase()
+  if (["CPF_EXISTS", "EMAIL_EXISTS", "PATIENT_EXISTS", "PATIENT_ALREADY_EXISTS"].includes(code)) return true
+
+  const text = `${parsed.error ?? ""} ${parsed.message ?? ""} ${parsed.detail ?? ""}`.toLowerCase()
+  return /cpf.*j[aá].*cadastrad|e-?mail.*j[aá].*cadastrad|paciente.*j[aá].*cadastrad|patient.*already/i.test(text)
+}
+
+function isExistingAuthUserError(parsed: ParsedError): boolean {
+  const text = `${parsed.error ?? ""} ${parsed.message ?? ""} ${parsed.detail ?? ""} ${parsed.error_description ?? ""}`.toLowerCase()
+  return /already.*registered|already.*exists|user.*exists|email.*j[aá].*cadastrad|usu[aá]rio.*existe/i.test(text)
+}
+
+interface ClaimPatientInput {
+  name: string
+  email: string
+  password: string
+  cpf: string
+  phone: string
+  dob?: string
+}
+
+// Cria apenas a conta de autenticacao (auth.users + profile) para um paciente
+// ja existente no cadastro. O backend vincula automaticamente o user ao paciente
+// pelo CPF/e-mail informados quando create_patient_record=false.
+async function claimExistingPatientAccount(input: ClaimPatientInput): Promise<PatientSignupResponse> {
+  const payload = {
+    email: input.email,
+    password: input.password,
+    full_name: input.name,
+    phone: input.phone || undefined,
+    phone_mobile: input.phone || undefined,
+    cpf: input.cpf || undefined,
+    birth_date: input.dob || undefined,
+    role: "paciente",
+    create_patient_record: false,
+    redirect_url: window.location.origin,
+  }
+
+  async function post(path: string): Promise<Response> {
+    return fetchWithTimeout(`${SUPABASE_URL}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "apikey": SUPABASE_ANON_KEY },
+      body: JSON.stringify(payload),
+    })
+  }
+
+  let res = await post("/functions/v1/create-user-with-password")
+  if (res.status === 404) res = await post("/create-user-with-password")
+
+  if (!res.ok) {
+    const raw = await res.text().catch(() => "")
+    const parsed = safeJsonParse(raw)
+
+    if (isExistingAuthUserError(parsed)) {
+      throw new Error(
+        "Este e-mail já possui acesso ao portal. Use a opção \"Esqueci minha senha\" para redefinir o acesso.",
+      )
+    }
+
+    const message = readableError(parsed) ?? raw ?? "Não foi possível criar o acesso para este paciente."
+    throw new Error(message)
+  }
+
+  const data = await res.json().catch(() => null) as Partial<{
+    user_id: string
+    user: { id?: string; email?: string }
+    patient_id: string
+    profile: { patient_id?: string }
+    message: string
+  }> | null
+
+  return {
+    success: true,
+    user_id: data?.user_id ?? data?.user?.id,
+    patient_id: data?.patient_id ?? data?.profile?.patient_id,
+    email: data?.user?.email ?? input.email,
+    message:
+      data?.message ??
+      "Cadastro já existente — criamos seu acesso ao portal. Entre com seu e-mail e senha.",
   }
 }
 
@@ -178,8 +331,8 @@ export async function requestPasswordReset(emailInput: string): Promise<Password
   const email = emailInput.trim().toLowerCase()
   if (!email) throw new Error("Informe seu e-mail.")
 
-  let res = await requestPasswordResetAt("/request-password-reset", email)
-  if (res.status === 404) res = await requestPasswordResetAt("/functions/v1/request-password-reset", email)
+  let res = await requestPasswordResetAt("/functions/v1/request-password-reset", email)
+  if (res.status === 404) res = await requestPasswordResetAt("/request-password-reset", email)
 
   if (!res.ok) {
     const raw = await res.text().catch(() => "")
@@ -326,7 +479,8 @@ async function fetchDoctorLink(
   ].filter(Boolean)
   if (filters.length === 0) return null
 
-  const res = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/doctors?or=(${filters.join(",")})&select=id,email,full_name,crm,crm_uf,crm_state&limit=1`, {
+  // crm_state e legado de schemas antigos: o select pede apenas crm_uf.
+  const res = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/doctors?or=(${filters.join(",")})&select=id,email,full_name,crm,crm_uf&limit=1`, {
     headers: {
       "Content-Type":  "application/json",
       "apikey":        SUPABASE_ANON_KEY,
@@ -434,7 +588,14 @@ export async function login(payload: LoginPayload): Promise<LoginResponse> {
       patientId: patient?.id ?? profile?.patient_id,
       dob: patient?.birth_date,
     }
-    return { user: await withRoleLinks(user, authData.access_token), token: authData.access_token, clinicId: "default", clinicName: "Mediconnect" }
+    return {
+      user: await withRoleLinks(user, authData.access_token),
+      token: authData.access_token,
+      clinicId: "default",
+      clinicName: "Mediconnect",
+      refreshToken: authData.refresh_token ?? null,
+      expiresAt: expiresAtFromSeconds(authData.expires_in),
+    }
   }
 
   const info: UserInfoResponse = await infoRes.json()
@@ -451,5 +612,12 @@ export async function login(payload: LoginPayload): Promise<LoginResponse> {
     dob:       info.patient?.birth_date,
   }
 
-  return { user: await withRoleLinks(user, authData.access_token), token: authData.access_token, clinicId: "default", clinicName: "Mediconnect" }
+  return {
+    user: await withRoleLinks(user, authData.access_token),
+    token: authData.access_token,
+    clinicId: "default",
+    clinicName: "Mediconnect",
+    refreshToken: authData.refresh_token ?? null,
+    expiresAt: expiresAtFromSeconds(authData.expires_in),
+  }
 }

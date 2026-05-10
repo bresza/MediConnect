@@ -10,7 +10,8 @@ import { ConfirmDialog } from "../../components/ui/ConfirmDialog/ConfirmDialog"
 import { Input } from "../../components/ui/Input/Input"
 import { Select } from "../../components/ui/Select/Select"
 import { Section } from "../../components/ui/Section/Section"
-import { formatDate, formatPaymentMethod } from "../../utils"
+import { RefreshButton } from "../../components/ui/RefreshButton/RefreshButton"
+import { formatDate, formatPaymentMethod, sortByName, toTitleCase } from "../../utils"
 import type { FinancialRecord, Patient, PaymentMethod, PaymentStatus } from "../../types"
 import styles from "./Financial.module.css"
 
@@ -238,6 +239,7 @@ export function Financial({ patients }: FinancialProps) {
     addRecord:    _addRecord,
     updateRecord: _updateRecord,
     deleteRecord: _deleteRecord,
+    reload:       reloadFinancial,
   } = useFinancial()
   const [search, setSearch]             = useState("")
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("all")
@@ -263,9 +265,14 @@ export function Financial({ patients }: FinancialProps) {
   }, [periodRecords])
 
   const filtered = useMemo(() =>
-    periodRecords.filter((r) =>
-      (filterStatus === "all" || r.status === filterStatus) &&
-      r.patientName.toLowerCase().includes(search.toLowerCase())
+    sortByName(
+      periodRecords
+        .map((r) => ({ ...r, patientName: toTitleCase(r.patientName) }))
+        .filter((r) =>
+          (filterStatus === "all" || r.status === filterStatus) &&
+          r.patientName.toLowerCase().includes(search.toLowerCase()),
+        ),
+      (r) => r.patientName,
     ), [periodRecords, filterStatus, search])
 
   const confirmTarget = records.find((r) => r.id === confirmId)
@@ -336,7 +343,8 @@ export function Financial({ patients }: FinancialProps) {
         title="Financeiro"
         subtitle="Receitas e cobranças da clínica"
         action={
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <RefreshButton onRefresh={reloadFinancial} />
             <Button variant="ghost" icon={<DownloadIcon />} onClick={() => exportCSV(filtered)}>
               Exportar
             </Button>

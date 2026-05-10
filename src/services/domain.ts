@@ -13,7 +13,9 @@ interface ApiReport {
   id:             string
   order_number?:  string
   patient_id:     string
-  status?:        string        // "draft" | "completed" (legacy: "finalized")
+  // enum report_status na API atual: "draft" | "delivered".
+  // Aceitamos legados "completed", "finalized" e "sent" apenas na leitura.
+  status?:        string
   exam?:          string
   requested_by?:  string
   cid_code?:      string
@@ -34,42 +36,18 @@ interface ApiReport {
 }
 
 function statusToFrontend(s?: string): ReportStatus {
+  // "delivered" e o valor canonico do enum atual; demais nomes ficam como fallback de leitura.
+  if (s === "delivered") return "Finalized"
   if (s === "completed") return "Finalized"
   if (s === "finalized") return "Finalized"
   if (s === "sent")      return "Sent"
   return "Draft"
 }
 function statusToApi(s: ReportStatus): string {
-  // Conforme spec da API: draft | completed
-  if (s === "Finalized") return "completed"
-  if (s === "Sent")      return "completed"
+  // Alinhado com prontuarios, receitas e financeiro (que ja gravam em reports usando "delivered").
+  if (s === "Finalized") return "delivered"
+  if (s === "Sent")      return "delivered"
   return "draft"
-}
-
-const FINALIZE_STATUS_CANDIDATES = [
-  "completed",
-  "finalized",
-  "sent",
-] as const
-
-const FINALIZE_STATUS_STORAGE_KEY = "reports.finalizeStatusValue"
-
-function getPersistedFinalizeStatus(): string | null {
-  if (typeof window === "undefined") return null
-  try {
-    return localStorage.getItem(FINALIZE_STATUS_STORAGE_KEY)
-  } catch {
-    return null
-  }
-}
-
-function setPersistedFinalizeStatus(value: string): void {
-  if (typeof window === "undefined") return
-  try {
-    localStorage.setItem(FINALIZE_STATUS_STORAGE_KEY, value)
-  } catch {
-    // ignore storage errors
-  }
 }
 
 function apiToReport(api: ApiReport): Report {
@@ -98,13 +76,11 @@ function apiToReport(api: ApiReport): Report {
 // ReportInput exato conforme schema da API
 function reportToApi(
   r: Partial<Report> & { patientId: string },
-  opts?: { statusOverride?: string; omitStatus?: boolean },
 ): Record<string, unknown> {
   const uid = getApiUserId()
-  const statusValue = opts?.statusOverride ?? statusToApi(r.status ?? "Draft")
   return {
     patient_id:     r.patientId,
-    ...(opts?.omitStatus ? {} : { status: statusValue }),
+    status:         statusToApi(r.status ?? "Draft"),
     exam:           r.type   ?? r.exam ?? "Laudo Médico",
     requested_by:   uid ?? r.requestedBy ?? undefined,
     cid_code:       r.cid10  ?? "",
@@ -115,10 +91,6 @@ function reportToApi(
     hide_date:      r.hideDate      ?? false,
     hide_signature: r.hideSignature ?? false,
   };
-}
-
-function isReportStatusEnumError(err: unknown): boolean {
-  return err instanceof ApiError && err.status === 400 && err.message.includes("report_status")
 }
 
 export async function getReports(): Promise<Report[]> {
@@ -165,55 +137,34 @@ export async function createReport(
 }
 
 export async function updateReport(report: Report): Promise<Report> {
-  const uiStatus = report.status ?? "Draft"
-  const isFinalizeFlow = uiStatus === "Finalized" || uiStatus === "Sent"
-
-  if (!isFinalizeFlow) {
-    await apiRequest(`/rest/v1/reports?id=eq.${report.id}`, {
-      method: "PATCH",
-      headers: { Prefer: "return=minimal" },
-      body: reportToApi(report),
-    })
-    return report
-  }
-
-  const persisted = getPersistedFinalizeStatus()
-  const candidates = persisted
-    ? [persisted, ...FINALIZE_STATUS_CANDIDATES.filter((x) => x !== persisted)]
-    : [...FINALIZE_STATUS_CANDIDATES]
-
-  let lastError: unknown
-  for (const candidate of candidates) {
-    try {
-      await apiRequest(`/rest/v1/reports?id=eq.${report.id}`, {
-        method: "PATCH",
-        headers: { Prefer: "return=minimal" },
-        body: reportToApi(report, { statusOverride: candidate }),
-      })
-      setPersistedFinalizeStatus(candidate)
-      return report
-    } catch (err) {
-      if (!isReportStatusEnumError(err)) throw err
-      lastError = err
-    }
-  }
-
-  throw (lastError instanceof Error
-    ? new Error(`${lastError.message}. Nenhum valor de status de finalização foi aceito.`)
-    : new Error("Erro ao finalizar laudo: nenhum status aceito pelo enum report_status."))
+  await apiRequest(`/rest/v1/reports?id=eq.${report.id}`, {
+    method: "PATCH",
+    headers: { Prefer: "return=minimal" },
+    body: reportToApi(report),
+  })
+  return report
 }
 
 // ─────────────────────────────────────────────────────────────────
 // STAFF — criação via endpoint correto da API
 // ─────────────────────────────────────────────────────────────────
 interface ApiDoctor {
-  id: string; full_name: string; email?: string; phone?: string
+  id: string; full_name: string; email?: string; phone?: string; phone_mobile?: string
   cpf?: string; crm?: string; crm_uf?: string; crm_state?: string; specialty?: string
   active?: boolean; created_at?: string
 }
 interface ApiProfile {
   id: string; full_name: string; email?: string
-  phone?: string; disabled?: boolean; created_at?: string
+  /** Na tabela `profiles` do projeto atual o telefone vem em `phone`. */
+  phone?: string
+  cpf?: string
+  disabled?: boolean; created_at?: string
+}
+
+function staffPhoneFromApi(api: { phone?: string | null; phone_mobile?: string | null }): string {
+  const mobile = api.phone_mobile?.trim()
+  const main = api.phone?.trim()
+  return main || mobile || ""
 }
 interface ApiUserRole {
   user_id: string; role: string
@@ -270,12 +221,14 @@ const PRESCRIPTION_EXAM = "Receita Médica"
 const FINANCIAL_RECORD_EXAM = "Registro Financeiro"
 
 function apiDoctorToStaff(api: ApiDoctor): StaffMember {
+  const cpfDigits = api.cpf?.replace(/\D/g, "") ?? ""
   return {
     id:        api.id,
     name:      api.full_name,
     role:      "doctor" as StaffRole,
     email:     api.email   ?? "",
-    phone:     api.phone   ?? "",
+    phone:     staffPhoneFromApi(api),
+    cpf:       cpfDigits || undefined,
     status:    (api.active !== false ? "Active" : "Inactive") as StaffStatus,
     crm:       api.crm ? `${api.crm}-${api.crm_uf ?? api.crm_state ?? ""}` : undefined,
     specialty: api.specialty,
@@ -298,12 +251,14 @@ function roleToStaffRole(role?: string | null): StaffRole | null {
 }
 
 function apiProfileToStaff(api: ApiProfile, role: StaffRole): StaffMember {
+  const cpfDigits = api.cpf?.replace(/\D/g, "")
   return {
     id:        api.id,
     name:      api.full_name,
     role,
     email:     api.email ?? "",
-    phone:     api.phone ?? "",
+    phone:     staffPhoneFromApi(api),
+    cpf:       cpfDigits ? cpfDigits : undefined,
     status:    (api.disabled ? "Inactive" : "Active") as StaffStatus,
     createdAt: api.created_at ?? new Date().toISOString().slice(0, 10),
   }
@@ -327,10 +282,36 @@ function staffIdentityKeys(member: StaffMember): string[] {
   ].filter(Boolean)
 }
 
+/** Perfis da equipe: colunas válidas no Supabase deste projeto (sem `phone_mobile` em `profiles`). */
+async function loadProfilesForStaff(): Promise<ApiProfile[]> {
+  const selects = [
+    "id,full_name,email,phone,cpf,disabled,created_at",
+    "id,full_name,email,phone,disabled,created_at",
+  ]
+  let lastErr: unknown
+  for (const sel of selects) {
+    try {
+      return await apiRequest<ApiProfile[]>(
+        `/rest/v1/profiles?select=${sel}&order=full_name.asc`,
+      )
+    } catch (err) {
+      lastErr = err
+      const msg = err instanceof Error ? err.message : String(err)
+      const isBadColumn =
+        err instanceof ApiError &&
+        err.status === 400 &&
+        /column\s+[\w.]+\s+does not exist|Could not find/i.test(msg)
+      if (isBadColumn) continue
+      throw err
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error("Falha ao carregar perfis.")
+}
+
 export async function getStaff(): Promise<StaffMember[]> {
   const [doctors, profiles, userRoles] = await Promise.all([
     apiRequest<ApiDoctor[]>("/rest/v1/doctors?select=*&order=full_name.asc"),
-    apiRequest<ApiProfile[]>("/rest/v1/profiles?select=id,full_name,email,phone,disabled,created_at&order=full_name.asc"),
+    loadProfilesForStaff(),
     apiRequest<ApiUserRole[]>("/rest/v1/user_roles?select=user_id,role"),
   ])
   const doctorStaff  = (doctors  ?? []).map(apiDoctorToStaff)
@@ -412,7 +393,9 @@ export async function createStaffMember(
   }
 
   // Passo 1: criar usuário auth com senha/role pela Edge Function da API.
-  // O caminho raiz existe na documentação, mas no Supabase real pode falhar por CORS.
+  // O caminho oficial e /functions/v1/create-user-with-password.
+  // O caminho curto (/create-user-with-password) e mantido apenas como
+  // fallback defensivo para projetos antigos.
   let res: CreateUserWithPasswordResponse
   try {
     res = await apiRequest<CreateUserWithPasswordResponse>("/functions/v1/create-user-with-password", {
@@ -421,11 +404,23 @@ export async function createStaffMember(
       logErrors: false,
     })
   } catch (err) {
-    if (!(err instanceof ApiError) || err.status !== 404) throw err
-    res = await apiRequest<CreateUserWithPasswordResponse>("/create-user-with-password", {
-      method: "POST",
-      body: compactPayload(payload),
-    })
+    if (err instanceof ApiError) {
+      if (err.status === 404) {
+        res = await apiRequest<CreateUserWithPasswordResponse>("/create-user-with-password", {
+          method: "POST",
+          body: compactPayload(payload),
+        })
+      } else if (err.status === 401 || err.status === 403) {
+        throw new Error(
+          "Sua sessão expirou ou você não tem permissão para criar usuários. " +
+          "Faça login novamente como gestor e tente outra vez.",
+        )
+      } else {
+        throw err
+      }
+    } else {
+      throw err
+    }
   }
 
   if (!res?.user?.id && !res?.user_id) {
@@ -928,14 +923,14 @@ export async function sendMessage(
   }
 
   try {
-    await apiRequest<{ success?: boolean; message_sid?: string }>("/send-sms", {
+    await apiRequest<{ success?: boolean; message_sid?: string }>("/functions/v1/send-sms", {
       method: "POST",
       body,
       logErrors: false,
     })
   } catch (err) {
     if (!(err instanceof ApiError) || err.status !== 404) throw err
-    await apiRequest<{ success?: boolean; message_sid?: string }>("/functions/v1/send-sms", {
+    await apiRequest<{ success?: boolean; message_sid?: string }>("/send-sms", {
       method: "POST",
       body,
     })

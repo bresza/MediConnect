@@ -1,5 +1,5 @@
 export { useAppointments } from "./useAppointments"
-export { useAuth }         from "../contexts/AuthContext"
+export { useAuth }         from "../contexts/authStore"
 export { useFinancial }    from "./useFinancial"
 export { useMedicalData }  from "./useMedicalData"
 export { usePatients }     from "./usePatients"

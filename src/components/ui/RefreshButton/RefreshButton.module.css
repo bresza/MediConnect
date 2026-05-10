@@ -1,0 +1,10 @@
+.spinning {
+  animation: refresh-spin 0.9s linear infinite;
+  transform-origin: 50% 50%;
+}
+
+@keyframes refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

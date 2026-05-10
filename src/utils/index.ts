@@ -1,3 +1,5 @@
+export { formatCpfBR, formatPhoneBR, onlyDigits } from "./masks"
+
 // ─── Time helpers ─────────────────────────────────────────────────
 export function timeToMinutes(time: string): number {
   const [h, m] = time.split(":").map(Number)
@@ -57,6 +59,47 @@ export function getInitials(name: string): string {
     .map((n) => n[0])
     .join("")
     .toUpperCase()
+}
+
+// Particulas que ficam em minusculas quando aparecem no meio do nome
+// (preserva: "Joao da Silva" e nao "Joao Da Silva").
+const NAME_LOWERCASE_PARTICLES = new Set([
+  "da", "de", "di", "do", "du", "das", "dos", "del", "della", "e", "y",
+])
+
+// Padroniza nome para exibicao: primeira letra de cada palavra em maiuscula,
+// resto em minusculas. Preserva particulas em minusculas exceto no inicio.
+// Exemplos: "JOAO SILVA" -> "Joao Silva"; "joao da silva" -> "Joao da Silva".
+export function toTitleCase(value: string): string {
+  if (!value) return value
+  const parts = value.trim().toLocaleLowerCase("pt-BR").split(/\s+/)
+
+  return parts
+    .map((word, index) => {
+      if (!word) return word
+      if (index > 0 && NAME_LOWERCASE_PARTICLES.has(word)) return word
+      return word.replace(/^([\p{L}])/u, (match) => match.toLocaleUpperCase("pt-BR"))
+    })
+    .join(" ")
+}
+
+// Comparador case-insensitive e accent-aware para ordenar listas em pt-BR.
+const NAME_COLLATOR = new Intl.Collator("pt-BR", { sensitivity: "base", usage: "sort", ignorePunctuation: true })
+
+export function compareByName(a: string, b: string): number {
+  return NAME_COLLATOR.compare(a ?? "", b ?? "")
+}
+
+// Retorna uma copia ordenada alfabeticamente. Itens sem nome ficam no final.
+export function sortByName<T>(items: T[], getName: (item: T) => string | undefined): T[] {
+  return [...items].sort((a, b) => {
+    const nameA = getName(a)?.trim() ?? ""
+    const nameB = getName(b)?.trim() ?? ""
+    if (!nameA && !nameB) return 0
+    if (!nameA) return 1
+    if (!nameB) return -1
+    return compareByName(nameA, nameB)
+  })
 }
 
 export function formatDate(dateStr: string): string {

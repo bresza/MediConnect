@@ -1,35 +1,106 @@
 export const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL      as string
 export const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string
 const REQUEST_TIMEOUT_MS = 15000
+const REFRESH_LEEWAY_MS  = 60_000 // renova quando faltar < 60s para expirar
 
 interface RequestOptions extends Omit<RequestInit, "body"> {
   body?: unknown
   logErrors?: boolean
 }
 
-let _token:          string | null = null
-let _userId:         string | null = null
+interface ApiContext {
+  token:        string | null
+  userId:       string | null
+  refreshToken: string | null
+  expiresAt:    number | null
+}
+
+const AUTH_STORAGE_KEY = "mediconnect:auth"
+
+// Hidrata o contexto da API diretamente do localStorage no init do modulo.
+// Sem isso, hooks filhos (usePatients/useAppointments/...) disparam o primeiro
+// fetch antes do useEffect do AuthProvider rodar, e as requests saem sem token.
+function loadInitialContext(): ApiContext {
+  try {
+    if (typeof localStorage === "undefined") {
+      return { token: null, userId: null, refreshToken: null, expiresAt: null }
+    }
+    const raw = localStorage.getItem(AUTH_STORAGE_KEY)
+    if (!raw) return { token: null, userId: null, refreshToken: null, expiresAt: null }
+    const parsed = JSON.parse(raw) as {
+      token?:        string | null
+      refreshToken?: string | null
+      expiresAt?:    number | null
+      user?:         { id?: string } | null
+    }
+    return {
+      token:        parsed.token ?? null,
+      userId:       parsed.user?.id ?? null,
+      refreshToken: parsed.refreshToken ?? null,
+      expiresAt:    parsed.expiresAt ?? null,
+    }
+  } catch {
+    return { token: null, userId: null, refreshToken: null, expiresAt: null }
+  }
+}
+
+let _ctx: ApiContext = loadInitialContext()
 let _onUnauthorized: (() => void) | null = null
+let _refresher: (() => Promise<string | null>) | null = null
+let _refreshPromise: Promise<string | null> | null = null
+// Quando o refresh_token vira invalido (HTTP 400 em /auth/v1/token), evitamos
+// re-chamar o refresher (que entraria em loop) ate que a sessao seja recriada.
+let _refreshExhausted = false
 
 function isLocalToken(token: string | null): boolean {
   return token?.startsWith("local-") ?? false
 }
 
-export function setApiContext(
-  token:  string | null,
-  _:      string | null,
-  userId: string | null = null,
-) {
-  _token  = token
-  _userId = userId
+export function setApiContext(ctx: Partial<ApiContext>) {
+  _ctx = {
+    token:        ctx.token        ?? null,
+    userId:       ctx.userId       ?? null,
+    refreshToken: ctx.refreshToken ?? null,
+    expiresAt:    ctx.expiresAt    ?? null,
+  }
+  // Qualquer mudanca de sessao (login novo, refresh bem sucedido) reseta a trava.
+  _refreshExhausted = false
 }
 
-export function getApiUserId(): string | null { return _userId }
+export function getApiUserId(): string | null { return _ctx.userId }
 
-export function getApiToken(): string | null { return _token }
+export function getApiToken(): string | null { return _ctx.token }
 
 export function setUnauthorizedHandler(handler: () => void) {
   _onUnauthorized = handler
+}
+
+export function setSessionRefresher(refresher: (() => Promise<string | null>) | null) {
+  _refresher = refresher
+}
+
+async function tryRefresh(): Promise<string | null> {
+  if (_refreshExhausted) return null
+  if (!_refresher || !_ctx.refreshToken || isLocalToken(_ctx.token)) return null
+  if (_refreshPromise) return _refreshPromise
+
+  _refreshPromise = _refresher()
+    .catch((err) => {
+      console.warn("[api] refresh de sessao falhou:", err)
+      // refresh_token invalidado: marca a trava para evitar novos retries em loop.
+      _refreshExhausted = true
+      return null
+    })
+    .finally(() => { _refreshPromise = null })
+
+  return _refreshPromise
+}
+
+async function ensureFreshToken(): Promise<void> {
+  if (!_ctx.token || isLocalToken(_ctx.token)) return
+  if (!_ctx.expiresAt) return
+  if (Date.now() + REFRESH_LEEWAY_MS < _ctx.expiresAt) return
+  await tryRefresh()
 }
 
 export class ApiError extends Error {
@@ -79,37 +150,79 @@ function parseErrorMessage(raw: string): string {
   }
 }
 
-export async function apiRequest<T>(
-  path:    string,
-  options: RequestOptions = {},
-): Promise<T> {
-  const { body, logErrors = true, ...rest } = options
+async function performFetch(path: string, options: RequestOptions): Promise<Response> {
+  const { body, ...rest } = options
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "apikey":       SUPABASE_ANON_KEY,
     ...(rest.headers as Record<string, string> ?? {}),
   }
-  if (_token && !isLocalToken(_token)) headers["Authorization"] = `Bearer ${_token}`
+  if (_ctx.token && !isLocalToken(_ctx.token)) {
+    headers["Authorization"] = `Bearer ${_ctx.token}`
+  }
 
   const controller = new AbortController()
   const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
-  let res: Response
   try {
-    res = await fetch(`${SUPABASE_URL}${path}`, {
+    return await fetch(`${SUPABASE_URL}${path}`, {
       ...rest,
       headers,
       signal: rest.signal ?? controller.signal,
       body: body !== undefined ? JSON.stringify(body) : undefined,
     })
-  } catch {
-    throw connectionError()
   } finally {
     window.clearTimeout(timeoutId)
+  }
+}
+
+/**
+ * Apenas paths "puramente autenticados" devem derrubar a sessao em 401:
+ * - /rest/v1/*  → PostgREST so retorna 401 quando o JWT esta expirado/invalido.
+ * - /auth/v1/*  → endpoints de autenticacao do GoTrue.
+ * Edge Functions (/functions/v1/*) tambem podem retornar 401 por motivos de
+ * negocio (permissao, payload), entao nao devem disparar logout automatico.
+ */
+function shouldLogoutOnUnauthorized(path: string): boolean {
+  return path.startsWith("/rest/v1/") || path.startsWith("/auth/v1/")
+}
+
+export async function apiRequest<T>(
+  path:    string,
+  options: RequestOptions = {},
+): Promise<T> {
+  const { logErrors = true } = options
+
+  await ensureFreshToken()
+
+  let res: Response
+  try {
+    res = await performFetch(path, options)
+  } catch {
+    throw connectionError()
+  }
+
+  // Em 401 com refresh_token disponivel, tenta renovar a sessao e refazer a request uma unica vez.
+  if (res.status === 401 && _ctx.refreshToken && !isLocalToken(_ctx.token)) {
+    const newToken = await tryRefresh()
+    if (newToken) {
+      try {
+        res = await performFetch(path, options)
+      } catch {
+        throw connectionError()
+      }
+    }
   }
 
   if (!res.ok) {
     const raw = await res.text().catch(() => res.statusText)
-    if (res.status === 401 && _onUnauthorized && !isLocalToken(_token)) _onUnauthorized()
+    if (
+      res.status === 401 &&
+      _onUnauthorized &&
+      !isLocalToken(_ctx.token) &&
+      shouldLogoutOnUnauthorized(path)
+    ) {
+      _onUnauthorized()
+    }
     const errorMsg = parseErrorMessage(raw) || res.statusText
     if (logErrors) {
       console.error("[apiRequest]", {

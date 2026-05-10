@@ -10,7 +10,8 @@ import { Button }  from "../../components/ui/Button/Button"
 import { Avatar }  from "../../components/ui/Avatar/Avatar"
 import { Modal }   from "../../components/ui/Modal/Modal"
 import { Select }  from "../../components/ui/Select/Select"
-import { formatDate } from "../../utils"
+import { RefreshButton } from "../../components/ui/RefreshButton/RefreshButton"
+import { formatDate, sortByName, toTitleCase } from "../../utils"
 import styles from "./Reports.module.css"
 
 interface ReportsProps { currentUser: User; patients?: Patient[] }
@@ -176,16 +177,20 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
   const [search,      setSearch]      = useState("")
   const [filterStatus, setFilterStatus] = useState<ReportStatus | "All">("All")
 
-  const visibleReports = reports
-    .filter((r) => {
-      if (currentUser.role !== "doctor") return true
-      // Alguns registros retornam sem doctorName no join; usa created_by como fallback.
-      return r.doctorId === currentUser.id || r.doctorName === currentUser.name
-    })
-    .filter((r) => filterStatus === "All" || r.status === filterStatus)
-    .filter((r) => !search ||
-      r.patientName.toLowerCase().includes(search.toLowerCase()) ||
-      r.type.toLowerCase().includes(search.toLowerCase()))
+  const visibleReports = sortByName(
+    reports
+      .map((r) => ({ ...r, patientName: toTitleCase(r.patientName), doctorName: toTitleCase(r.doctorName) }))
+      .filter((r) => {
+        if (currentUser.role !== "doctor") return true
+        // Alguns registros retornam sem doctorName no join; usa created_by como fallback.
+        return r.doctorId === currentUser.id || r.doctorName === toTitleCase(currentUser.name)
+      })
+      .filter((r) => filterStatus === "All" || r.status === filterStatus)
+      .filter((r) => !search ||
+        r.patientName.toLowerCase().includes(search.toLowerCase()) ||
+        r.type.toLowerCase().includes(search.toLowerCase())),
+    (r) => r.patientName,
+  )
 
   const load = useCallback(async () => {
     setIsLoading(true)
@@ -331,7 +336,8 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
         title="Laudos e Relatórios"
         subtitle={`${visibleReports.length} laudo${visibleReports.length !== 1 ? "s" : ""}`}
         action={
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <RefreshButton onRefresh={load} />
             <Button variant="outline" onClick={() => setTemplateModal(true)}>
               📋 Templates
             </Button>
