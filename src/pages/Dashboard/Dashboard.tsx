@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { getReports } from "../../services/domain"
 import type { Report } from "../../types"
 import { Topbar } from "../../components/layout/Topbar/Topbar"
@@ -6,7 +6,8 @@ import { Card } from "../../components/ui/Card/Card"
 import { Badge } from "../../components/ui/Badge/Badge"
 import { Avatar } from "../../components/ui/Avatar/Avatar"
 import { Button } from "../../components/ui/Button/Button"
-import { formatDate, formatAppointmentType } from "../../utils"
+import { RefreshButton } from "../../components/ui/RefreshButton/RefreshButton"
+import { formatDate, formatAppointmentType, sortByName, toTitleCase } from "../../utils"
 import type { PageId, Patient, Appointment, User } from "../../types"
 import styles from "./Dashboard.module.css"
 
@@ -15,6 +16,7 @@ interface DashboardProps {
   appointments: Appointment[]
   currentUser: User
   onNavigate: (page: PageId) => void
+  onRefresh?: () => void | Promise<unknown>
 }
 
 const PlusIcon = () => (
@@ -48,20 +50,37 @@ function todayKey() {
   return `${year}-${month}-${day}`
 }
 
-export function Dashboard({ patients, appointments, currentUser, onNavigate }: DashboardProps) {
+export function Dashboard({ patients, appointments, currentUser, onNavigate, onRefresh }: DashboardProps) {
   const isDoctor = currentUser.role === "doctor"
 
   const [allReports, setAllReports] = useState<Report[]>([])
-  useEffect(() => { getReports().then(setAllReports).catch(() => setAllReports([])) }, [])
+  const loadReports = useCallback(() => {
+    return getReports()
+      .then(setAllReports)
+      .catch(() => setAllReports([]))
+  }, [])
+  useEffect(() => { void loadReports() }, [loadReports])
+
+  const handleRefresh = useCallback(async () => {
+    await Promise.all([
+      onRefresh ? Promise.resolve(onRefresh()) : Promise.resolve(),
+      loadReports(),
+    ])
+  }, [onRefresh, loadReports])
 
   const isCurrentDoctor = (doctorId?: string, doctorName?: string) =>
     doctorId === currentUser.id ||
     doctorName === currentUser.name ||
     doctorName?.toLowerCase().trim() === currentUser.name.toLowerCase().trim()
 
-  const visibleAppointments = isDoctor
+  const visibleAppointments = (isDoctor
     ? appointments.filter((a) => isCurrentDoctor(a.doctorId, a.doctorName))
     : appointments
+  ).map((a) => ({
+    ...a,
+    patientName: toTitleCase(a.patientName),
+    doctorName: toTitleCase(a.doctorName),
+  }))
   const todayAppointments = visibleAppointments
     .filter((a) => a.date === todayKey())
     .sort((a, b) => a.time.localeCompare(b.time))
@@ -69,9 +88,13 @@ export function Dashboard({ patients, appointments, currentUser, onNavigate }: D
   const visiblePatientIds = isDoctor
     ? new Set(visibleAppointments.map((a) => a.patientId))
     : null
-  const visiblePatients = isDoctor
-    ? patients.filter((p) => visiblePatientIds!.has(p.id))
-    : patients
+  const visiblePatients = sortByName(
+    (isDoctor
+      ? patients.filter((p) => visiblePatientIds!.has(p.id))
+      : patients
+    ).map((p) => ({ ...p, name: toTitleCase(p.name) })),
+    (p) => p.name,
+  )
 
   const pendingReports = isDoctor
     ? allReports.filter((r) => r.status === "Draft" && isCurrentDoctor(r.doctorId, r.doctorName))
@@ -95,11 +118,16 @@ export function Dashboard({ patients, appointments, currentUser, onNavigate }: D
       <Topbar
         title={currentUser.role === "doctor" ? "Meu Painel" : currentUser.role === "secretary" ? "Recepção" : "Dashboard"}
         subtitle={`Visão geral · ${today}`}
-        action={!isDoctor ? (
-          <Button onClick={() => onNavigate("register")} icon={<PlusIcon />}>
-            Novo paciente
-          </Button>
-        ) : undefined}
+        action={
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <RefreshButton onRefresh={handleRefresh} />
+            {!isDoctor && (
+              <Button onClick={() => onNavigate("register")} icon={<PlusIcon />}>
+                Novo paciente
+              </Button>
+            )}
+          </div>
+        }
       />
 
       {/* Stats */}

@@ -132,6 +132,43 @@ function apiToAvailability(api: ApiDoctorAvailability): DoctorAvailability {
   }
 }
 
+/**
+ * O enum `appointment_type` da tabela `appointments` no Supabase deste projeto
+ * representa apenas a MODALIDADE do atendimento e aceita somente:
+ *   - "presencial"
+ *   - "telemedicina"
+ * (Confirmado pela documentação RISEUP da API.)
+ *
+ * O "tipo de visita" do front (Consulta/Exame/Retorno/Procedimento) e um conceito
+ * exclusivo de UI: nao tem coluna correspondente na API. Por isso, ao gravar,
+ * enviamos a modalidade fixa "presencial" para o backend e preservamos o tipo
+ * escolhido pelo usuario apenas no campo `notes` (prefixo `[Tipo: ...]`),
+ * permitindo round-trip sem perda de informacao visual.
+ */
+const APPOINTMENT_MODALITY_DEFAULT = "presencial"
+
+const TYPE_NOTE_PATTERN = /^\s*\[Tipo:\s*([^\]]+)\]\s*/i
+
+function encodeTypeInNotes(type: AppointmentType, notes?: string): string | undefined {
+  const stripped = (notes ?? "").replace(TYPE_NOTE_PATTERN, "").trim()
+  const label = `[Tipo: ${type}]`
+  if (!stripped) return label
+  return `${label} ${stripped}`
+}
+
+function decodeTypeFromNotes(notes?: string | null): { type: AppointmentType; notes?: string } {
+  if (!notes) return { type: "consultation", notes: undefined }
+  const match = TYPE_NOTE_PATTERN.exec(notes)
+  if (!match) return { type: "consultation", notes }
+  const candidate = match[1].toLowerCase().trim()
+  const validTypes: AppointmentType[] = ["consultation", "exam", "return", "procedure"]
+  const type = (validTypes as string[]).includes(candidate)
+    ? (candidate as AppointmentType)
+    : "consultation"
+  const rest = notes.replace(TYPE_NOTE_PATTERN, "").trim()
+  return { type, notes: rest || undefined }
+}
+
 function apiToAppointment(
   api: ApiAppointment,
   doctorName = ""
@@ -140,8 +177,14 @@ function apiToAppointment(
     ? new Date(api.scheduled_at)
     : new Date()
 
-  const date = dt.toISOString().slice(0, 10)
-  const time = dt.toTimeString().slice(0, 5)
+  // Mantemos data e hora no mesmo fuso (local do navegador) para evitar deslocamento
+  // perto da meia-noite quando o servidor responde em UTC.
+  const date = localDate(dt)
+  const time = localTime(dt)
+
+  // O backend so guarda a modalidade em `appointment_type`. O tipo de visita
+  // (consulta/exame/retorno/procedimento) e recuperado do prefixo em `notes`.
+  const { type: visitType, notes: cleanNotes } = decodeTypeFromNotes(api.notes)
 
   return {
     id: api.id,
@@ -153,20 +196,13 @@ function apiToAppointment(
     time,
     duration: api.duration_minutes ?? 30,
 
-    /*
-    Aqui mantemos compatibilidade com o front.
-    Se vier algo desconhecido do backend,
-    usamos consultation como fallback visual.
-    */
-    type:
-      (api.appointment_type as AppointmentType) ??
-      "consultation",
+    type: visitType,
 
     status:
       (api.status as AppointmentStatus) ??
       "scheduled",
 
-    observations: api.notes,
+    observations: cleanNotes,
   }
 }
 
@@ -184,11 +220,16 @@ function appointmentToApi(
     doctor_id: a.doctorId,
     scheduled_at: scheduledAt,
     duration_minutes: a.duration,
-    appointment_type: a.type,
+    // O enum aceita apenas "presencial" | "telemedicina". O tipo de visita
+    // selecionado pelo usuario e preservado em `notes`.
+    appointment_type: APPOINTMENT_MODALITY_DEFAULT,
+    notes: encodeTypeInNotes(a.type, a.observations),
   }
 
-  if (!isCreate) {
-    payload.status = a.status ?? "confirmed"
+  // Em updates, so envia status quando o frontend efetivamente informa um valor.
+  // Antes a chamada forcava "confirmed" e podia ressuscitar agendamentos cancelados.
+  if (!isCreate && a.status) {
+    payload.status = a.status
   }
 
   if (isCreate) {
@@ -300,6 +341,34 @@ export async function deleteAppointment(
   )
 }
 
+// Horario comercial padrao quando nao ha disponibilidade cadastrada nem
+// Edge Function disponivel: 08:00 - 18:00, slots de 30 min.
+const DEFAULT_SLOT_START_MIN = 8 * 60
+const DEFAULT_SLOT_END_MIN   = 18 * 60
+const DEFAULT_SLOT_DURATION  = 30
+
+function buildDefaultSlots(date: string): string[] {
+  const today = localDate(new Date())
+  const nowMinutes = timeToMinutes(localTime(new Date()))
+  const out: string[] = []
+  for (let m = DEFAULT_SLOT_START_MIN; m + DEFAULT_SLOT_DURATION <= DEFAULT_SLOT_END_MIN; m += DEFAULT_SLOT_DURATION) {
+    if (date === today && m <= nowMinutes) continue
+    out.push(minutesToTime(m))
+  }
+  return out
+}
+
+async function safeAvailabilitySlots(doctorId: string, date: string): Promise<string[]> {
+  try {
+    return await getAvailableSlotsFromAvailability(doctorId, date)
+  } catch (err) {
+    if (err instanceof ApiError && [400, 404, 422, 500, 501, 502, 503].includes(err.status)) {
+      return []
+    }
+    throw err
+  }
+}
+
 export async function getAvailableSlots(
   doctorId: string,
   date: string,
@@ -309,19 +378,34 @@ export async function getAvailableSlots(
   if (date < localDate(new Date())) return []
 
   try {
-    return await getAvailableSlotsFromApi(doctorId, date, appointmentType)
+    const apiSlots = await getAvailableSlotsFromApi(doctorId, date, appointmentType)
+    if (apiSlots.length > 0) return apiSlots
   } catch (err) {
-    if (!(err instanceof ApiError) || err.status !== 404) throw err
+    // Se a Edge Function nao existir (404), nao estiver implantada (500/502/503)
+    // ou estiver com payload incompativel (400/422), caimos no calculo local
+    // baseado em doctor_availability + doctor_exceptions + appointments.
+    if (!(err instanceof ApiError)) throw err
+    const fallbackStatuses = [400, 404, 422, 500, 501, 502, 503]
+    if (!fallbackStatuses.includes(err.status)) throw err
   }
 
-  return getAvailableSlotsFromAvailability(doctorId, date)
+  const localSlots = await safeAvailabilitySlots(doctorId, date)
+  if (localSlots.length > 0) return localSlots
+
+  // Nem a Edge Function nem doctor_availability retornaram nada: oferecemos
+  // o horario comercial padrao para que o agendamento nao fique bloqueado por
+  // ausencia de dados de disponibilidade no backend. Os conflitos com outros
+  // agendamentos continuam validados pelo `checkConflict` da UI.
+  return buildDefaultSlots(date)
 }
 
 export async function getDoctorAvailability(doctorId: string): Promise<DoctorAvailability[]> {
   if (!doctorId) return []
 
+  // Nao filtramos por `active=eq.true` aqui: a coluna `active` pode nao existir
+  // em projetos antigos e levaria a 400. Filtramos no client.
   const rows = await apiRequest<ApiDoctorAvailability[]>(
-    `/rest/v1/doctor_availability?doctor_id=eq.${encodeURIComponent(doctorId)}&active=eq.true&select=*&order=weekday.asc,start_time.asc`,
+    `/rest/v1/doctor_availability?doctor_id=eq.${encodeURIComponent(doctorId)}&select=*&order=weekday.asc,start_time.asc`,
   )
 
   return (rows ?? []).map(apiToAvailability).filter((row) => row.weekday >= 0 && row.active)
@@ -337,7 +421,7 @@ async function getAvailableSlotsFromAvailability(
   const day = new Date(`${date}T00:00:00`).getDay()
   const [availability, exceptions, appointments] = await Promise.all([
     apiRequest<ApiDoctorAvailability[]>(
-      `/rest/v1/doctor_availability?doctor_id=eq.${encodeURIComponent(doctorId)}&active=eq.true&select=*`,
+      `/rest/v1/doctor_availability?doctor_id=eq.${encodeURIComponent(doctorId)}&select=*`,
     ),
     apiRequest<ApiDoctorException[]>(
       `/rest/v1/doctor_exceptions?doctor_id=eq.${encodeURIComponent(doctorId)}&date=eq.${encodeURIComponent(date)}&select=*`,
@@ -367,6 +451,7 @@ async function getAvailableSlotsFromAvailability(
   const nowMinutes = timeToMinutes(localTime(now))
 
   return (availability ?? [])
+    .filter((row) => row.active !== false)
     .filter((row) => normalizeWeekday(row.weekday) === day)
     .flatMap((row) => {
       const slotMinutes = row.slot_minutes ?? 30
@@ -429,10 +514,10 @@ async function getAvailableSlotsFromApi(
 
   let data: ApiAvailableSlotsResponse | undefined
   try {
-    data = await request("/get-available-slots")
+    data = await request("/functions/v1/get-available-slots")
   } catch (err) {
     if (!(err instanceof ApiError) || err.status !== 404) throw err
-    data = await request("/functions/v1/get-available-slots")
+    data = await request("/get-available-slots")
   }
 
   const today = localDate(new Date())

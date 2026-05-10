@@ -58,14 +58,6 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
     finally { setIsLoading(false) }
   }
 
-  async function handleGestorClick() {
-    setError(null); setSuccess(null); setIsLoading(true)
-    setEmail("hugo@popcode.com.br"); setPassword("hdoria")
-    try { onLogin(await authLogin({ email: "hugo@popcode.com.br", password: "hdoria" })) }
-    catch (err) { setError(err instanceof Error ? err.message : "Erro ao fazer login") }
-    finally { setIsLoading(false) }
-  }
-
   async function handlePasswordReset() {
     if (!email.trim()) { setError("Informe seu e-mail para recuperar a senha."); return }
     setError(null); setSuccess(null); setIsLoading(true)
@@ -269,36 +261,11 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
             </button>
           </form>
 
-          {/* Card gestor */}
-          {mode === "login" && <div className={styles.demoSection}>
-            <p className={styles.demoTitle}>Acesso rápido</p>
-            <div className={styles.demoGrid}>
-              <button
-                className={styles.demoCard}
-                onClick={handleGestorClick}
-                disabled={isLoading}
-                title="Entrar como Gestor"
-              >
-                <div className={styles.demoAvatar} style={{ background: "#6366f1" }}>
-                  {isLoading ? (
-                    <svg width="14" height="14" fill="none" stroke="white" strokeWidth="2.5"
-                      viewBox="0 0 24 24" strokeLinecap="round"
-                      style={{ animation: "spin 0.8s linear infinite" }}>
-                      <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
-                    </svg>
-                  ) : "HD"}
-                </div>
-                <div className={styles.demoInfo}>
-                  <p className={styles.demoName}>Hugo Doria</p>
-                  <p className={styles.demoRole}>Gestão — Acesso completo</p>
-                </div>
-                <span className={styles.demoCred}>hugo@popcode.com.br</span>
-              </button>
-            </div>
+          {mode === "login" && (
             <p style={{ fontSize: 11, color: "var(--muted-foreground)", marginTop: 10, textAlign: "center" }}>
               Pacientes podem criar a própria conta acima. Outros perfis são criados pelo gestor em <strong>Equipe</strong>.
             </p>
-          </div>}
+          )}
         </div>
       </div>
 

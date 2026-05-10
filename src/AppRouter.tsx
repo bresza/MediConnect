@@ -14,7 +14,7 @@ import { Financial }      from "./pages/Financial/Financial"
 import { Settings }       from "./pages/Settings/Settings"
 import { Team }           from "./pages/Team/Team"
 import { canAccess, canDo, getDefaultPage } from "./utils/permissions"
-import { useAuth }          from "./contexts/AuthContext"
+import { useAuth }          from "./contexts/authStore"
 import { usePatients }      from "./hooks/usePatients"
 import { useAppointments }  from "./hooks/useAppointments"
 import { useMedicalData }   from "./hooks/useMedicalData"
@@ -30,21 +30,30 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
 
   const {
     patients, addPatient, addPatientWithPassword, createPatientAccess, updatePatient, deletePatient,
-    error: patientsError,
+    error: patientsError, reload: reloadPatients,
   } = usePatients()
   const {
     appointments, addAppointment, updateAppointment,
-    error: appointmentsError,
+    error: appointmentsError, reload: reloadAppointments,
   } = useAppointments()
   const {
     prescriptions, addPrescription,
-    error: medicalDataError,
+    error: medicalDataError, reload: reloadMedicalData,
   } = useMedicalData()
   const {
     staff, addStaff, updateStaff, deleteStaff,
-    error: staffError,
+    error: staffError, reload: reloadStaff,
   } = useStaff()
   const { toasts,       toast,         dismiss }                                       = useToast()
+
+  const reloadAll = async () => {
+    await Promise.all([
+      reloadPatients(),
+      reloadAppointments(),
+      reloadMedicalData(),
+      reloadStaff(),
+    ])
+  }
 
   const [activePage,       setActivePage]       = useState<PageId>(() => getDefaultPage(user?.role ?? "secretary"))
   const [sidebarOpen,      setSidebarOpen]      = useState(false)
@@ -193,6 +202,7 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
             appointments={visibleAppointments}
             currentUser={currentUser}
             onNavigate={handleNavigate}
+            onRefresh={reloadAll}
           />
         )
 
@@ -208,6 +218,7 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
             onDeletePatient={canDo(currentUser.role, "delete_patients") ? handleDeletePatient : undefined}
             canCreatePatient={canAccess(currentUser.role, "register")}
             toast={toast}
+            onRefresh={reloadPatients}
           />
         )
 
@@ -262,6 +273,7 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
             currentUser={currentUser}
             onAddAppointment={addAppointment}
             onUpdateAppointment={updateAppointment}
+            onRefresh={reloadAppointments}
           />
         )
 
@@ -289,6 +301,7 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
             onUpdate={updateStaff}
             onDelete={deleteStaff}
             toast={toast}
+            onRefresh={reloadStaff}
           />
         )
 
@@ -303,6 +316,7 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
             appointments={visibleAppointments}
             currentUser={currentUser}
             onNavigate={handleNavigate}
+            onRefresh={reloadAll}
           />
         )
     }

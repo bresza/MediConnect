@@ -11,6 +11,7 @@ import { Card } from "../../components/ui/Card/Card"
 import { Badge } from "../../components/ui/Badge/Badge"
 import { Avatar } from "../../components/ui/Avatar/Avatar"
 import { Button } from "../../components/ui/Button/Button"
+import { RefreshButton } from "../../components/ui/RefreshButton/RefreshButton"
 import { Select } from "../../components/ui/Select/Select"
 import { checkConflict, formatAppointmentType } from "../../utils"
 import { getAppointmentDoctors, getAvailableSlots, getDoctorAvailability } from "../../services/appointments"
@@ -40,6 +41,7 @@ interface AppointmentsProps {
   onAddAppointment: (a: Omit<Appointment, "id">) => Promise<void>
   onUpdateAppointment: (a: Appointment) => Promise<void>
   onDeleteAppointment?: (id: string) => Promise<void>
+  onRefresh?: () => void | Promise<unknown>
 }
 
 const VIEW_LABELS: Record<CalendarView, string> = {
@@ -143,6 +145,7 @@ export function Appointments({
   onAddAppointment,
   onUpdateAppointment,
   onDeleteAppointment,
+  onRefresh,
 }: AppointmentsProps) {
   const calendarRef = useRef<FullCalendar | null>(null)
   const slotRequestRef = useRef(0)
@@ -588,11 +591,16 @@ export function Appointments({
       <Topbar
         title="Agendamento"
         subtitle={calendarTitle ? `Agenda da clínica · ${calendarTitle}` : "Agenda da clínica"}
-        action={canManage ? (
-          <Button onClick={() => openModal()} icon={<span aria-hidden="true">+</span>}>
-            Novo agendamento
-          </Button>
-        ) : null}
+        action={
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            {onRefresh && <RefreshButton onRefresh={onRefresh} />}
+            {canManage && (
+              <Button onClick={() => openModal()} icon={<span aria-hidden="true">+</span>}>
+                Novo agendamento
+              </Button>
+            )}
+          </div>
+        }
       />
 
       <div className={styles.layout}>

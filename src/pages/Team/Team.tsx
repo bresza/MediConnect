@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react"
+import { useCallback, useMemo, useState } from "react"
 import { Topbar } from "../../components/layout/Topbar/Topbar"
 import { Card } from "../../components/ui/Card/Card"
 import { Button } from "../../components/ui/Button/Button"
@@ -9,6 +9,8 @@ import { ConfirmDialog } from "../../components/ui/ConfirmDialog/ConfirmDialog"
 import { Input } from "../../components/ui/Input/Input"
 import { Select } from "../../components/ui/Select/Select"
 import { Section } from "../../components/ui/Section/Section"
+import { RefreshButton } from "../../components/ui/RefreshButton/RefreshButton"
+import { formatCpfBR, formatPhoneBR, sortByName, toTitleCase } from "../../utils"
 import type { StaffMember, StaffRole, StaffStatus } from "../../types"
 import type { UseToastReturn } from "../../hooks/useToast"
 import type { UseStaffReturn } from "../../hooks/useStaff"
@@ -22,6 +24,7 @@ interface TeamProps {
   onUpdate: UseStaffReturn["updateStaff"]
   onDelete: UseStaffReturn["deleteStaff"]
   toast:    UseToastReturn["toast"]
+  onRefresh?: () => void | Promise<unknown>
 }
 
 interface StaffForm {
@@ -46,11 +49,23 @@ const EMPTY_FORM: StaffForm = {
 
 function memberToForm(m: StaffMember): StaffForm {
   const [crmNum = "", crmUf = ""] = (m.crm ?? "").split("-")
+  const cpfDigits = m.cpf?.replace(/\D/g, "") ?? ""
   return {
     name: m.name, email: m.email, phone: m.phone, status: m.status,
-    cpf: "", crmNum, crmUf, specialty: m.specialty ?? "",
+    cpf: cpfDigits ? formatCpfBR(cpfDigits) : "",
+    crmNum, crmUf, specialty: m.specialty ?? "",
     department: m.department ?? "", password: "", confirmPassword: "",
   }
+}
+
+function displayMaskedCpf(value?: string): string {
+  const digits = value?.replace(/\D/g, "") ?? ""
+  return digits ? formatCpfBR(digits) : "—"
+}
+
+function displayMaskedPhone(value?: string): string {
+  const digits = value?.replace(/\D/g, "") ?? ""
+  return digits ? formatPhoneBR(digits) : "—"
 }
 
 const SPECIALTIES = [
@@ -115,7 +130,7 @@ function PasswordInput({ label, value, show, onToggle, onChange, error, placehol
 }
 
 // ─── Main component ───────────────────────────────────────────────
-export function Team({ staff, onAdd, onUpdate, onDelete, toast }: TeamProps) {
+export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: TeamProps) {
   const [activeTab,     setActiveTab]     = useState<TabId>("doctor")
   const [search,        setSearch]        = useState("")
   const [modalOpen,     setModalOpen]     = useState(false)
@@ -127,12 +142,28 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast }: TeamProps) {
   const [showPass,      setShowPass]      = useState(false)
   const [showConfirm,   setShowConfirm]   = useState(false)
 
-  const filtered = staff.filter(
-    (m) => m.role === activeTab &&
-      (m.name.toLowerCase().includes(search.toLowerCase()) ||
-       m.email.toLowerCase().includes(search.toLowerCase()))
-  )
-  const confirmTarget = staff.find((m) => m.id === confirmId)
+  // Normaliza nomes (Title Case) e ordena alfabeticamente.
+  const orderedStaff = useMemo(() => {
+    const normalized = staff.map((m) => ({ ...m, name: toTitleCase(m.name) }))
+    return sortByName(normalized, (m) => m.name)
+  }, [staff])
+
+  const filtered = orderedStaff.filter((m) => {
+    if (m.role !== activeTab) return false
+    const q = search.trim()
+    if (!q) return true
+    const qLower = q.toLowerCase()
+    const qDigits = q.replace(/\D/g, "")
+    if (m.name.toLowerCase().includes(qLower)) return true
+    if (m.email.toLowerCase().includes(qLower)) return true
+    if (qDigits.length > 0) {
+      const cpfDigits = m.cpf?.replace(/\D/g, "") ?? ""
+      const phoneDigits = m.phone?.replace(/\D/g, "") ?? ""
+      if (cpfDigits.includes(qDigits) || phoneDigits.includes(qDigits)) return true
+    }
+    return false
+  })
+  const confirmTarget = orderedStaff.find((m) => m.id === confirmId)
 
   const handleChange = useCallback((field: keyof StaffForm, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -217,7 +248,12 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast }: TeamProps) {
   return (
     <div>
       <Topbar title="Equipe" subtitle="Gerencie os profissionais da clínica"
-        action={<Button onClick={openCreate} icon={<PlusIcon />}>Novo {currentTab.singular}</Button>}
+        action={
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            {onRefresh && <RefreshButton onRefresh={onRefresh} />}
+            <Button onClick={openCreate} icon={<PlusIcon />}>Novo {currentTab.singular}</Button>
+          </div>
+        }
       />
 
       {/* Tabs */}
@@ -260,6 +296,7 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast }: TeamProps) {
               <thead>
                 <tr>
                   <th>Profissional</th>
+                  <th>CPF</th>
                   {activeTab === "doctor" ? <th>CRM / Especialidade</th> : <th>Departamento</th>}
                   <th>Contato</th><th>Status</th><th>Ações</th>
                 </tr>
@@ -276,11 +313,12 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast }: TeamProps) {
                         </div>
                       </div>
                     </td>
+                    <td><p className={styles.cellMain}>{displayMaskedCpf(member.cpf)}</p></td>
                     {activeTab === "doctor"
                       ? <td><p className={styles.cellMain}>{member.crm ?? "—"}</p><p className={styles.cellSub}>{member.specialty ?? "—"}</p></td>
                       : <td><p className={styles.cellMain}>{member.department ?? "—"}</p></td>
                     }
-                    <td><p className={styles.cellMain}>{member.phone}</p></td>
+                    <td><p className={styles.cellMain}>{displayMaskedPhone(member.phone)}</p></td>
                     <td><Badge>{member.status}</Badge></td>
                     <td>
                       <div className={styles.actions}>

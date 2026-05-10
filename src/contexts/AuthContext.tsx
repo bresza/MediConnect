@@ -1,62 +1,47 @@
-import { createContext, useContext, useReducer, useCallback, useEffect } from "react"
+import { useReducer, useCallback, useEffect } from "react"
 import type { ReactNode } from "react"
-import type { User } from "../types"
-import { setApiContext, setUnauthorizedHandler } from "../services/api"
-
-const STORAGE_KEY = "mediconnect:auth"
-
-export interface AuthState {
-  user:       User   | null
-  token:      string | null
-  clinicId:   string | null
-  clinicName: string | null
-}
-
-const INITIAL: AuthState = { user: null, token: null, clinicId: null, clinicName: null }
-
-function load(): AuthState {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return INITIAL
-    const p = JSON.parse(raw) as AuthState
-    return p.token && p.user ? p : INITIAL
-  } catch { return INITIAL }
-}
-
-function save(s: AuthState) {
-  try {
-    if (s.token) localStorage.setItem(STORAGE_KEY, JSON.stringify(s))
-    else         localStorage.removeItem(STORAGE_KEY)
-  } catch { /* silencia */ }
-}
-
-type Action = { type: "LOGIN"; payload: AuthState } | { type: "LOGOUT" }
-
-function reducer(state: AuthState, action: Action): AuthState {
-  if (action.type === "LOGIN")  return { ...action.payload }
-  if (action.type === "LOGOUT") return { ...INITIAL }
-  return state
-}
-
-interface AuthContextValue extends AuthState {
-  login:  (payload: AuthState) => void
-  logout: () => void
-}
-
-const AuthContext = createContext<AuthContextValue | null>(null)
+import {
+  setApiContext,
+  setSessionRefresher,
+  setUnauthorizedHandler,
+} from "../services/api"
+import { refreshSession } from "../services/auth"
+import {
+  AuthContext,
+  authReducer,
+  loadAuthState,
+  saveAuthState,
+  type AuthState,
+} from "./authStore"
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, undefined, load)
-
-  // Mantem o cliente HTTP sincronizado antes dos hooks das telas carregarem dados.
-  setApiContext(state.token, state.clinicId, state.user?.id ?? null)
+  const [state, dispatch] = useReducer(authReducer, undefined, loadAuthState)
 
   useEffect(() => {
-    save(state)
+    saveAuthState(state)
   }, [state])
 
+  useEffect(() => {
+    setApiContext({
+      token:        state.token,
+      userId:       state.user?.id ?? null,
+      refreshToken: state.refreshToken,
+      expiresAt:    state.expiresAt,
+    })
+  }, [state.token, state.refreshToken, state.expiresAt, state.user?.id])
+
   const logout = useCallback(() => dispatch({ type: "LOGOUT" }), [])
+
   useEffect(() => { setUnauthorizedHandler(logout) }, [logout])
+
+  useEffect(() => {
+    setSessionRefresher(async () => {
+      if (!state.refreshToken) return null
+      const refreshed = await refreshSession(state.refreshToken)
+      dispatch({ type: "REFRESH", payload: refreshed })
+      return refreshed.token
+    })
+  }, [state.refreshToken])
 
   const login = useCallback((payload: AuthState) => {
     dispatch({ type: "LOGIN", payload })
@@ -67,11 +52,4 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       {children}
     </AuthContext.Provider>
   )
-}
-
-// eslint-disable-next-line react-refresh/only-export-components
-export function useAuth(): AuthContextValue {
-  const ctx = useContext(AuthContext)
-  if (!ctx) throw new Error("useAuth must be inside <AuthProvider>")
-  return ctx
 }

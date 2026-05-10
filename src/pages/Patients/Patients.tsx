@@ -1,11 +1,12 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { Topbar } from "../../components/layout/Topbar/Topbar"
 import { Card } from "../../components/ui/Card/Card"
 import { Badge } from "../../components/ui/Badge/Badge"
 import { Avatar } from "../../components/ui/Avatar/Avatar"
 import { Button } from "../../components/ui/Button/Button"
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog/ConfirmDialog"
-import { formatDate } from "../../utils"
+import { RefreshButton } from "../../components/ui/RefreshButton/RefreshButton"
+import { formatDate, sortByName, toTitleCase } from "../../utils"
 import type { PageId, Patient } from "../../types"
 import type { UseToastReturn } from "../../hooks/useToast"
 import styles from "./Patients.module.css"
@@ -18,6 +19,7 @@ interface PatientsProps {
   onDeletePatient?: (id: string) => void | Promise<void>
   canCreatePatient?: boolean
   toast?: UseToastReturn["toast"]
+  onRefresh?: () => void | Promise<unknown>
 }
 
 const SearchIcon = () => (
@@ -37,16 +39,22 @@ const TrashIcon = () => (
   </svg>
 )
 
-export function Patients({ patients, onNavigate, onEditPatient, onViewProfile, onDeletePatient, canCreatePatient = true }: PatientsProps) {
+export function Patients({ patients, onNavigate, onEditPatient, onViewProfile, onDeletePatient, canCreatePatient = true, onRefresh }: PatientsProps) {
   const [search, setSearch]             = useState("")
   const [filterStatus, setFilterStatus] = useState<"All" | "Active" | "Inactive">("All")
   const [confirmId, setConfirmId]       = useState<string | null>(null)
 
-  const filtered = patients.filter((p) =>
+  // Normaliza nome para exibicao e ordena alfabeticamente (case-insensitive, pt-BR).
+  const orderedPatients = useMemo(() => {
+    const normalized = patients.map((p) => ({ ...p, name: toTitleCase(p.name) }))
+    return sortByName(normalized, (p) => p.name)
+  }, [patients])
+
+  const filtered = orderedPatients.filter((p) =>
     (filterStatus === "All" || p.status === filterStatus) &&
     (p.name.toLowerCase().includes(search.toLowerCase()) || p.cpf.includes(search))
   )
-  const confirmTarget = patients.find((p) => p.id === confirmId)
+  const confirmTarget = orderedPatients.find((p) => p.id === confirmId)
   const FILTER_LABELS = { All: "Todos", Active: "Ativo", Inactive: "Inativo" } as const
 
   function handleDeleteConfirm() {
@@ -54,12 +62,21 @@ export function Patients({ patients, onNavigate, onEditPatient, onViewProfile, o
     setConfirmId(null)
   }
 
+  const headerAction = (
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+      {onRefresh && <RefreshButton onRefresh={onRefresh} />}
+      {canCreatePatient && (
+        <Button onClick={() => onNavigate("register")} icon={<PlusIcon />}>Novo paciente</Button>
+      )}
+    </div>
+  )
+
   return (
     <div>
       <Topbar
         title="Pacientes"
         subtitle={`${patients.length} pacientes cadastrados`}
-        action={canCreatePatient ? <Button onClick={() => onNavigate("register")} icon={<PlusIcon />}>Novo paciente</Button> : undefined}
+        action={headerAction}
       />
       <div className={styles.filters}>
         <div className={styles.searchWrapper}>

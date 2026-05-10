@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react"
-import { AuthProvider, useAuth } from "./contexts/AuthContext"
+import { AuthProvider } from "./contexts/AuthContext"
+import { useAuth }      from "./contexts/authStore"
 import { AppRouter } from "./AppRouter"
 import { Login } from "./pages/Login/Login"
 import { ToastContainer } from "./components/ui/ToastContainer/ToastContainer"
@@ -19,10 +20,12 @@ function AppInner() {
 
   function handleLogin(res: LoginResponse) {
     login({
-      user:       res.user,
-      token:      res.token,
-      clinicId:   res.clinicId,
-      clinicName: res.clinicName,
+      user:         res.user,
+      token:        res.token,
+      refreshToken: res.refreshToken,
+      expiresAt:    res.expiresAt,
+      clinicId:     res.clinicId,
+      clinicName:   res.clinicName,
     })
     toast(`Bem-vindo(a), ${res.user.name}!`, "success")
   }
