@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { Sidebar }        from "./components/layout/Sidebar/Sidebar"
+import { AIAssistant }    from "./components/ui/AIAssistant/AIAssistant"
 import { ToastContainer } from "./components/ui/ToastContainer/ToastContainer"
 import { Dashboard }      from "./pages/Dashboard/Dashboard"
 import { Patients }       from "./pages/Patients/Patients"
@@ -26,7 +27,7 @@ import styles from "./App.module.css"
 interface AppRouterProps { darkMode: boolean; onToggleDark: () => void }
 
 export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
-  const { user, logout } = useAuth()
+  const { user, logout, clinicName } = useAuth()
 
   const {
     patients, addPatient, addPatientWithPassword, createPatientAccess, updatePatient, deletePatient,
@@ -365,6 +366,7 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
         </div>
       </main>
       <ToastContainer toasts={toasts} onDismiss={dismiss} />
+      <AIAssistant currentUser={currentUser} clinicName={clinicName} />
     </div>
   )
 }

@@ -1,3 +1,4 @@
+export { AIAssistant }  from "./AIAssistant/AIAssistant"
 export { Avatar }       from "./Avatar/Avatar"
 export { Badge }        from "./Badge/Badge"
 export { Button }       from "./Button/Button"
