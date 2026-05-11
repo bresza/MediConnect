@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { createPatientAccount, login as authLogin, requestPasswordReset } from "../../services/auth"
 import type { LoginResponse } from "../../services/auth"
+import { formatCpfBR, formatPhoneBR } from "../../utils"
 import styles from "./Login.module.css"
 
 interface LoginProps {
@@ -166,8 +167,9 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
                     <label className={styles.label}>CPF</label>
                     <input
                       type="text" placeholder="000.000.000-00" value={cpf}
-                      onChange={(e) => { setCpf(e.target.value); setError(null); setSuccess(null) }}
+                      onChange={(e) => { setCpf(formatCpfBR(e.target.value)); setError(null); setSuccess(null) }}
                       className={styles.input} autoComplete="off"
+                      inputMode="numeric" maxLength={14}
                     />
                   </div>
                   <div className={styles.fieldGroup}>
@@ -183,8 +185,9 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
                   <label className={styles.label}>Telefone</label>
                   <input
                     type="tel" placeholder="(00) 00000-0000" value={phone}
-                    onChange={(e) => { setPhone(e.target.value); setError(null); setSuccess(null) }}
+                    onChange={(e) => { setPhone(formatPhoneBR(e.target.value)); setError(null); setSuccess(null) }}
                     className={styles.input} autoComplete="tel"
+                    inputMode="tel" maxLength={15}
                   />
                 </div>
               </>

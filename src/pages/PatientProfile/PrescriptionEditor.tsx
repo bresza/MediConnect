@@ -1,6 +1,6 @@
 import { useState, useRef } from "react"
 import { Button } from "../../components/ui/Button/Button"
-import { formatDate } from "../../utils"
+import { formatCrm, formatDate } from "../../utils"
 import type { Patient, Prescription, PrescriptionMedication, User } from "../../types"
 import styles from "./PrescriptionEditor.module.css"
 
@@ -430,7 +430,7 @@ export function PrescriptionEditor({ patient, currentUser, onClose, onSave }: Pr
               <p className={styles.infoBlockTitle}>Médico emitente</p>
               <p className={styles.infoBlockName}>{currentUser.name}</p>
               <p className={styles.infoBlockSub}>
-                {currentUser.crm ? `CRM: ${currentUser.crm}` : ""}
+                {currentUser.crm ? `CRM: ${formatCrm(currentUser.crm)}` : ""}
                 {currentUser.specialty ? ` · ${currentUser.specialty}` : ""}
               </p>
             </div>
@@ -776,7 +776,7 @@ function PrescriptionPreview({ patient, currentUser, date, rxType, meds, cid10, 
         <div className={styles.rxSignature}>
           <div className={styles.rxSignatureLine} />
           <p className={styles.rxDoctorName}>{currentUser.name}</p>
-          {currentUser.crm && <p className={styles.rxDoctorInfo}>CRM: {currentUser.crm}</p>}
+          {currentUser.crm && <p className={styles.rxDoctorInfo}>CRM: {formatCrm(currentUser.crm)}</p>}
           {currentUser.specialty && <p className={styles.rxDoctorInfo}>{currentUser.specialty}</p>}
         </div>
       </div>

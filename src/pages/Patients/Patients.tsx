@@ -6,7 +6,7 @@ import { Avatar } from "../../components/ui/Avatar/Avatar"
 import { Button } from "../../components/ui/Button/Button"
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog/ConfirmDialog"
 import { RefreshButton } from "../../components/ui/RefreshButton/RefreshButton"
-import { formatDate, sortByName, toTitleCase } from "../../utils"
+import { formatCpfBR, formatDate, onlyDigits, sortByName, toTitleCase } from "../../utils"
 import type { PageId, Patient } from "../../types"
 import type { UseToastReturn } from "../../hooks/useToast"
 import styles from "./Patients.module.css"
@@ -50,10 +50,17 @@ export function Patients({ patients, onNavigate, onEditPatient, onViewProfile, o
     return sortByName(normalized, (p) => p.name)
   }, [patients])
 
-  const filtered = orderedPatients.filter((p) =>
-    (filterStatus === "All" || p.status === filterStatus) &&
-    (p.name.toLowerCase().includes(search.toLowerCase()) || p.cpf.includes(search))
-  )
+  const filtered = orderedPatients.filter((p) => {
+    if (filterStatus !== "All" && p.status !== filterStatus) return false
+    const q = search.trim()
+    if (!q) return true
+    const qLower = q.toLowerCase()
+    const qDigits = onlyDigits(q)
+    if (p.name.toLowerCase().includes(qLower)) return true
+    if (p.email?.toLowerCase().includes(qLower)) return true
+    if (qDigits && onlyDigits(p.cpf).includes(qDigits)) return true
+    return false
+  })
   const confirmTarget = orderedPatients.find((p) => p.id === confirmId)
   const FILTER_LABELS = { All: "Todos", Active: "Ativo", Inactive: "Inativo" } as const
 
@@ -114,7 +121,7 @@ export function Patients({ patients, onNavigate, onEditPatient, onViewProfile, o
                           <div><p className={styles.patientName}>{p.name}</p><p className={styles.patientEmail}>{p.email}</p></div>
                         </div>
                       </td>
-                      <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}>{p.cpf}</td>
+                      <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}>{formatCpfBR(p.cpf) || "—"}</td>
                       <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}>{p.healthInsurance ?? "—"}</td>
                       <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}>{p.lastVisit ? formatDate(p.lastVisit) : "—"}</td>
                       <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}><Badge>{p.status}</Badge></td>

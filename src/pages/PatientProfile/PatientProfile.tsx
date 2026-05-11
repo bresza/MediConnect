@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { Avatar } from "../../components/ui/Avatar/Avatar"
 import { Button } from "../../components/ui/Button/Button"
-import { formatDate } from "../../utils"
+import { formatCpfBR, formatDate, formatPhoneBR } from "../../utils"
 import { PrescriptionEditor } from "./PrescriptionEditor"
 import type { PageId, Patient, Appointment, Prescription, User } from "../../types"
 import styles from "./PatientProfile.module.css"
@@ -140,7 +140,7 @@ export function PatientProfile({
               <p className={styles.heroInsurance}>
                 {patient.healthInsurance ?? "Particular"}
                 {patient.healthInsuranceNumber ? ` · Nº ${patient.healthInsuranceNumber}` : ""}
-                {" · "} CPF: {patient.cpf}
+                {" · "} CPF: {formatCpfBR(patient.cpf) || "—"}
               </p>
               <div className={styles.heroBadges}>
                 <span className={`${styles.statusBadge} ${patient.status === "Active" ? styles.statusActive : styles.statusInactive}`}>
@@ -295,12 +295,12 @@ export function PatientProfile({
               {/* Quick contact */}
               <SectionCard title="Contato">
                 <dl className={styles.contactDl}>
-                  <InfoItem label="Celular"    value={patient.phone} />
+                  <InfoItem label="Celular"    value={formatPhoneBR(patient.phone)} />
                   <InfoItem label="E-mail"     value={patient.email} />
                   {patient.emergencyContact && (
                     <InfoItem
                       label="Emergência"
-                      value={`${patient.emergencyContact.name} · ${patient.emergencyContact.phone}`}
+                      value={`${patient.emergencyContact.name} · ${formatPhoneBR(patient.emergencyContact.phone)}`}
                     />
                   )}
                   {patient.address && (
@@ -359,7 +359,7 @@ export function PatientProfile({
               <dl className={styles.infoGrid}>
                 <InfoItem label="Nome completo"      value={patient.name} />
                 <InfoItem label="Nome social"        value={patient.socialName} />
-                <InfoItem label="CPF"                value={patient.cpf} />
+                <InfoItem label="CPF"                value={formatCpfBR(patient.cpf)} />
                 <InfoItem label="RG"                 value={patient.rg} />
                 <InfoItem label="Sexo"               value={GENDER_MAP[patient.gender]} />
                 <InfoItem label="Data de nascimento" value={patient.dob ? formatDate(patient.dob) : undefined} />
@@ -374,10 +374,10 @@ export function PatientProfile({
 
             <SectionCard title="Contato">
               <dl className={styles.infoGrid}>
-                <InfoItem label="Celular"                value={patient.phone} />
+                <InfoItem label="Celular"                value={formatPhoneBR(patient.phone)} />
                 <InfoItem label="E-mail"                 value={patient.email} />
-                <InfoItem label="Telefone fixo"          value={patient.landline} />
-                <InfoItem label="Telefone alternativo"   value={patient.alternativePhone} />
+                <InfoItem label="Telefone fixo"          value={formatPhoneBR(patient.landline)} />
+                <InfoItem label="Telefone alternativo"   value={formatPhoneBR(patient.alternativePhone)} />
                 <InfoItem label="Canal preferido"        value={patient.preferredChannel ? CHANNEL_MAP[patient.preferredChannel] : undefined} />
               </dl>
               {patient.emergencyContact && (
@@ -386,7 +386,7 @@ export function PatientProfile({
                   <dl className={styles.infoGrid}>
                     <InfoItem label="Nome"       value={patient.emergencyContact.name} />
                     <InfoItem label="Parentesco" value={patient.emergencyContact.relationship} />
-                    <InfoItem label="Telefone"   value={patient.emergencyContact.phone} />
+                    <InfoItem label="Telefone"   value={formatPhoneBR(patient.emergencyContact.phone)} />
                   </dl>
                 </>
               )}
@@ -421,7 +421,7 @@ export function PatientProfile({
                   <InfoItem label="Pai"              value={patient.fatherName} />
                   <InfoItem label="Profissão do pai" value={patient.fatherOccupation} />
                   <InfoItem label="Responsável"      value={patient.guardianName} />
-                  <InfoItem label="CPF do responsável" value={patient.guardianCpf} />
+                  <InfoItem label="CPF do responsável" value={formatCpfBR(patient.guardianCpf)} />
                   <InfoItem label="Cônjuge"          value={patient.spouseName} />
                 </dl>
               </SectionCard>
