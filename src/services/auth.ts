@@ -158,10 +158,16 @@ export async function createPatientAccount(payload: PatientSignupPayload): Promi
     email,
     password,
     full_name: name,
+    phone,
     phone_mobile: phone,
     cpf,
     birth_date: payload.dob || undefined,
+    dob:        payload.dob || undefined,
     redirect_url: window.location.origin,
+    // Solicita que a conta ja seja criada com o e-mail confirmado.
+    // Funcoes que nao aceitam esses campos simplesmente ignoram.
+    email_confirm: true,
+    auto_confirm: true,
   }
 
   async function postRegisterPatient(path: string) {
@@ -191,6 +197,13 @@ export async function createPatientAccount(payload: PatientSignupPayload): Promi
       return claimExistingPatientAccount({ name, email, password, cpf, phone, dob: payload.dob })
     }
 
+    // Fallback: alguns ambientes nao expoem `register-patient`. Caimos no
+    // endpoint generico create-user-with-password, que tambem cria o patient_record
+    // quando informamos `role=paciente` e `create_patient_record=true`.
+    if (res.status === 404 || res.status === 400 || res.status === 422) {
+      return createPatientViaGenericEndpoint({ name, email, password, cpf, phone, dob: payload.dob })
+    }
+
     const message = readableError(parsed) ?? raw ?? "Erro ao criar conta de paciente."
     throw new Error(message)
   }
@@ -201,6 +214,71 @@ export async function createPatientAccount(payload: PatientSignupPayload): Promi
     patient_id: data?.patient_id,
     user_id: data?.user_id,
     email: data?.email ?? email,
+    message: data?.message ?? "Conta criada com sucesso. Entre com seu e-mail e senha.",
+  }
+}
+
+// Fallback: cria conta de paciente via /functions/v1/create-user-with-password
+// quando register-patient nao esta disponivel no projeto.
+async function createPatientViaGenericEndpoint(input: ClaimPatientInput): Promise<PatientSignupResponse> {
+  const payload = {
+    email: input.email,
+    password: input.password,
+    full_name: input.name,
+    phone: input.phone || undefined,
+    phone_mobile: input.phone || undefined,
+    cpf: input.cpf || undefined,
+    birth_date: input.dob || undefined,
+    dob:        input.dob || undefined,
+    role: "paciente",
+    create_patient_record: true,
+    redirect_url: window.location.origin,
+    email_confirm: true,
+    auto_confirm: true,
+  }
+
+  async function post(path: string): Promise<Response> {
+    return fetchWithTimeout(`${SUPABASE_URL}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "apikey": SUPABASE_ANON_KEY },
+      body: JSON.stringify(payload),
+    })
+  }
+
+  let res = await post("/functions/v1/create-user-with-password")
+  if (res.status === 404) res = await post("/create-user-with-password")
+
+  if (!res.ok) {
+    const raw = await res.text().catch(() => "")
+    const parsed = safeJsonParse(raw)
+
+    if (isExistingAuthUserError(parsed)) {
+      throw new Error(
+        "Este e-mail já possui acesso ao portal. Use a opção \"Esqueci minha senha\" para redefinir o acesso.",
+      )
+    }
+
+    if (isExistingPatientError(parsed)) {
+      return claimExistingPatientAccount(input)
+    }
+
+    const message = readableError(parsed) ?? raw ?? "Não foi possível criar sua conta. Verifique os dados e tente novamente."
+    throw new Error(message)
+  }
+
+  const data = await res.json().catch(() => null) as Partial<{
+    user_id: string
+    user: { id?: string; email?: string }
+    patient_id: string
+    profile: { patient_id?: string }
+    message: string
+  }> | null
+
+  return {
+    success: true,
+    user_id: data?.user_id ?? data?.user?.id,
+    patient_id: data?.patient_id ?? data?.profile?.patient_id,
+    email: data?.user?.email ?? input.email,
     message: data?.message ?? "Conta criada com sucesso. Entre com seu e-mail e senha.",
   }
 }
@@ -267,6 +345,8 @@ async function claimExistingPatientAccount(input: ClaimPatientInput): Promise<Pa
     role: "paciente",
     create_patient_record: false,
     redirect_url: window.location.origin,
+    email_confirm: true,
+    auto_confirm: true,
   }
 
   async function post(path: string): Promise<Response> {
@@ -323,31 +403,77 @@ async function requestPasswordResetAt(path: string, email: string): Promise<Resp
     body: JSON.stringify({
       email,
       redirect_url: window.location.origin,
+      // O endpoint nativo /auth/v1/recover usa `redirect_to` em vez de `redirect_url`,
+      // entao mandamos ambos.
+      redirect_to: window.location.origin,
     }),
   })
 }
 
+/**
+ * Solicita o e-mail de recuperacao de senha tentando, em ordem:
+ *  1) Edge Function customizada `/functions/v1/request-password-reset`
+ *  2) Alias curto `/request-password-reset` (projetos antigos)
+ *  3) Endpoint nativo do Supabase Auth `/auth/v1/recover` (sempre disponivel)
+ *
+ * Se a Edge Function falhar com erro de rede/CORS/404, caimos automaticamente
+ * no endpoint nativo para que o reset funcione mesmo sem Edge Function publicada.
+ */
 export async function requestPasswordReset(emailInput: string): Promise<PasswordResetResponse> {
   const email = emailInput.trim().toLowerCase()
   if (!email) throw new Error("Informe seu e-mail.")
 
-  let res = await requestPasswordResetAt("/functions/v1/request-password-reset", email)
-  if (res.status === 404) res = await requestPasswordResetAt("/request-password-reset", email)
+  // Tentativa 1: Edge Function customizada.
+  let res: Response | null = null
+  try {
+    res = await requestPasswordResetAt("/functions/v1/request-password-reset", email)
+    if (res.status === 404) {
+      res = await requestPasswordResetAt("/request-password-reset", email)
+    }
+  } catch {
+    res = null // erro de rede/CORS — cai no fallback nativo
+  }
 
-  if (!res.ok) {
-    const raw = await res.text().catch(() => "")
+  if (res && res.ok) {
+    const data = await res.json().catch(() => null) as Partial<PasswordResetResponse> | null
+    return {
+      success: data?.success ?? true,
+      message: data?.message ?? "E-mail de recuperação enviado. Verifique sua caixa de entrada.",
+    }
+  }
+
+  // Tentativa 2: endpoint nativo do Supabase Auth (sempre disponivel).
+  let nativeRes: Response
+  try {
+    nativeRes = await fetchWithTimeout(`${SUPABASE_URL}/auth/v1/recover`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({
+        email,
+        redirect_to: window.location.origin,
+      }),
+    })
+  } catch (err) {
+    if (isNetworkFailure(err)) throw new Error(connectionMessage())
+    throw err
+  }
+
+  if (!nativeRes.ok) {
+    const raw = await nativeRes.text().catch(() => "")
     let message = raw || "Não foi possível enviar o e-mail de recuperação."
     try {
       const parsed = JSON.parse(raw)
       message = parsed?.detail ?? parsed?.message ?? parsed?.error_description ?? parsed?.msg ?? parsed?.title ?? message
-    } catch { /* not json */ }
+    } catch { /* nao e json */ }
     throw new Error(message)
   }
 
-  const data = await res.json().catch(() => null) as Partial<PasswordResetResponse> | null
   return {
-    success: data?.success ?? true,
-    message: data?.message ?? "E-mail de recuperação enviado. Verifique sua caixa de entrada.",
+    success: true,
+    message: "E-mail de recuperação enviado. Verifique sua caixa de entrada (e a pasta de spam).",
   }
 }
 
@@ -529,7 +655,11 @@ async function withRoleLinks(user: User, token: string): Promise<User> {
 }
 
 export async function login(payload: LoginPayload): Promise<LoginResponse> {
-  // Passo 1 — autenticar
+  // Passo 1 — autenticar. Usamos sempre email/senha em formato normalizado
+  // (trim + lowercase no email) para evitar falhas por espaços invisiveis.
+  const normalizedEmail    = payload.email.trim().toLowerCase()
+  const normalizedPassword = payload.password.trim()
+
   let authRes: Response
   try {
     authRes = await fetchWithTimeout(
@@ -537,22 +667,28 @@ export async function login(payload: LoginPayload): Promise<LoginResponse> {
       {
         method: "POST",
         headers: { "Content-Type": "application/json", "apikey": SUPABASE_ANON_KEY },
-        body: JSON.stringify({ email: payload.email, password: payload.password }),
+        body: JSON.stringify({ email: normalizedEmail, password: normalizedPassword }),
       },
     )
   } catch (err) {
-    const local = localDevLogin(payload)
+    const local = localDevLogin({ email: normalizedEmail, password: normalizedPassword })
     if (local) return local
     throw err
   }
 
   if (!authRes.ok) {
     const err = await authRes.json().catch(() => ({}))
-    const message = err?.error_description ?? err?.message ?? ""
-    if (/email not confirmed|confirm/i.test(message)) {
-      throw new Error("Confirme o e-mail antes de fazer login.")
+    const message = err?.error_description ?? err?.message ?? err?.msg ?? ""
+    const code    = (err?.error ?? err?.code ?? "").toString().toLowerCase()
+    if (/email not confirmed|confirm/i.test(message) || code === "email_not_confirmed") {
+      throw new Error(
+        "Sua conta ainda não foi confirmada. Verifique seu e-mail e clique no link de confirmação.",
+      )
     }
-    throw new Error(message || "E-mail ou senha inválidos")
+    if (/invalid login|invalid.*credential|invalid.*password|invalid_grant/i.test(`${message} ${code}`)) {
+      throw new Error("E-mail ou senha inválidos.")
+    }
+    throw new Error(message || "E-mail ou senha inválidos.")
   }
 
   const authData: SupabaseAuthResponse = await authRes.json()
