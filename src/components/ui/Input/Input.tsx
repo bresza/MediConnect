@@ -1,5 +1,7 @@
-import type { ChangeEvent, FocusEvent, ReactNode } from "react"
+import type { ChangeEvent, FocusEvent, HTMLAttributes, ReactNode } from "react"
 import styles from "./Input.module.css"
+
+type InputMode = HTMLAttributes<HTMLInputElement>["inputMode"]
 
 interface InputProps {
   label?:        string
@@ -21,12 +23,16 @@ interface InputProps {
   min?:          string
   max?:          string
   readOnly?:     boolean
+  inputMode?:    InputMode
+  maxLength?:    number
+  pattern?:      string
 }
 
 export function Input({
   label, id, name, type = "text", placeholder, value, onChange, onBlur,
   required, disabled, error, hint, className = "", children,
   defaultValue, autoComplete, min, max, readOnly,
+  inputMode, maxLength, pattern,
 }: InputProps) {
   const inputId = id ?? name
   return (
@@ -42,6 +48,7 @@ export function Input({
           value={value} defaultValue={defaultValue} onChange={onChange} onBlur={onBlur}
           required={required} disabled={disabled} readOnly={readOnly}
           autoComplete={autoComplete} min={min} max={max}
+          inputMode={inputMode} maxLength={maxLength} pattern={pattern}
           className={`${styles.input} ${error ? styles.inputError : ""} ${disabled ? styles.inputDisabled : ""}`}
         />
       )}

@@ -10,7 +10,11 @@ import { Input } from "../../components/ui/Input/Input"
 import { Select } from "../../components/ui/Select/Select"
 import { Section } from "../../components/ui/Section/Section"
 import { RefreshButton } from "../../components/ui/RefreshButton/RefreshButton"
-import { formatCpfBR, formatPhoneBR, sortByName, toTitleCase } from "../../utils"
+import {
+  crmDigits, crmUf as parseCrmUf,
+  formatCpfBR, formatCrm, formatPhoneBR, onlyDigits,
+  sortByName, toTitleCase,
+} from "../../utils"
 import type { StaffMember, StaffRole, StaffStatus } from "../../types"
 import type { UseToastReturn } from "../../hooks/useToast"
 import type { UseStaffReturn } from "../../hooks/useStaff"
@@ -48,24 +52,31 @@ const EMPTY_FORM: StaffForm = {
 }
 
 function memberToForm(m: StaffMember): StaffForm {
-  const [crmNum = "", crmUf = ""] = (m.crm ?? "").split("-")
-  const cpfDigits = m.cpf?.replace(/\D/g, "") ?? ""
   return {
-    name: m.name, email: m.email, phone: m.phone, status: m.status,
-    cpf: cpfDigits ? formatCpfBR(cpfDigits) : "",
-    crmNum, crmUf, specialty: m.specialty ?? "",
-    department: m.department ?? "", password: "", confirmPassword: "",
+    name: m.name,
+    email: m.email,
+    phone: formatPhoneBR(m.phone ?? ""),
+    status: m.status,
+    cpf: formatCpfBR(m.cpf ?? ""),
+    crmNum: crmDigits(m.crm),
+    crmUf: parseCrmUf(m.crm),
+    specialty: m.specialty ?? "",
+    department: m.department ?? "",
+    password: "",
+    confirmPassword: "",
   }
 }
 
 function displayMaskedCpf(value?: string): string {
-  const digits = value?.replace(/\D/g, "") ?? ""
-  return digits ? formatCpfBR(digits) : "—"
+  return formatCpfBR(value) || "—"
 }
 
 function displayMaskedPhone(value?: string): string {
-  const digits = value?.replace(/\D/g, "") ?? ""
-  return digits ? formatPhoneBR(digits) : "—"
+  return formatPhoneBR(value) || "—"
+}
+
+function displayCrm(value?: string): string {
+  return formatCrm(value) || "—"
 }
 
 const SPECIALTIES = [
@@ -206,14 +217,18 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: Tea
     if (!validate() || isSaving) return
     setIsSaving(true)
     try {
+      const cpfDigits   = onlyDigits(form.cpf)
+      const phoneDigits = onlyDigits(form.phone)
+      const crmNumDigits = onlyDigits(form.crmNum)
+
       const base = {
         name:       form.name.trim(),
         email:      form.email.trim(),
-        phone:      form.phone.trim(),
+        phone:      phoneDigits,
         status:     form.status,
         role:       activeTab,
-        cpf:        form.cpf.replace(/\D/g, ""),
-        crm:        activeTab === "doctor" ? `${form.crmNum}-${form.crmUf}` : undefined,
+        cpf:        cpfDigits,
+        crm:        activeTab === "doctor" ? formatCrm(crmNumDigits, form.crmUf) : undefined,
         specialty:  activeTab === "doctor" ? form.specialty : undefined,
         department: activeTab !== "doctor" ? form.department.trim() : undefined,
       }
@@ -223,7 +238,7 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: Tea
         toast(`${form.name} atualizado com sucesso.`, "success")
       } else {
         const doctorExtra = activeTab === "doctor"
-          ? { cpf: form.cpf, crmNum: form.crmNum, crmUf: form.crmUf, specialty: form.specialty }
+          ? { cpf: cpfDigits, crmNum: crmNumDigits, crmUf: form.crmUf, specialty: form.specialty }
           : undefined
         await onAdd(base, form.password, doctorExtra)
         toast(`${form.name} cadastrado! Já pode acessar o sistema com o e-mail e senha definidos.`, "success")
@@ -315,7 +330,7 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: Tea
                     </td>
                     <td><p className={styles.cellMain}>{displayMaskedCpf(member.cpf)}</p></td>
                     {activeTab === "doctor"
-                      ? <td><p className={styles.cellMain}>{member.crm ?? "—"}</p><p className={styles.cellSub}>{member.specialty ?? "—"}</p></td>
+                      ? <td><p className={styles.cellMain}>{displayCrm(member.crm)}</p><p className={styles.cellSub}>{member.specialty ?? "—"}</p></td>
                       : <td><p className={styles.cellMain}>{member.department ?? "—"}</p></td>
                     }
                     <td><p className={styles.cellMain}>{displayMaskedPhone(member.phone)}</p></td>
@@ -357,8 +372,8 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: Tea
                 error={errors.name} required className={styles.colSpan2} />
               <Input label="E-mail" type="email" value={form.email} onChange={(e) => handleChange("email", e.target.value)}
                 error={errors.email} required />
-              <Input label="Telefone" value={form.phone} onChange={(e) => handleChange("phone", e.target.value)}
-                error={errors.phone} required placeholder="(00) 00000-0000" />
+              <Input label="Telefone" value={form.phone} onChange={(e) => handleChange("phone", formatPhoneBR(e.target.value))}
+                error={errors.phone} required placeholder="(00) 00000-0000" inputMode="tel" maxLength={15} />
               <Select label="Status" value={form.status} onChange={(e) => handleChange("status", e.target.value)} options={["Active", "Inactive"]} />
             </div>
           </Section>
@@ -367,10 +382,10 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: Tea
           {activeTab === "doctor" && (
             <Section title="Dados profissionais">
               <div className={styles.grid2}>
-                <Input label="CPF" value={form.cpf} onChange={(e) => handleChange("cpf", e.target.value)}
-                  error={errors.cpf} required placeholder="000.000.000-00" className={styles.colSpan2} />
-                <Input label="Número CRM" value={form.crmNum} onChange={(e) => handleChange("crmNum", e.target.value)}
-                  error={errors.crmNum} required placeholder="Ex: 123456" />
+                <Input label="CPF" value={form.cpf} onChange={(e) => handleChange("cpf", formatCpfBR(e.target.value))}
+                  error={errors.cpf} required placeholder="000.000.000-00" inputMode="numeric" maxLength={14} className={styles.colSpan2} />
+                <Input label="Número CRM" value={form.crmNum} onChange={(e) => handleChange("crmNum", onlyDigits(e.target.value).slice(0, 7))}
+                  error={errors.crmNum} required placeholder="Ex: 123456" inputMode="numeric" maxLength={7} />
                 <Select label="UF do CRM" value={form.crmUf} onChange={(e) => handleChange("crmUf", e.target.value)}
                   options={UF_LIST} required />
                 <Select label="Especialidade" value={form.specialty} onChange={(e) => handleChange("specialty", e.target.value)}
@@ -383,8 +398,8 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: Tea
           {(activeTab === "secretary" || activeTab === "manager") && (
             <Section title="Dados profissionais">
               <div className={styles.grid2}>
-                <Input label="CPF" required value={form.cpf} onChange={(e) => handleChange("cpf", e.target.value)}
-                  error={errors.cpf} placeholder="000.000.000-00" />
+                <Input label="CPF" required value={form.cpf} onChange={(e) => handleChange("cpf", formatCpfBR(e.target.value))}
+                  error={errors.cpf} placeholder="000.000.000-00" inputMode="numeric" maxLength={14} />
                 <Input label="Departamento" value={form.department} onChange={(e) => handleChange("department", e.target.value)}
                   placeholder={activeTab === "secretary" ? "Ex: Recepção" : "Ex: Gestão Geral"} />
               </div>

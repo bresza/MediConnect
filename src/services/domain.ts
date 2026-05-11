@@ -192,6 +192,30 @@ function compactPayload(payload: Record<string, unknown>): Record<string, unknow
   )
 }
 
+/**
+ * Reconhece respostas tipo "ja existe" emitidas por diferentes camadas
+ * (PostgREST, Edge Functions custom, gateway). Cobre status 409 e 400
+ * com mensagens em pt-BR e en-US.
+ */
+function isDoctorAlreadyExistsError(err: ApiError): boolean {
+  if (err.status === 409) return true
+  if (err.status !== 400) return false
+  const message = (err.message ?? "").toLowerCase()
+  return (
+    message.includes("already exists") ||
+    message.includes("already registered") ||
+    message.includes("duplicate") ||
+    message.includes("conflict") ||
+    message.includes("ja cadastrado") ||
+    message.includes("já cadastrado") ||
+    message.includes("ja existe") ||
+    message.includes("já existe") ||
+    message.includes("ja foi cadastrado") ||
+    message.includes("já foi cadastrado") ||
+    message.includes("23505")
+  )
+}
+
 function addressToDoctorApi(address?: StaffMember["address"]): Record<string, unknown> {
   if (!address) return {}
   return compactPayload({
@@ -429,7 +453,10 @@ export async function createStaffMember(
 
   const userId = res?.user?.id ?? res?.user_id ?? ""
 
-  // Passo 2: se médico, criar registro na tabela doctors
+  // Passo 2: se médico, criar registro na tabela doctors. Algumas APIs
+  // ja criam o doctor no passo 1 (create-user-with-password). Nesse caso
+  // o POST de create-doctor responde 400/409 ("already exists") e nao
+  // devemos tratar como falha — apenas sincronizamos os campos via PATCH.
   if (data.role === "doctor" && doctorExtra) {
     const doctorPayload = compactPayload({
       email:        data.email,
@@ -447,6 +474,7 @@ export async function createStaffMember(
       ...addressToDoctorApi(data.address),
     })
 
+    let needsSync = false
     try {
       await apiRequest("/functions/v1/create-doctor", {
         method: "POST",
@@ -454,11 +482,61 @@ export async function createStaffMember(
         logErrors: false,
       })
     } catch (err) {
-      if (!(err instanceof ApiError) || err.status !== 404) throw err
-      await apiRequest("/create-doctor", {
-        method: "POST",
-        body: doctorPayload,
+      if (err instanceof ApiError) {
+        if (err.status === 404) {
+          try {
+            await apiRequest("/create-doctor", {
+              method: "POST",
+              body: doctorPayload,
+              logErrors: false,
+            })
+          } catch (fallbackErr) {
+            if (fallbackErr instanceof ApiError && isDoctorAlreadyExistsError(fallbackErr)) {
+              needsSync = true
+            } else {
+              console.warn("[create-doctor] criacao do registro de medico falhou:", fallbackErr)
+              needsSync = true
+            }
+          }
+        } else if (isDoctorAlreadyExistsError(err)) {
+          // Doctor ja foi criado pelo passo 1 — apenas sincroniza os campos.
+          needsSync = true
+        } else {
+          // Outros erros (5xx etc) tambem caem em sync defensivo para nao
+          // bloquear o gestor — o auth user ja foi criado com sucesso.
+          console.warn("[create-doctor] falha nao bloqueante:", err)
+          needsSync = true
+        }
+      } else {
+        console.warn("[create-doctor] erro inesperado:", err)
+        needsSync = true
+      }
+    }
+
+    if (needsSync && userId) {
+      const patchBody = compactPayload({
+        full_name: data.name,
+        email:     data.email,
+        phone:     data.phone || undefined,
+        phone_mobile: data.phone || undefined,
+        cpf:       doctorExtra.cpf.replace(/\D/g, "") || undefined,
+        crm:       doctorExtra.crmNum,
+        crm_uf:    doctorExtra.crmUf.toUpperCase(),
+        specialty: doctorExtra.specialty,
+        active:    data.status !== "Inactive",
       })
+      try {
+        await apiRequest(`/rest/v1/doctors?id=eq.${encodeURIComponent(userId)}`, {
+          method: "PATCH",
+          headers: { Prefer: "return=minimal" },
+          body: patchBody,
+          logErrors: false,
+        })
+      } catch (patchErr) {
+        // Se o PATCH tambem falhar (RLS, schema mismatch) apenas registramos
+        // — o cadastro principal ja foi feito e o gestor pode editar depois.
+        console.warn("[doctors] sincronizacao pos-criacao falhou:", patchErr)
+      }
     }
   }
 

@@ -1,4 +1,12 @@
-export { formatCpfBR, formatPhoneBR, onlyDigits } from "./masks"
+export {
+  crmDigits,
+  crmUf,
+  formatCepBR,
+  formatCpfBR,
+  formatCrm,
+  formatPhoneBR,
+  onlyDigits,
+} from "./masks"
 
 // ─── Time helpers ─────────────────────────────────────────────────
 export function timeToMinutes(time: string): number {

@@ -5,6 +5,9 @@ import { Button }   from "../../components/ui/Button/Button"
 import { Input }    from "../../components/ui/Input/Input"
 import { Select }   from "../../components/ui/Select/Select"
 import { Section }  from "../../components/ui/Section/Section"
+import {
+  formatCepBR, formatCpfBR, formatPhoneBR,
+} from "../../utils"
 import type { PageId, Patient } from "../../types"
 import styles from "./Registration.module.css"
 
@@ -177,7 +180,7 @@ function toForm(p: Patient): FormState {
     photoUrl: p.photoUrl ?? "",
 
     // ─── STEP 2 — Documentos ────────────────────────────
-    cpf: p.cpf ?? "",
+    cpf: formatCpfBR(p.cpf ?? ""),
     rg: p.rg ?? "",
     rgIssuer: "",
     rgState: "",
@@ -193,7 +196,7 @@ function toForm(p: Patient): FormState {
     legacyCode: "",
 
     // ─── STEP 3 — Endereço ──────────────────────────────
-    zipCode: p.address?.zipCode ?? "",
+    zipCode: formatCepBR(p.address?.zipCode ?? ""),
     street: p.address?.street ?? "",
     addressNumber: p.address?.number ?? "",
     complement: p.address?.complement ?? "",
@@ -203,9 +206,9 @@ function toForm(p: Patient): FormState {
     reference: p.address?.reference ?? "",
 
     // ─── STEP 4 — Contato e Família ─────────────────────
-    phone: p.phone ?? "",
-    landline: p.landline ?? "",
-    alternativePhone: p.alternativePhone ?? "",
+    phone: formatPhoneBR(p.phone ?? ""),
+    landline: formatPhoneBR(p.landline ?? ""),
+    alternativePhone: formatPhoneBR(p.alternativePhone ?? ""),
     email: p.email ?? "",
 
     preferredChannel: fromChannel(p.preferredChannel),
@@ -217,12 +220,12 @@ function toForm(p: Patient): FormState {
     fatherName: p.fatherName ?? "",
     fatherOccupation: p.fatherOccupation ?? "",
     guardianName: p.guardianName ?? "",
-    guardianCpf: p.guardianCpf ?? "",
+    guardianCpf: formatCpfBR(p.guardianCpf ?? ""),
     spouseName: p.spouseName ?? "",
 
     emergencyName: p.emergencyContact?.name ?? "",
     emergencyRelation: p.emergencyContact?.relationship ?? "",
-    emergencyPhone: p.emergencyContact?.phone ?? "",
+    emergencyPhone: formatPhoneBR(p.emergencyContact?.phone ?? ""),
     createPortalAccess: false,
     portalPassword: "",
     portalConfirmPassword: "",
@@ -432,8 +435,8 @@ export function Registration({
       healthInsurance:        form.healthInsurance && form.healthInsurance !== "Nenhum (Particular)" ? form.healthInsurance : undefined,
       healthInsuranceNumber:  form.healthInsuranceNumber || undefined,
       phone:                  form.phone.replace(/\D/g, ""),
-      landline:               form.landline || undefined,
-      alternativePhone:       form.alternativePhone || undefined,
+      landline:               form.landline ? form.landline.replace(/\D/g, "") : undefined,
+      alternativePhone:       form.alternativePhone ? form.alternativePhone.replace(/\D/g, "") : undefined,
       email:                  form.email.trim(),
       preferredChannel:       toChannel(form.preferredChannel),
       communicationFrequency: toFrequency(form.communicationFrequency),
@@ -443,15 +446,15 @@ export function Registration({
       fatherName:             form.fatherName || undefined,
       fatherOccupation:       form.fatherOccupation || undefined,
       guardianName:           form.guardianName || undefined,
-      guardianCpf:            form.guardianCpf || undefined,
+      guardianCpf:            form.guardianCpf ? form.guardianCpf.replace(/\D/g, "") : undefined,
       spouseName:             form.spouseName || undefined,
       emergencyContact: form.emergencyName ? {
         name:         form.emergencyName,
         relationship: form.emergencyRelation,
-        phone:        form.emergencyPhone,
+        phone:        form.emergencyPhone.replace(/\D/g, ""),
       } : undefined,
       address: form.street ? {
-        zipCode:      form.zipCode,
+        zipCode:      form.zipCode.replace(/\D/g, ""),
         street:       form.street,
         number:       form.addressNumber,
         complement:   form.complement || undefined,
@@ -659,8 +662,8 @@ export function Registration({
           <>
             <Section title="Documentos de identificação">
               <div className={`${styles.grid3} ${styles.marginTop}`}>
-                <Input label="CPF" required placeholder="000.000.000-00"
-                  value={form.cpf} onChange={(e) => set("cpf", e.target.value)} error={errors.cpf} />
+                <Input label="CPF" required placeholder="000.000.000-00" inputMode="numeric" maxLength={14}
+                  value={form.cpf} onChange={(e) => set("cpf", formatCpfBR(e.target.value))} error={errors.cpf} />
                 <Input label="RG" placeholder="0000000"
                   value={form.rg} onChange={(e) => set("rg", e.target.value)} />
                 <Input label="Órgão emissor RG" placeholder="SSP"
@@ -700,9 +703,9 @@ export function Registration({
         {step === 3 && (
           <Section title="Endereço residencial">
             <div className={`${styles.grid3} ${styles.marginTop}`}>
-              <Input label="CEP" placeholder="00000-000"
+              <Input label="CEP" placeholder="00000-000" inputMode="numeric" maxLength={9}
                 value={form.zipCode}
-                onChange={(e) => set("zipCode", e.target.value)}
+                onChange={(e) => set("zipCode", formatCepBR(e.target.value))}
                 onBlur={handleCepBlur} />
               <Input label="Logradouro / Rua" placeholder="Nome da rua"
                 value={form.street} onChange={(e) => set("street", e.target.value)}
@@ -729,12 +732,12 @@ export function Registration({
           <>
             <Section title="Contatos">
               <div className={`${styles.grid3} ${styles.marginTop}`}>
-                <Input label="Celular" required placeholder="(00) 00000-0000"
-                  value={form.phone} onChange={(e) => set("phone", e.target.value)} error={errors.phone} />
-                <Input label="Telefone fixo" placeholder="(00) 0000-0000"
-                  value={form.landline} onChange={(e) => set("landline", e.target.value)} />
-                <Input label="Telefone alternativo" placeholder="(00) 00000-0000"
-                  value={form.alternativePhone} onChange={(e) => set("alternativePhone", e.target.value)} />
+                <Input label="Celular" required placeholder="(00) 00000-0000" inputMode="tel" maxLength={15}
+                  value={form.phone} onChange={(e) => set("phone", formatPhoneBR(e.target.value))} error={errors.phone} />
+                <Input label="Telefone fixo" placeholder="(00) 0000-0000" inputMode="tel" maxLength={15}
+                  value={form.landline} onChange={(e) => set("landline", formatPhoneBR(e.target.value))} />
+                <Input label="Telefone alternativo" placeholder="(00) 00000-0000" inputMode="tel" maxLength={15}
+                  value={form.alternativePhone} onChange={(e) => set("alternativePhone", formatPhoneBR(e.target.value))} />
                 <Input label="E-mail" type="email" required placeholder="exemplo@email.com"
                   value={form.email} onChange={(e) => set("email", e.target.value)} error={errors.email} />
                 <Select label="Canal de comunicação preferido" options={CHANNELS}
@@ -753,8 +756,8 @@ export function Registration({
                   value={form.emergencyName} onChange={(e) => set("emergencyName", e.target.value)} />
                 <Select label="Grau de parentesco" options={RELATIONS}
                   value={form.emergencyRelation} onChange={(e) => set("emergencyRelation", e.target.value)} />
-                <Input label="Telefone do contato" placeholder="(00) 00000-0000"
-                  value={form.emergencyPhone} onChange={(e) => set("emergencyPhone", e.target.value)} />
+                <Input label="Telefone do contato" placeholder="(00) 00000-0000" inputMode="tel" maxLength={15}
+                  value={form.emergencyPhone} onChange={(e) => set("emergencyPhone", formatPhoneBR(e.target.value))} />
               </div>
             </Section>
 
@@ -801,8 +804,8 @@ export function Registration({
                   value={form.fatherOccupation} onChange={(e) => set("fatherOccupation", e.target.value)} />
                 <Input label="Nome do responsável (menores/incapazes)"
                   value={form.guardianName} onChange={(e) => set("guardianName", e.target.value)} />
-                <Input label="CPF do responsável"
-                  value={form.guardianCpf} onChange={(e) => set("guardianCpf", e.target.value)} />
+                <Input label="CPF do responsável" placeholder="000.000.000-00" inputMode="numeric" maxLength={14}
+                  value={form.guardianCpf} onChange={(e) => set("guardianCpf", formatCpfBR(e.target.value))} />
                 <Input label="Nome do cônjuge/companheiro(a)"
                   value={form.spouseName} onChange={(e) => set("spouseName", e.target.value)} />
               </div>

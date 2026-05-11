@@ -11,7 +11,7 @@ import { Avatar }  from "../../components/ui/Avatar/Avatar"
 import { Modal }   from "../../components/ui/Modal/Modal"
 import { Select }  from "../../components/ui/Select/Select"
 import { RefreshButton } from "../../components/ui/RefreshButton/RefreshButton"
-import { formatDate, sortByName, toTitleCase } from "../../utils"
+import { formatCrm, formatDate, sortByName, toTitleCase } from "../../utils"
 import styles from "./Reports.module.css"
 
 interface ReportsProps { currentUser: User; patients?: Patient[] }
@@ -215,7 +215,7 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
       .replace(/\[NOME DO PACIENTE\]/g, pName)
       .replace(/\[NOME DO MÉDICO\]/g, dName)
       .replace(/\[DATA\]/g, today)
-      .replace(/\[CRM\]/g, currentUser.crm ?? "[CRM]")
+      .replace(/\[CRM\]/g, formatCrm(currentUser.crm) || "[CRM]")
     setForm((prev) => ({
       ...prev,
       type:        t.exam,

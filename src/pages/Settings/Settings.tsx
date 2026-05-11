@@ -6,6 +6,7 @@ import { Input } from "../../components/ui/Input/Input"
 import { Button } from "../../components/ui/Button/Button"
 import { getProfileSettings, updateProfileSettings } from "../../services/settings"
 import type { ProfileSettings } from "../../services/settings"
+import { formatPhoneBR, onlyDigits } from "../../utils"
 import type { User } from "../../types"
 import styles from "./Settings.module.css"
 
@@ -36,7 +37,10 @@ export function Settings({ currentUser }: SettingsProps) {
     setIsLoading(true)
     setError(null)
     getProfileSettings(currentUser)
-      .then((settings) => { if (alive) setForm(settings) })
+      .then((settings) => {
+        if (!alive) return
+        setForm({ ...settings, phone: formatPhoneBR(settings.phone ?? "") })
+      })
       .catch((err) => { if (alive) setError(err instanceof Error ? err.message : "Erro ao carregar configurações") })
       .finally(() => { if (alive) setIsLoading(false) })
     return () => { alive = false }
@@ -54,8 +58,9 @@ export function Settings({ currentUser }: SettingsProps) {
     setError(null)
     setMessage(null)
     try {
-      const saved = await updateProfileSettings(form)
-      setForm(saved)
+      const payload = { ...form, phone: onlyDigits(form.phone) }
+      const saved = await updateProfileSettings(payload)
+      setForm({ ...saved, phone: formatPhoneBR(saved.phone ?? "") })
       setMessage("Configurações salvas.")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao salvar configurações")
@@ -112,8 +117,10 @@ export function Settings({ currentUser }: SettingsProps) {
                   <Input
                     label="Telefone"
                     value={form.phone}
-                    onChange={(e) => setField("phone", e.target.value)}
+                    onChange={(e) => setField("phone", formatPhoneBR(e.target.value))}
                     placeholder="(00) 00000-0000"
+                    inputMode="tel"
+                    maxLength={15}
                   />
                   <Input label="Perfil" value={form.role} disabled />
                 </div>
