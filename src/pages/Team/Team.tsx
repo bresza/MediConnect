@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useMemo, useRef, useState } from "react"
 import { Topbar } from "../../components/layout/Topbar/Topbar"
 import { Card } from "../../components/ui/Card/Card"
 import { Button } from "../../components/ui/Button/Button"
@@ -152,6 +152,7 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: Tea
   const [isSaving,      setIsSaving]      = useState(false)
   const [showPass,      setShowPass]      = useState(false)
   const [showConfirm,   setShowConfirm]   = useState(false)
+  const saveLockRef = useRef(false)
 
   // Normaliza nomes (Title Case) e ordena alfabeticamente.
   const orderedStaff = useMemo(() => {
@@ -201,7 +202,7 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: Tea
     if (activeTab === "doctor") {
       if (!form.crmNum.trim())    e.crmNum    = "CRM obrigatório"
       if (!form.crmUf.trim())     e.crmUf     = "UF obrigatória"
-      if (!form.specialty.trim()) e.specialty = "Especialidade obrigatória"
+      if (!form.specialty.trim()) e.specialty = "Selecione uma especialidade"
     }
     if (!editingMember) {
       if (!form.password)             e.password        = "Senha obrigatória"
@@ -214,7 +215,9 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: Tea
   }
 
   async function handleSave() {
+    if (saveLockRef.current) return
     if (!validate() || isSaving) return
+    saveLockRef.current = true
     setIsSaving(true)
     try {
       const cpfDigits   = onlyDigits(form.cpf)
@@ -249,6 +252,7 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: Tea
       toast(raw, "error")
     } finally {
       setIsSaving(false)
+      saveLockRef.current = false
     }
   }
 
@@ -387,9 +391,9 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: Tea
                 <Input label="Número CRM" value={form.crmNum} onChange={(e) => handleChange("crmNum", onlyDigits(e.target.value).slice(0, 7))}
                   error={errors.crmNum} required placeholder="Ex: 123456" inputMode="numeric" maxLength={7} />
                 <Select label="UF do CRM" value={form.crmUf} onChange={(e) => handleChange("crmUf", e.target.value)}
-                  options={UF_LIST} required />
+                  options={UF_LIST} required error={errors.crmUf} />
                 <Select label="Especialidade" value={form.specialty} onChange={(e) => handleChange("specialty", e.target.value)}
-                  options={SPECIALTIES} required className={styles.colSpan2} />
+                  options={SPECIALTIES} required className={styles.colSpan2} error={errors.specialty} />
               </div>
             </Section>
           )}

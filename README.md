@@ -49,20 +49,44 @@ supabase functions deploy ai-chat --no-verify-jwt
 Se voce nao quiser deploy via Supabase agora, o widget exibe uma mensagem
 clara avisando que a funcao nao esta implantada.
 
-O frontend consome diretamente:
+## Endpoints consumidos pelo frontend
 
-- `POST /auth/v1/token?grant_type=password`
-- `POST /functions/v1/user-info`
-- `POST /functions/v1/create-user-with-password`
-- `POST /functions/v1/create-doctor`
-- `/rest/v1/patients`
-- `/rest/v1/appointments`
-- `/rest/v1/doctors`
-- `/rest/v1/profiles`
-- `/rest/v1/reports`
-- `/rest/v1/medical_records`
-- `/rest/v1/prescriptions`
-- `/rest/v1/financial_records`
+### Autenticacao nativa (sempre disponivel no Supabase)
+
+- `POST /auth/v1/token?grant_type=password` — login
+- `POST /auth/v1/token?grant_type=refresh_token` — refresh de sessao
+- `POST /auth/v1/recover` — reset de senha (fallback nativo)
+
+### Tabelas via PostgREST `/rest/v1/*`
+
+- `patients`, `appointments`, `doctors`, `profiles`, `user_roles`,
+  `reports` (laudos, prontuarios, receitas e lancamentos financeiros
+  usam essa tabela com `exam` distinto), `doctor_availability`,
+  `doctor_exceptions`.
+
+Cada tabela depende das policies de **RLS** do projeto. O frontend trata
+respostas `403`/`401` sem derrubar a sessao em chamadas de Edge Function;
+em `/rest/v1/*` um `401` aciona refresh + retry e, em ultimo caso, logout.
+
+### Edge Functions
+
+| Funcao                         | Obrigatoria? | Fallback no frontend                          |
+| ------------------------------ | :----------: | --------------------------------------------- |
+| `create-user-with-password`    | **Sim**      | nenhum — usada para criar staff e pacientes   |
+| `delete-user`                  | **Sim**      | nenhum — auth.users nao e acessivel via REST  |
+| `ai-chat`                      | **Sim***     | * apenas se o assistente IA for utilizado     |
+| `user-info`                    | Nao          | leitura direta em `profiles`/`patients`/`doctors` |
+| `register-patient`             | Nao          | cai em `create-user-with-password`            |
+| `request-password-reset`       | Nao          | cai em `/auth/v1/recover`                     |
+| `create-doctor`                | Nao          | PATCH em `/rest/v1/doctors` apos criar o user |
+| `create-patient`               | Nao          | insert direto em `/rest/v1/patients`          |
+| `get-available-slots`          | Nao          | calculo de slots no cliente                   |
+| `send-sms`                     | Nao          | mensagem de erro tratada                      |
+
+Para o assistente IA ver a secao acima sobre `ai-chat`. Para as demais,
+basta publicar com `supabase functions deploy <nome>` (o flag
+`--no-verify-jwt` so e necessario quando a propria funcao faz a
+validacao do JWT manualmente, como acontece em `ai-chat`).
 
 ## Scripts
 
@@ -72,12 +96,6 @@ npm run dev
 npm run build
 npm run lint
 ```
-
-## Contrato De Dados
-
-O app usa IDs de banco como `string` para pacientes, equipe, agenda, prontuários, receitas e financeiro. Campos enviados ao Supabase seguem `snake_case`; o frontend converte para os modelos em `camelCase` nos arquivos em `src/services`.
-
-Principais tabelas esperadas:
 
 ## Contrato De Dados
 

@@ -21,6 +21,7 @@ interface ApiAppointment {
 interface ApiDoctor {
   id: string
   full_name: string
+  active?: boolean | null
 }
 interface ApiProfile {
   id: string
@@ -532,14 +533,27 @@ async function getAvailableSlotsFromApi(
 }
 
 export async function getAppointmentDoctors(): Promise<AppointmentDoctor[]> {
+  // Nao filtramos por `active=eq.true` no PostgREST porque a coluna `active`
+  // pode nao existir em alguns projetos (causa 400). Filtramos client-side
+  // tratando ausencia / null como ativo (so excluimos active === false).
   const doctors = await apiRequest<ApiDoctor[]>(
-    "/rest/v1/doctors?select=id,full_name&active=eq.true&order=full_name.asc"
-  )
+    "/rest/v1/doctors?select=id,full_name,active&order=full_name.asc",
+  ).catch(async (err) => {
+    // Caso `active` realmente nao exista, refaz sem essa coluna.
+    if (err instanceof ApiError && err.status === 400) {
+      return apiRequest<ApiDoctor[]>(
+        "/rest/v1/doctors?select=id,full_name&order=full_name.asc",
+      )
+    }
+    throw err
+  })
 
-  return (doctors ?? []).map((doctor) => ({
-    id: doctor.id,
-    name: doctor.full_name,
-  }))
+  return (doctors ?? [])
+    .filter((doctor) => doctor.active !== false)
+    .map((doctor) => ({
+      id: doctor.id,
+      name: doctor.full_name,
+    }))
 }
 
 interface PatientLookup {

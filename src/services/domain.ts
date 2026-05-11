@@ -306,37 +306,69 @@ function staffIdentityKeys(member: StaffMember): string[] {
   ].filter(Boolean)
 }
 
-/** Perfis da equipe: colunas válidas no Supabase deste projeto (sem `phone_mobile` em `profiles`). */
+/** Erros de query PostgREST em GET de lista (coluna/order) — tenta variante seguinte. */
+function isRetryableStaffListError(err: unknown): boolean {
+  return err instanceof ApiError && (err.status === 400 || err.status === 406)
+}
+
+/** Medicos da equipe: tenta varias queries para evitar 400 (coluna/order incompativel). */
+async function loadDoctorsForStaff(): Promise<ApiDoctor[]> {
+  const paths = [
+    "/rest/v1/doctors?select=*&order=full_name.asc",
+    "/rest/v1/doctors?select=*",
+    "/rest/v1/doctors?select=id,full_name,email,cpf,crm,crm_uf,specialty,phone,phone_mobile,active,created_at&order=full_name.asc",
+    "/rest/v1/doctors?select=id,full_name,email,cpf,crm,crm_uf,specialty,phone,phone_mobile,active,created_at",
+    "/rest/v1/doctors?select=id,full_name,email,crm,crm_uf,specialty&order=full_name.asc",
+    "/rest/v1/doctors?select=id,full_name,email,crm,crm_uf,specialty",
+  ]
+  let lastErr: unknown
+  for (const path of paths) {
+    try {
+      return await apiRequest<ApiDoctor[]>(path, { logErrors: false })
+    } catch (err) {
+      lastErr = err
+      if (isRetryableStaffListError(err)) continue
+      throw err
+    }
+  }
+  console.warn("[getStaff] nao foi possivel carregar doctors com nenhuma variante de query:", lastErr)
+  return []
+}
+
+/** Perfis da equipe: colunas validas no Supabase deste projeto (sem `phone_mobile` em `profiles`). */
 async function loadProfilesForStaff(): Promise<ApiProfile[]> {
   const selects = [
     "id,full_name,email,phone,cpf,disabled,created_at",
     "id,full_name,email,phone,disabled,created_at",
+    "id,full_name,email,phone,cpf,created_at",
+    "id,full_name,email,phone,created_at",
+    "id,full_name,email,created_at",
   ]
   let lastErr: unknown
   for (const sel of selects) {
-    try {
-      return await apiRequest<ApiProfile[]>(
-        `/rest/v1/profiles?select=${sel}&order=full_name.asc`,
-      )
-    } catch (err) {
-      lastErr = err
-      const msg = err instanceof Error ? err.message : String(err)
-      const isBadColumn =
-        err instanceof ApiError &&
-        err.status === 400 &&
-        /column\s+[\w.]+\s+does not exist|Could not find/i.test(msg)
-      if (isBadColumn) continue
-      throw err
+    for (const withOrder of [true, false]) {
+      const suffix = withOrder ? `&order=full_name.asc` : ""
+      try {
+        return await apiRequest<ApiProfile[]>(
+          `/rest/v1/profiles?select=${encodeURIComponent(sel)}${suffix}`,
+          { logErrors: false },
+        )
+      } catch (err) {
+        lastErr = err
+        if (isRetryableStaffListError(err)) continue
+        throw err
+      }
     }
   }
-  throw lastErr instanceof Error ? lastErr : new Error("Falha ao carregar perfis.")
+  console.warn("[getStaff] nao foi possivel carregar profiles com nenhuma variante de query:", lastErr)
+  return []
 }
 
 export async function getStaff(): Promise<StaffMember[]> {
   const [doctors, profiles, userRoles] = await Promise.all([
-    apiRequest<ApiDoctor[]>("/rest/v1/doctors?select=*&order=full_name.asc"),
+    loadDoctorsForStaff(),
     loadProfilesForStaff(),
-    apiRequest<ApiUserRole[]>("/rest/v1/user_roles?select=user_id,role"),
+    apiRequest<ApiUserRole[]>("/rest/v1/user_roles?select=user_id,role", { logErrors: false }).catch(() => []),
   ])
   const doctorStaff  = (doctors  ?? []).map(apiDoctorToStaff)
   const roleByUserId = new Map(
