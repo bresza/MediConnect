@@ -23,12 +23,17 @@ VITE_OPENAI_MAX_TOKENS=600
 
 ## Assistente (ChatGPT)
 
-O widget de IA disponivel em todas as telas autenticadas chama a Edge Function
-[`supabase/functions/ai-chat`](./supabase/functions/ai-chat/README.md), que
-guarda a chave da OpenAI como **secret** do projeto Supabase. A chave nunca
-sai do servidor e nao aparece no bundle do front.
+O widget de IA disponivel em todas as telas autenticadas suporta **dois modos**, escolhidos automaticamente pelo `src/services/ai.ts`:
 
-Setup (uma unica vez):
+### Modo proxy (recomendado em producao)
+
+Chama a Edge Function [`supabase/functions/ai-chat`](./supabase/functions/ai-chat/README.md), que guarda a chave da OpenAI como **secret** do projeto Supabase. A chave nunca sai do servidor e nao aparece no bundle do front.
+
+### Modo direto (para quem nao tem acesso ao back)
+
+Se `VITE_OPENAI_API_KEY` estiver definido no `.env` (ou nas variaveis do Vercel), o front chama `https://api.openai.com/v1/chat/completions` direto, sem passar pela Edge Function. **A chave fica visivel no bundle** — use apenas em demo/squad ou com uma chave restrita por uso/cota. O painel do assistente exibe um aviso quando esse modo esta ativo.
+
+Setup do modo proxy (uma unica vez):
 
 ```bash
 # Login + link com o projeto

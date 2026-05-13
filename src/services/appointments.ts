@@ -538,12 +538,26 @@ export async function getAppointmentDoctors(): Promise<AppointmentDoctor[]> {
   // tratando ausencia / null como ativo (so excluimos active === false).
   const doctors = await apiRequest<ApiDoctor[]>(
     "/rest/v1/doctors?select=id,full_name,active&order=full_name.asc",
+    { logErrors: false },
   ).catch(async (err) => {
-    // Caso `active` realmente nao exista, refaz sem essa coluna.
-    if (err instanceof ApiError && err.status === 400) {
-      return apiRequest<ApiDoctor[]>(
-        "/rest/v1/doctors?select=id,full_name&order=full_name.asc",
-      )
+    // Caso `active` (ou `full_name`) realmente nao existam, refazemos com
+    // variantes mais conservadoras. As tentativas tambem nao logam para
+    // evitar ruido enquanto o schema do projeto ainda esta sendo migrado.
+    if (err instanceof ApiError && (err.status === 400 || err.status === 406)) {
+      try {
+        return await apiRequest<ApiDoctor[]>(
+          "/rest/v1/doctors?select=id,full_name&order=full_name.asc",
+          { logErrors: false },
+        )
+      } catch (err2) {
+        if (err2 instanceof ApiError && (err2.status === 400 || err2.status === 406)) {
+          return apiRequest<ApiDoctor[]>(
+            "/rest/v1/doctors?select=*",
+            { logErrors: false },
+          )
+        }
+        throw err2
+      }
     }
     throw err
   })

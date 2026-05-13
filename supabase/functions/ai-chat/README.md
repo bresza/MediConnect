@@ -13,12 +13,19 @@ supabase link --project-ref SEU_PROJECT_REF
 # 2. Define a chave da OpenAI como secret do projeto
 supabase secrets set OPENAI_API_KEY=sk-sua-chave-aqui
 
-# (opcional) restringe CORS a apenas o seu dominio
-supabase secrets set AI_CHAT_ALLOWED_ORIGIN=https://app.suaclinica.com
+# (opcional) restringe CORS aos seus dominios.
+# Aceita "*" ou lista separada por virgula (sem espaco entre as virgulas).
+# Em dev (Vite), http://localhost:5173 / http://127.0.0.1:5173 ja sao
+# liberados como fallback quando esta variavel NAO esta definida.
+supabase secrets set AI_CHAT_ALLOWED_ORIGIN="https://app.suaclinica.com,http://localhost:5173"
 
-# 3. Deploy (com --no-verify-jwt OU usando o config.toml deste repositorio)
+# 3. Deploy — `--no-verify-jwt` e obrigatorio (a propria funcao valida o JWT).
 supabase functions deploy ai-chat --no-verify-jwt
 ```
+
+> Se voce ja tinha feito deploy antes desta atualizacao, **rode o deploy de novo**:
+> sem esse novo deploy, o servidor continua devolvendo a versao antiga sem o
+> tratamento de varias origens.
 
 > Por que `--no-verify-jwt`? O gateway do Supabase, com `verify_jwt = true`,
 > rejeita o preflight `OPTIONS` do navegador (porque preflight nao manda

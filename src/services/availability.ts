@@ -156,9 +156,24 @@ async function findAvailability(
 export async function getAvailabilityDoctors(): Promise<AvailabilityDoctor[]> {
   // Usamos `select=*` para nao depender de colunas opcionais (ex.: `active`) que podem nao
   // existir em projetos antigos. O filtro de `active` e aplicado no client.
-  const data = await apiRequest<(ApiDoctor & { active?: boolean | null })[]>(
-    "/rest/v1/doctors?select=*&order=full_name.asc",
-  )
+  // Se a coluna `full_name` nao existir, retiramos o `order` e logamos
+  // silenciosamente — a ordenacao volta para o client.
+  let data: (ApiDoctor & { active?: boolean | null })[] | null = null
+  try {
+    data = await apiRequest<(ApiDoctor & { active?: boolean | null })[]>(
+      "/rest/v1/doctors?select=*&order=full_name.asc",
+      { logErrors: false },
+    )
+  } catch (err) {
+    if (err instanceof ApiError && (err.status === 400 || err.status === 406)) {
+      data = await apiRequest<(ApiDoctor & { active?: boolean | null })[]>(
+        "/rest/v1/doctors?select=*",
+        { logErrors: false },
+      )
+    } else {
+      throw err
+    }
+  }
 
   return (data ?? [])
     .filter((doctor) => doctor.active !== false)

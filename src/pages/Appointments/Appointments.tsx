@@ -13,11 +13,19 @@ import { Avatar } from "../../components/ui/Avatar/Avatar"
 import { Button } from "../../components/ui/Button/Button"
 import { RefreshButton } from "../../components/ui/RefreshButton/RefreshButton"
 import { Select } from "../../components/ui/Select/Select"
+import { WaitlistPanel, WaitlistSuggestionModal, type AddWaitlistInput } from "../../components/ui/Waitlist/Waitlist"
+import { ConsultationModal } from "../../components/ui/ConsultationModal/ConsultationModal"
+import { useWaitlist } from "../../hooks/useWaitlist"
+import { filterVisible, suggestForGap } from "../../services/waitlist"
 import { checkConflict, formatAppointmentType } from "../../utils"
 import { getAppointmentDoctors, getAvailableSlots, getDoctorAvailability } from "../../services/appointments"
 import type { DoctorAvailability } from "../../services/appointments"
-import type { Appointment, Patient, User } from "../../types"
+import type {
+  Appointment, FinancialRecord, MedicalRecord, Patient, Prescription, User, WaitlistEntry,
+} from "../../types"
 import styles from "./Appointments.module.css"
+
+type AppointmentsTab = "calendar" | "waitlist"
 
 type CalendarView = "timeGridDay" | "timeGridWeek" | "dayGridMonth" | "listWeek"
 
@@ -42,6 +50,10 @@ interface AppointmentsProps {
   onUpdateAppointment: (a: Appointment) => Promise<void>
   onDeleteAppointment?: (id: string) => Promise<void>
   onRefresh?: () => void | Promise<unknown>
+  /** Médico: criar prontuário + receita + cobrança ao concluir um atendimento. */
+  onAddMedicalRecord?:   (record: Omit<MedicalRecord, "id">) => Promise<MedicalRecord>
+  onAddPrescription?:    (p: Omit<Prescription, "id">) => Promise<Prescription | void>
+  onAddFinancialRecord?: (r: Omit<FinancialRecord, "id">) => Promise<FinancialRecord>
 }
 
 const VIEW_LABELS: Record<CalendarView, string> = {
@@ -146,12 +158,25 @@ export function Appointments({
   onUpdateAppointment,
   onDeleteAppointment,
   onRefresh,
+  onAddMedicalRecord,
+  onAddPrescription,
+  onAddFinancialRecord,
 }: AppointmentsProps) {
   const calendarRef = useRef<FullCalendar | null>(null)
   const slotRequestRef = useRef(0)
-  const isDoctor = currentUser.role === "doctor"
+  const isDoctor    = currentUser.role === "doctor"
+  const isManager   = currentUser.role === "manager" || currentUser.role === "admin"
+  const isSecretary = currentUser.role === "secretary"
   const canManage = true
+  /** Gestor/admin tem visão completa mas (regra do produto) não edita a fila. */
+  const canManageWaitlist = isDoctor || isSecretary
   const today = toDateStr(new Date())
+  const [activeTab, setActiveTab] = useState<AppointmentsTab>("calendar")
+  const [suggested, setSuggested] = useState<WaitlistEntry | null>(null)
+  const [consultationFor, setConsultationFor] = useState<Appointment | null>(null)
+
+  const waitlist = useWaitlist()
+  const canStartConsultation = isDoctor && !!onAddMedicalRecord && !!onAddFinancialRecord
 
   const [doctors, setDoctors] = useState<{ id: string; name: string }[]>([])
   const [isLoadingDoctors, setIsLoadingDoctors] = useState(true)
@@ -235,6 +260,14 @@ export function Appointments({
 
     return () => { active = false }
   }, [visibleDoctorIds])
+
+  const visibleWaitlist = useMemo(() => {
+    if (isDoctor) {
+      const currentDoctorId = currentDoctor?.id ?? currentUser.id
+      return filterVisible(waitlist.sorted, { doctorId: currentDoctorId })
+    }
+    return waitlist.sorted
+  }, [waitlist.sorted, isDoctor, currentDoctor?.id, currentUser.id])
 
   const visibleAppointments = useMemo(() => {
     if (isDoctor) {
@@ -549,6 +582,14 @@ export function Appointments({
   async function handleStatus(appointment: Appointment, status: Appointment["status"]) {
     await onUpdateAppointment({ ...appointment, status })
     setSelected((current) => current?.id === appointment.id ? { ...current, status } : current)
+
+    // Desistência → procura sugestão na fila de espera compatível com a vaga.
+    if (status === "cancelled" || status === "absent") {
+      const candidate = suggestForGap(visibleWaitlist, {
+        doctorId: appointment.doctorId,
+      })
+      if (candidate) setSuggested(candidate)
+    }
   }
 
   async function handleDeleteSelected(appointment: Appointment) {
@@ -584,6 +625,31 @@ export function Appointments({
     if (appointment) setSelected(appointment)
   }
 
+  async function handleAddToWaitlist(input: AddWaitlistInput) {
+    await waitlist.add(input)
+  }
+
+  function handleScheduleFromWaitlist(entry: WaitlistEntry) {
+    setActiveTab("calendar")
+    setSuggested(null)
+    setEditingAppointment(null)
+    const fallbackDoctor = entry.doctorId
+      ? doctors.find((d) => d.id === entry.doctorId)
+      : defaultDoctor()
+
+    setModal({
+      ...emptyModal(today),
+      patientId:   entry.patientId,
+      patientName: entry.patientName,
+      doctorId:    fallbackDoctor?.id ?? "",
+      doctorName:  fallbackDoctor?.name ?? "",
+    })
+    setShowModal(true)
+    setModalError(null)
+    setAvailableSlots([])
+    setSlotsError(null)
+  }
+
   const slotOptions = modal.doctorId && modal.date ? availableSlots : []
 
   return (
@@ -594,7 +660,7 @@ export function Appointments({
         action={
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
             {onRefresh && <RefreshButton onRefresh={onRefresh} />}
-            {canManage && (
+            {canManage && activeTab === "calendar" && (
               <Button onClick={() => openModal()} icon={<span aria-hidden="true">+</span>}>
                 Novo agendamento
               </Button>
@@ -603,6 +669,59 @@ export function Appointments({
         }
       />
 
+      <div role="tablist" aria-label="Visualização" style={{
+        display: "flex", gap: 8, padding: "0 0 12px", borderBottom: "1px solid var(--border, rgba(148,163,184,0.18))",
+        marginBottom: 12,
+      }}>
+        {([
+          { id: "calendar", label: "Agenda" },
+          { id: "waitlist", label: `Fila de espera${visibleWaitlist.length ? ` (${visibleWaitlist.length})` : ""}` },
+        ] as { id: AppointmentsTab; label: string }[]).map((t) => {
+          const active = activeTab === t.id
+          return (
+            <button
+              key={t.id}
+              role="tab"
+              aria-selected={active}
+              type="button"
+              onClick={() => setActiveTab(t.id)}
+              style={{
+                padding: "8px 14px",
+                background: "transparent",
+                border: "none",
+                borderBottom: active ? "2px solid var(--primary, #2563eb)" : "2px solid transparent",
+                color: active ? "var(--foreground, inherit)" : "var(--muted-foreground)",
+                fontWeight: active ? 600 : 500,
+                fontSize: 13,
+                cursor: "pointer",
+              }}
+            >
+              {t.label}
+            </button>
+          )
+        })}
+        {isManager && (
+          <span style={{ marginLeft: "auto", alignSelf: "center", fontSize: 11, color: "var(--muted-foreground)" }}>
+            Visualização gerencial (somente leitura na fila)
+          </span>
+        )}
+      </div>
+
+      {activeTab === "waitlist" ? (
+        <WaitlistPanel
+          entries={visibleWaitlist}
+          patients={patients}
+          doctors={doctors}
+          currentUser={currentUser}
+          canManage={canManageWaitlist}
+          loading={waitlist.loading}
+          error={waitlist.error}
+          onAdd={handleAddToWaitlist}
+          onUpdate={async (entry) => { await waitlist.update(entry) }}
+          onRemove={async (id) => { await waitlist.remove(id) }}
+          onScheduleFromEntry={handleScheduleFromWaitlist}
+        />
+      ) : (
       <div className={styles.layout}>
         <Card className={styles.calendarCard}>
           <div className={styles.toolbar}>
@@ -718,6 +837,11 @@ export function Appointments({
 
               {canManage && (
                 <div className={styles.detailActions}>
+                  {canStartConsultation && selected.status !== "completed" && selected.status !== "cancelled" && (
+                    <Button size="sm" variant="primary" onClick={() => setConsultationFor(selected)}>
+                      Atender paciente
+                    </Button>
+                  )}
                   <Button size="sm" variant="outline" onClick={() => openModal(undefined, selected)}>Editar</Button>
                   {selected.status !== "completed" && <Button size="sm" variant="ghost" onClick={() => handleStatus(selected, "completed")}>Concluir</Button>}
                   {selected.status !== "cancelled" && <Button size="sm" variant="danger" onClick={() => handleStatus(selected, "cancelled")}>Cancelar</Button>}
@@ -746,6 +870,47 @@ export function Appointments({
           </Card>
         </aside>
       </div>
+      )}
+
+      <ConsultationModal
+        isOpen={!!consultationFor && canStartConsultation}
+        onClose={() => setConsultationFor(null)}
+        appointment={consultationFor}
+        patient={consultationFor ? patients.find((p) => p.id === consultationFor.patientId) ?? null : null}
+        currentUser={currentUser}
+        onComplete={async ({ appointmentId, medicalRecord, prescription, financialRecord }) => {
+          if (!onAddMedicalRecord || !onAddFinancialRecord) return
+          await onAddMedicalRecord(medicalRecord)
+          if (prescription && onAddPrescription) {
+            await onAddPrescription(prescription)
+          }
+          await onAddFinancialRecord(financialRecord)
+          const target = appointments.find((a) => a.id === appointmentId)
+          if (target && target.status !== "completed") {
+            await onUpdateAppointment({ ...target, status: "completed" })
+          }
+          await onRefresh?.()
+        }}
+      />
+
+      <WaitlistSuggestionModal
+        isOpen={!!suggested}
+        entry={suggested}
+        onCancel={() => setSuggested(null)}
+        onAccept={(entry) => {
+          handleScheduleFromWaitlist(entry)
+        }}
+        onDismissEntry={(entry) => {
+          // Pula esse paciente: marca como removido e tenta o próximo.
+          void waitlist.update({ ...entry, status: "removed" }).then(() => {
+            const next = suggestForGap(
+              visibleWaitlist.filter((e) => e.id !== entry.id),
+              { doctorId: entry.doctorId },
+            )
+            setSuggested(next)
+          })
+        }}
+      />
 
       {showModal && (
         <div className={styles.modalOverlay} onClick={closeModal}>

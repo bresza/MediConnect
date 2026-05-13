@@ -1,9 +1,21 @@
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./api"
+import {
+  invokeRegisterPatient,
+  invokeRegisterPatientWithPassword,
+  isRegisterPatientConflict,
+  RegisterPatientApiError,
+} from "./registerPatient"
 import type { User, UserRole } from "../types"
 
 export interface LoginPayload  { email: string; password: string }
 export interface PatientSignupPayload {
-  name: string; email: string; password: string; cpf: string; phone: string; dob?: string
+  name: string
+  email: string
+  /** Opcional no fluxo magic link; obrigatoria no fallback `create-user-with-password` ou vinculo a paciente existente. */
+  password?: string
+  cpf: string
+  phone: string
+  dob?: string
 }
 export interface PatientSignupResponse {
   success: boolean
@@ -11,6 +23,10 @@ export interface PatientSignupResponse {
   user_id?: string
   message?: string
   email?: string
+  /** True quando a conta foi criada via `register-patient` (link no e-mail). */
+  magicLinkSent?: boolean
+  /** True quando o cadastro ja saiu pronto para login direto (senha definida). */
+  loginReady?: boolean
 }
 export interface LoginResponse {
   user: User; token: string; clinicId: string; clinicName: string
@@ -143,78 +159,108 @@ export async function refreshSession(refreshToken: string): Promise<RefreshSessi
 export async function createPatientAccount(payload: PatientSignupPayload): Promise<PatientSignupResponse> {
   const name = payload.name.trim()
   const email = payload.email.trim().toLowerCase()
-  const password = payload.password.trim()
+  const password = (payload.password ?? "").trim()
   const cpf = onlyDigits(payload.cpf)
   const phone = onlyDigits(payload.phone)
 
   if (!name) throw new Error("Informe seu nome completo.")
   if (!email) throw new Error("Informe seu e-mail.")
-  if (!password) throw new Error("Informe uma senha.")
-  if (password.length < 6) throw new Error("A senha deve ter pelo menos 6 caracteres.")
+  if (password && password.length < 6) throw new Error("A senha deve ter pelo menos 6 caracteres.")
   if (cpf.length !== 11) throw new Error("Informe um CPF válido com 11 dígitos.")
   if (!phone) throw new Error("Informe seu telefone.")
 
-  const requestBody = {
-    email,
-    password,
-    full_name: name,
-    phone,
-    phone_mobile: phone,
-    cpf,
-    birth_date: payload.dob || undefined,
-    dob:        payload.dob || undefined,
-    redirect_url: window.location.origin,
-    // Solicita que a conta ja seja criada com o e-mail confirmado.
-    // Funcoes que nao aceitam esses campos simplesmente ignoram.
-    email_confirm: true,
-    auto_confirm: true,
-  }
-
-  async function postRegisterPatient(path: string) {
-    return fetchWithTimeout(`${SUPABASE_URL}${path}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "apikey": SUPABASE_ANON_KEY,
-      },
-      body: JSON.stringify(requestBody),
+  if (password.length >= 6) {
+    return createPatientAccountWithPassword({
+      name, email, password, cpf, phone, dob: payload.dob,
     })
   }
 
-  // A documentacao oficial expoe a Edge Function em /functions/v1/...; o alias curto
-  // existia em ambientes antigos e e mantido apenas como fallback defensivo.
-  let res = await postRegisterPatient("/functions/v1/register-patient")
-  if (res.status === 404) res = await postRegisterPatient("/register-patient")
+  return createPatientAccountMagicLink({
+    name, email, cpf, phone, dob: payload.dob,
+  })
+}
 
-  if (!res.ok) {
-    const raw = await res.text().catch(() => "")
-    const parsed = safeJsonParse(raw)
+interface CreatePatientMagicLinkInput {
+  name:  string
+  email: string
+  cpf:   string
+  phone: string
+  dob?:  string
+}
 
-    // Paciente ja existe no cadastro (criado pela secretaria sem senha): em vez
-    // de retornar erro, criamos apenas a credencial via create-user-with-password,
-    // deixando o backend vincular o user ao paciente existente pelo CPF/e-mail.
-    if (isExistingPatientError(parsed)) {
-      return claimExistingPatientAccount({ name, email, password, cpf, phone, dob: payload.dob })
+async function createPatientAccountMagicLink(input: CreatePatientMagicLinkInput): Promise<PatientSignupResponse> {
+  const redirect_url = typeof window !== "undefined" ? window.location.origin : undefined
+  try {
+    const data = await invokeRegisterPatient({
+      email: input.email,
+      full_name: input.name,
+      phone_mobile: input.phone,
+      cpf: input.cpf,
+      birth_date: input.dob || undefined,
+      redirect_url,
+    })
+
+    return {
+      success: data?.success ?? true,
+      patient_id: typeof data?.patient_id === "string" ? data.patient_id : undefined,
+      user_id:    typeof data?.user_id === "string" ? data.user_id : undefined,
+      email:      (typeof data?.email === "string" ? data.email : null) ?? input.email,
+      message:
+        (typeof data?.message === "string" ? data.message : null) ??
+        "Enviamos um link de acesso para o seu e-mail. Abra a mensagem para concluir o primeiro acesso.",
+      magicLinkSent: true,
     }
+  } catch (err) {
+    if (!(err instanceof RegisterPatientApiError)) throw err
 
-    // Fallback: alguns ambientes nao expoem `register-patient`. Caimos no
-    // endpoint generico create-user-with-password, que tambem cria o patient_record
-    // quando informamos `role=paciente` e `create_patient_record=true`.
-    if (res.status === 404 || res.status === 400 || res.status === 422) {
-      return createPatientViaGenericEndpoint({ name, email, password, cpf, phone, dob: payload.dob })
+    if (isRegisterPatientConflict(err)) {
+      throw new Error(
+        `${err.message} Se você já tem cadastro na clínica sem acesso ao portal, defina uma senha nos campos abaixo e tente de novo. ` +
+        "Caso já tenha senha, use «Esqueci minha senha» na aba Entrar.",
+      )
     }
-
-    const message = readableError(parsed) ?? raw ?? "Erro ao criar conta de paciente."
-    throw new Error(message)
+    if (err.status === 404) {
+      throw new Error(
+        "Cadastro por e-mail não está disponível neste ambiente. Defina uma senha para tentar o fluxo alternativo.",
+      )
+    }
+    throw new Error(err.message)
   }
+}
 
-  const data = await res.json().catch(() => null) as Partial<PatientSignupResponse> | null
-  return {
-    success: data?.success ?? true,
-    patient_id: data?.patient_id,
-    user_id: data?.user_id,
-    email: data?.email ?? email,
-    message: data?.message ?? "Conta criada com sucesso. Entre com seu e-mail e senha.",
+async function createPatientAccountWithPassword(input: ClaimPatientInput): Promise<PatientSignupResponse> {
+  try {
+    const data = await invokeRegisterPatientWithPassword({
+      email:        input.email,
+      password:     input.password,
+      full_name:    input.name,
+      phone_mobile: input.phone,
+      cpf:          input.cpf,
+      birth_date:   input.dob || undefined,
+    })
+
+    return {
+      success: data?.success ?? true,
+      patient_id: typeof data?.patient_id === "string" ? data.patient_id : undefined,
+      user_id:    typeof data?.user_id === "string" ? data.user_id : undefined,
+      email:      (typeof data?.email === "string" ? data.email : null) ?? input.email,
+      message:
+        (typeof data?.message === "string" ? data.message : null) ??
+        "Conta criada com sucesso. Entrando…",
+      loginReady: true,
+    }
+  } catch (err) {
+    if (!(err instanceof RegisterPatientApiError)) throw err
+
+    if (isRegisterPatientConflict(err)) {
+      return claimExistingPatientAccount(input)
+    }
+
+    if (err.status === 404) {
+      return createPatientViaGenericEndpoint(input)
+    }
+
+    throw new Error(err.message)
   }
 }
 
@@ -240,7 +286,11 @@ async function createPatientViaGenericEndpoint(input: ClaimPatientInput): Promis
   async function post(path: string): Promise<Response> {
     return fetchWithTimeout(`${SUPABASE_URL}${path}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "apikey": SUPABASE_ANON_KEY },
+      headers: {
+        "Content-Type":  "application/json",
+        "apikey":        SUPABASE_ANON_KEY,
+        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+      },
       body: JSON.stringify(payload),
     })
   }
@@ -352,7 +402,11 @@ async function claimExistingPatientAccount(input: ClaimPatientInput): Promise<Pa
   async function post(path: string): Promise<Response> {
     return fetchWithTimeout(`${SUPABASE_URL}${path}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "apikey": SUPABASE_ANON_KEY },
+      headers: {
+        "Content-Type":  "application/json",
+        "apikey":        SUPABASE_ANON_KEY,
+        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+      },
       body: JSON.stringify(payload),
     })
   }

@@ -555,9 +555,23 @@ export async function getPatientByIdentity(identity: PatientIdentity): Promise<P
 }
 
 export async function getPatients(): Promise<Patient[]> {
-  const data = await apiRequest<ApiPatient[]>(
-    "/rest/v1/patients?select=*&order=full_name.asc",
-  )
+  // Tenta com `order=full_name.asc`; se o projeto Supabase nao tiver a
+  // coluna `full_name` (alguns esquemas usam `name` ou outro layout), o
+  // PostgREST devolve 400. Nesse caso refazemos sem o `order` para
+  // evitar erro no console e ordenamos client-side por nome.
+  let data: ApiPatient[] | null = null
+  try {
+    data = await apiRequest<ApiPatient[]>(
+      "/rest/v1/patients?select=*&order=full_name.asc",
+      { logErrors: false },
+    )
+  } catch (err) {
+    if (err instanceof ApiError && (err.status === 400 || err.status === 406)) {
+      data = await apiRequest<ApiPatient[]>("/rest/v1/patients?select=*", { logErrors: false })
+    } else {
+      throw err
+    }
+  }
   return (data ?? []).map((row) => {
     const patient = apiToPatient(row)
     rememberPatientLink({ patientId: patient.id, name: patient.name, email: patient.email, cpf: patient.cpf })

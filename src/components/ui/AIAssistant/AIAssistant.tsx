@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { ChatMessage } from "../../../services/ai"
 import {
-  AIError, buildSystemPrompt, chatComplete, getAIModel, isAIConfigured,
+  AIError, buildSystemPrompt, chatComplete, getAIMode, getAIModel, isAIConfigured,
 } from "../../../services/ai"
 import type { User, UserRole } from "../../../types"
 import styles from "./AIAssistant.module.css"
@@ -9,6 +9,8 @@ import styles from "./AIAssistant.module.css"
 interface AIAssistantProps {
   currentUser: User
   clinicName?: string | null
+  /** Resumo dos dados da API (sessao) para contextualizar respostas. */
+  apiContextSnapshot?: string
 }
 
 // ── Sugestoes iniciais por perfil ─────────────────────────────────
@@ -111,7 +113,7 @@ function saveHistory(userId: string, messages: UiMessage[]) {
   }
 }
 
-export function AIAssistant({ currentUser, clinicName }: AIAssistantProps) {
+export function AIAssistant({ currentUser, clinicName, apiContextSnapshot }: AIAssistantProps) {
   const [isOpen,    setIsOpen]    = useState(false)
   const [input,     setInput]     = useState("")
   const [messages,  setMessages]  = useState<UiMessage[]>(() => loadHistory(currentUser.id))
@@ -121,10 +123,17 @@ export function AIAssistant({ currentUser, clinicName }: AIAssistantProps) {
 
   const role = currentUser.role
   const configured = isAIConfigured()
+  const mode       = getAIMode()
 
   const systemPrompt = useMemo(
-    () => buildSystemPrompt({ role, userName: currentUser.name, clinicName: clinicName ?? undefined }),
-    [role, currentUser.name, clinicName],
+    () =>
+      buildSystemPrompt({
+        role: currentUser.role,
+        userName: currentUser.name,
+        clinicName: clinicName ?? undefined,
+        apiContextSnapshot: apiContextSnapshot ?? undefined,
+      }),
+    [currentUser.role, currentUser.name, clinicName, apiContextSnapshot],
   )
 
   const starters = STARTERS[role] ?? STARTERS.secretary
@@ -235,7 +244,28 @@ export function AIAssistant({ currentUser, clinicName }: AIAssistantProps) {
 
             {!configured && (
               <div className={styles.warning}>
-                Assistente nao configurado. Defina <code>VITE_OPENAI_API_KEY</code> no <code>.env</code> e reinicie o servidor de desenvolvimento.
+                Assistente nao configurado. Defina <code>VITE_GEMINI_API_KEY</code> (recomendado), <code>VITE_OPENAI_API_KEY</code> (OpenAI direto) ou configure a Edge Function <code>ai-chat</code> no Supabase.
+              </div>
+            )}
+
+            {configured && mode === "groq" && (
+              <div className={styles.disclaimer}>
+                Modo Groq ativo: chamada direta do front-end com tier free generoso. A chave esta no bundle &mdash; restrinja por dominio em producao.
+              </div>
+            )}
+            {configured && mode === "gemini" && (
+              <div className={styles.disclaimer}>
+                Modo Gemini ativo: a chave do Google esta no bundle do front. Restrinja a chave por dominio e mantenha cota baixa em producao.
+              </div>
+            )}
+            {configured && mode === "direct" && (
+              <div className={styles.disclaimer}>
+                Modo direto ativo: a chave da OpenAI esta no bundle do front. Use apenas em demo; em producao, prefira a Edge Function <code>ai-chat</code>.
+              </div>
+            )}
+            {configured && mode === "puter" && (
+              <div className={styles.disclaimer}>
+                Modo Puter.js ativo: <strong>exige login do usuario final</strong> em puter.com. Use apenas em demos isoladas.
               </div>
             )}
 
@@ -297,7 +327,7 @@ export function AIAssistant({ currentUser, clinicName }: AIAssistantProps) {
             <form className={styles.composer} onSubmit={handleSubmit}>
               <textarea
                 className={styles.textarea}
-                placeholder={configured ? "Pergunte algo..." : "Configure VITE_OPENAI_API_KEY no .env"}
+                placeholder={configured ? "Pergunte algo..." : "Configure VITE_OPENAI_API_KEY ou a Edge Function ai-chat"}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
