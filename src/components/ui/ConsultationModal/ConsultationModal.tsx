@@ -27,7 +27,7 @@
 // e mostra mensagem clara para o médico tentar novamente.
 // ─────────────────────────────────────────────────────────────────
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Modal } from "../Modal/Modal"
 import { Button } from "../Button/Button"
 import { Avatar } from "../Avatar/Avatar"
@@ -176,6 +176,14 @@ export function ConsultationModal({
   const [form, setForm]         = useState<ConsultationForm>(() => buildInitialForm(defaultPrice))
   const [error, setError]       = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    if (!isOpen) return
+    setTab("record")
+    setForm(buildInitialForm(defaultPrice))
+    setError(null)
+    setSubmitting(false)
+  }, [isOpen, appointment?.id, defaultPrice])
 
   function setField<K extends keyof ConsultationForm>(key: K, value: ConsultationForm[K]) {
     setForm((prev) => ({ ...prev, [key]: value }))
