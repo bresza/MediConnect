@@ -429,7 +429,9 @@ export function Registration({
       ethnicity:              toEthnicity(form.ethnicity),
       occupation:             form.occupation || undefined,
       isVip:                  form.isVip,
-      photoUrl:               form.photoUrl || undefined,
+      photoUrl:               isEditing
+        ? form.photoUrl
+        : (form.photoUrl || undefined),
       cpf:                    form.cpf.replace(/\D/g, ""),
       rg:                     form.rg || undefined,
       healthInsurance:        form.healthInsurance && form.healthInsurance !== "Nenhum (Particular)" ? form.healthInsurance : undefined,
@@ -608,7 +610,14 @@ export function Registration({
                   </div>
                 )}
                 <input ref={fileInputRef} type="file" accept="image/*" style={{ display:"none" }} onChange={(e) => {
-                  const file = e.target.files?.[0]; if (!file) return
+                  const file = e.target.files?.[0]
+                  if (!file) return
+                  if (file.size > 5 * 1024 * 1024) {
+                    setSaveError("A foto deve ter no maximo 5 MB.")
+                    e.target.value = ""
+                    return
+                  }
+                  setSaveError(null)
                   const reader = new FileReader()
                   reader.onload = (ev) => set("photoUrl", ev.target?.result as string)
                   reader.readAsDataURL(file)

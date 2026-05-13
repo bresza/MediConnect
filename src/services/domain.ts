@@ -1,5 +1,6 @@
 import { apiRequest, ApiError, getApiUserId } from "./api"
 import { MESSAGES, MESSAGE_TEMPLATES } from "../data/mock"
+import { formatSpecialtyLabel } from "../utils"
 import type {
   MedicalRecord, Prescription, Report, ReportStatus,
   Message, MessageTemplate, StaffMember, StaffRole, StaffStatus,
@@ -255,7 +256,7 @@ function apiDoctorToStaff(api: ApiDoctor): StaffMember {
     cpf:       cpfDigits || undefined,
     status:    (api.active !== false ? "Active" : "Inactive") as StaffStatus,
     crm:       api.crm ? `${api.crm}-${api.crm_uf ?? api.crm_state ?? ""}` : undefined,
-    specialty: api.specialty,
+    specialty: api.specialty ? formatSpecialtyLabel(api.specialty) : undefined,
     createdAt: api.created_at ?? new Date().toISOString().slice(0, 10),
   }
 }
@@ -335,29 +336,26 @@ async function loadDoctorsForStaff(): Promise<ApiDoctor[]> {
   return []
 }
 
-/** Perfis da equipe: colunas validas no Supabase deste projeto (sem `phone_mobile` em `profiles`). */
+/** Perfis da equipe: comeca pelo select minimo para evitar 400 no console (F12). */
 async function loadProfilesForStaff(): Promise<ApiProfile[]> {
-  const selects = [
-    "id,full_name,email,phone,cpf,disabled,created_at",
-    "id,full_name,email,phone,disabled,created_at",
-    "id,full_name,email,phone,cpf,created_at",
-    "id,full_name,email,phone,created_at",
-    "id,full_name,email,created_at",
+  const paths = [
+    "/rest/v1/profiles?select=id,full_name,email&order=full_name.asc",
+    "/rest/v1/profiles?select=id,full_name,email",
+    "/rest/v1/profiles?select=id,full_name,email,created_at&order=full_name.asc",
+    "/rest/v1/profiles?select=id,full_name,email,created_at",
+    "/rest/v1/profiles?select=id,full_name,email,phone,created_at&order=full_name.asc",
+    "/rest/v1/profiles?select=id,full_name,email,phone,created_at",
+    "/rest/v1/profiles?select=*&order=full_name.asc",
+    "/rest/v1/profiles?select=*",
   ]
   let lastErr: unknown
-  for (const sel of selects) {
-    for (const withOrder of [true, false]) {
-      const suffix = withOrder ? `&order=full_name.asc` : ""
-      try {
-        return await apiRequest<ApiProfile[]>(
-          `/rest/v1/profiles?select=${encodeURIComponent(sel)}${suffix}`,
-          { logErrors: false },
-        )
-      } catch (err) {
-        lastErr = err
-        if (isRetryableStaffListError(err)) continue
-        throw err
-      }
+  for (const path of paths) {
+    try {
+      return await apiRequest<ApiProfile[]>(path, { logErrors: false })
+    } catch (err) {
+      lastErr = err
+      if (isRetryableStaffListError(err)) continue
+      throw err
     }
   }
   console.warn("[getStaff] nao foi possivel carregar profiles com nenhuma variante de query:", lastErr)

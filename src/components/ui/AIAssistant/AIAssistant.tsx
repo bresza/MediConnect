@@ -3,6 +3,7 @@ import type { ChatMessage } from "../../../services/ai"
 import {
   AIError, buildSystemPrompt, chatComplete, getAIMode, getAIModel, isAIConfigured,
 } from "../../../services/ai"
+import { useSpeechRecognition } from "../../../hooks/useSpeechRecognition"
 import type { User, UserRole } from "../../../types"
 import styles from "./AIAssistant.module.css"
 
@@ -80,6 +81,12 @@ const SendIcon = () => (
     <polygon points="22 2 15 22 11 13 2 9 22 2" />
   </svg>
 )
+const MicIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" />
+    <path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8" />
+  </svg>
+)
 
 interface UiMessage extends ChatMessage {
   id:    string
@@ -90,16 +97,32 @@ function newId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
 
+const HISTORY_VERSION = "v4-groq"
+
 function historyKey(userId: string): string {
+  return `mediconnect:ai-history:${HISTORY_VERSION}:${userId}`
+}
+
+function legacyHistoryKey(userId: string): string {
   return `mediconnect:ai-history:${userId}`
+}
+
+/** Erros persistidos de versoes antigas (proxy ai-chat / mensagens desatualizadas). */
+function isStaleAssistantError(content: string): boolean {
+  return /ai-chat|Edge Function|no-verify-jwt|VITE_OPENAI_API_KEY no \.env/i.test(content)
 }
 
 function loadHistory(userId: string): UiMessage[] {
   try {
-    const raw = localStorage.getItem(historyKey(userId))
+    const raw =
+      localStorage.getItem(historyKey(userId))
+      ?? localStorage.getItem(legacyHistoryKey(userId))
     if (!raw) return []
     const parsed = JSON.parse(raw) as UiMessage[]
-    return Array.isArray(parsed) ? parsed.slice(-40) : []
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .filter((m) => !(m.error && m.role === "assistant" && isStaleAssistantError(m.content)))
+      .slice(-40)
   } catch {
     return []
   }
@@ -118,8 +141,10 @@ export function AIAssistant({ currentUser, clinicName, apiContextSnapshot }: AIA
   const [input,     setInput]     = useState("")
   const [messages,  setMessages]  = useState<UiMessage[]>(() => loadHistory(currentUser.id))
   const [isLoading, setIsLoading] = useState(false)
+  const [voiceError, setVoiceError] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const listRef  = useRef<HTMLDivElement | null>(null)
+  const handleSendRef = useRef<(text: string) => Promise<void>>(async () => {})
 
   const role = currentUser.role
   const configured = isAIConfigured()
@@ -137,6 +162,9 @@ export function AIAssistant({ currentUser, clinicName, apiContextSnapshot }: AIA
   )
 
   const starters = STARTERS[role] ?? STARTERS.secretary
+
+  // Recarrega historico ao trocar de usuario ou provider (remove erros legados do proxy).
+  useEffect(() => { setMessages(loadHistory(currentUser.id)) }, [currentUser.id, mode])
 
   // Persistencia local do historico ao mudar.
   useEffect(() => { saveHistory(currentUser.id, messages) }, [messages, currentUser.id])
@@ -184,6 +212,26 @@ export function AIAssistant({ currentUser, clinicName, apiContextSnapshot }: AIA
       abortRef.current = null
     }
   }, [messages, isLoading, configured, systemPrompt])
+
+  handleSendRef.current = handleSend
+
+  const { supported: voiceSupported, listening: voiceListening, toggle: toggleVoice, abort: abortVoice } = useSpeechRecognition({
+    lang: "pt-BR",
+    autoSendOnEnd: true,
+    onInterimTranscript: (text) => {
+      setVoiceError(null)
+      setInput(text)
+    },
+    onFinalTranscript: (text) => {
+      setInput("")
+      void handleSendRef.current(text)
+    },
+    onError: (message) => setVoiceError(message),
+  })
+
+  useEffect(() => {
+    if (!isOpen) abortVoice()
+  }, [isOpen, abortVoice])
 
   function handleClear() {
     abortRef.current?.abort()
@@ -248,33 +296,6 @@ export function AIAssistant({ currentUser, clinicName, apiContextSnapshot }: AIA
               </div>
             )}
 
-            {configured && mode === "groq" && (
-              <div className={styles.disclaimer}>
-                Modo Groq ativo: chamada direta do front-end com tier free generoso. A chave esta no bundle &mdash; restrinja por dominio em producao.
-              </div>
-            )}
-            {configured && mode === "gemini" && (
-              <div className={styles.disclaimer}>
-                Modo Gemini ativo: a chave do Google esta no bundle do front. Restrinja a chave por dominio e mantenha cota baixa em producao.
-              </div>
-            )}
-            {configured && mode === "direct" && (
-              <div className={styles.disclaimer}>
-                Modo direto ativo: a chave da OpenAI esta no bundle do front. Use apenas em demo; em producao, prefira a Edge Function <code>ai-chat</code>.
-              </div>
-            )}
-            {configured && mode === "puter" && (
-              <div className={styles.disclaimer}>
-                Modo Puter.js ativo: <strong>exige login do usuario final</strong> em puter.com. Use apenas em demos isoladas.
-              </div>
-            )}
-
-            {role === "patient" && (
-              <div className={styles.disclaimer}>
-                Este assistente fornece orientacoes gerais e nao substitui avaliacao medica. Em emergencias, procure um servico de saude.
-              </div>
-            )}
-
             <div className={styles.messages} ref={listRef}>
               {messages.length === 0 ? (
                 <div className={styles.empty}>
@@ -325,19 +346,47 @@ export function AIAssistant({ currentUser, clinicName, apiContextSnapshot }: AIA
             </div>
 
             <form className={styles.composer} onSubmit={handleSubmit}>
-              <textarea
-                className={styles.textarea}
-                placeholder={configured ? "Pergunte algo..." : "Configure VITE_OPENAI_API_KEY ou a Edge Function ai-chat"}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                rows={1}
-                disabled={!configured || isLoading}
-              />
+              <div className={styles.composerField}>
+                <textarea
+                  className={styles.textarea}
+                  placeholder={configured
+                    ? (voiceListening ? "Ouvindo... fale agora" : "Pergunte algo ou use o microfone")
+                    : "Configure VITE_OPENAI_API_KEY ou a Edge Function ai-chat"}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  rows={1}
+                  disabled={!configured || isLoading || voiceListening}
+                />
+                {voiceListening && (
+                  <span className={styles.listeningBadge} aria-live="polite">
+                    <span className={styles.listeningDot} />
+                    Gravando voz
+                  </span>
+                )}
+                {voiceError && !voiceListening && (
+                  <span className={styles.voiceError} role="alert">{voiceError}</span>
+                )}
+              </div>
+              <button
+                type="button"
+                className={`${styles.micBtn} ${voiceListening ? styles.micBtnActive : ""}`}
+                disabled={!configured || isLoading || !voiceSupported}
+                onClick={() => {
+                  setVoiceError(null)
+                  toggleVoice()
+                }}
+                aria-label={voiceListening ? "Parar gravacao e enviar" : "Enviar mensagem por voz"}
+                title={voiceSupported
+                  ? (voiceListening ? "Parar e enviar" : "Falar mensagem (pt-BR)")
+                  : "Reconhecimento de voz nao suportado neste navegador"}
+              >
+                <MicIcon />
+              </button>
               <button
                 type="submit"
                 className={styles.sendBtn}
-                disabled={!configured || isLoading || !input.trim()}
+                disabled={!configured || isLoading || !input.trim() || voiceListening}
                 aria-label="Enviar"
               >
                 <SendIcon />

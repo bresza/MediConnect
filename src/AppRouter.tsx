@@ -22,6 +22,7 @@ import { useAppointments }  from "./hooks/useAppointments"
 import { useMedicalData }   from "./hooks/useMedicalData"
 import { useFinancial }     from "./hooks/useFinancial"
 import { useStaff }         from "./hooks/useStaff"
+import { usePatientAIData } from "./hooks/usePatientAIData"
 import { useToast }         from "./hooks/useToast"
 import type { PageId, Patient } from "./types"
 import styles from "./App.module.css"
@@ -49,6 +50,7 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
     error: staffError, reload: reloadStaff,
   } = useStaff()
   const { toasts,       toast,         dismiss }                                       = useToast()
+  const patientAIData = usePatientAIData(user)
 
   const reloadAll = async () => {
     await Promise.all([
@@ -118,12 +120,19 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
     ? prescriptions.filter((p) => p.patientId === linkedPatientId)
     : isDoctor ? prescriptions.filter((p) => doctorPatientIds!.has(p.patientId)) : prescriptions
 
+  const aiPatients = isPatient
+    ? (patientAIData.patient ? [patientAIData.patient] : visiblePatients)
+    : visiblePatients
+  const aiAppointments = isPatient ? patientAIData.appointments : visibleAppointments
+  const aiPrescriptions = isPatient ? patientAIData.prescriptions : visiblePrescriptions
+
   const aiApiContextSnapshot = buildAIApiContextFromAppState({
     role:          currentUser.role,
-    patients:      visiblePatients,
-    appointments:  visibleAppointments,
-    prescriptions: visiblePrescriptions,
-    staff:           isPatient ? [] : staff,
+    patients:      aiPatients,
+    appointments:  aiAppointments,
+    prescriptions: aiPrescriptions,
+    staff:         isPatient ? [] : staff,
+    reports:       isPatient ? patientAIData.reports : undefined,
   })
 
   const dataErrors = [
@@ -205,6 +214,8 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
             patient={portalPatient}
             appointments={visibleAppointments}
             prescriptions={visiblePrescriptions}
+            onBookAppointment={addAppointment}
+            onUpdateAppointment={updateAppointment}
           />
         )
 

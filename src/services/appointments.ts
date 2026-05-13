@@ -33,6 +33,7 @@ interface ApiDoctorAvailability {
   start_time: string
   end_time: string
   slot_minutes?: number
+  appointment_type?: string
   active?: boolean
 }
 interface ApiDoctorException {
@@ -359,9 +360,13 @@ function buildDefaultSlots(date: string): string[] {
   return out
 }
 
-async function safeAvailabilitySlots(doctorId: string, date: string): Promise<string[]> {
+async function safeAvailabilitySlots(
+  doctorId: string,
+  date: string,
+  appointmentType: string,
+): Promise<string[]> {
   try {
-    return await getAvailableSlotsFromAvailability(doctorId, date)
+    return await getAvailableSlotsFromAvailability(doctorId, date, appointmentType)
   } catch (err) {
     if (err instanceof ApiError && [400, 404, 422, 500, 501, 502, 503].includes(err.status)) {
       return []
@@ -370,11 +375,18 @@ async function safeAvailabilitySlots(doctorId: string, date: string): Promise<st
   }
 }
 
+export interface GetAvailableSlotsOptions {
+  /** Quando false, nao inventa horario comercial se nao houver grade cadastrada. */
+  allowDefaultFallback?: boolean
+}
+
 export async function getAvailableSlots(
   doctorId: string,
   date: string,
   appointmentType = "presencial",
+  options: GetAvailableSlotsOptions = {},
 ): Promise<string[]> {
+  const { allowDefaultFallback = true } = options
   if (!doctorId || !date) return []
   if (date < localDate(new Date())) return []
 
@@ -382,21 +394,16 @@ export async function getAvailableSlots(
     const apiSlots = await getAvailableSlotsFromApi(doctorId, date, appointmentType)
     if (apiSlots.length > 0) return apiSlots
   } catch (err) {
-    // Se a Edge Function nao existir (404), nao estiver implantada (500/502/503)
-    // ou estiver com payload incompativel (400/422), caimos no calculo local
-    // baseado em doctor_availability + doctor_exceptions + appointments.
     if (!(err instanceof ApiError)) throw err
     const fallbackStatuses = [400, 404, 422, 500, 501, 502, 503]
     if (!fallbackStatuses.includes(err.status)) throw err
   }
 
-  const localSlots = await safeAvailabilitySlots(doctorId, date)
+  const localSlots = await safeAvailabilitySlots(doctorId, date, appointmentType)
   if (localSlots.length > 0) return localSlots
 
-  // Nem a Edge Function nem doctor_availability retornaram nada: oferecemos
-  // o horario comercial padrao para que o agendamento nao fique bloqueado por
-  // ausencia de dados de disponibilidade no backend. Os conflitos com outros
-  // agendamentos continuam validados pelo `checkConflict` da UI.
+  if (!allowDefaultFallback) return []
+
   return buildDefaultSlots(date)
 }
 
@@ -415,6 +422,7 @@ export async function getDoctorAvailability(doctorId: string): Promise<DoctorAva
 async function getAvailableSlotsFromAvailability(
   doctorId: string,
   date: string,
+  appointmentType = "presencial",
 ): Promise<string[]> {
   const today = localDate(new Date())
   if (date < today) return []
@@ -454,6 +462,7 @@ async function getAvailableSlotsFromAvailability(
   return (availability ?? [])
     .filter((row) => row.active !== false)
     .filter((row) => normalizeWeekday(row.weekday) === day)
+    .filter((row) => !row.appointment_type || row.appointment_type === appointmentType)
     .flatMap((row) => {
       const slotMinutes = row.slot_minutes ?? 30
       const start = timeToMinutes(row.start_time)

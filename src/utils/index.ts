@@ -136,3 +136,46 @@ const PAYMENT_METHOD_LABELS: Record<string, string> = {
 export function formatPaymentMethod(method: string): string {
   return PAYMENT_METHOD_LABELS[method] ?? method
 }
+
+// ─── Especialidades médicas ────────────────────────────────────────
+
+export function normalizeSpecialtyKey(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ")
+}
+
+const SPECIALTY_CANONICAL: Record<string, string> = {
+  "clinica geral":  "Clínica Geral",
+  "clinico geral":  "Clínica Geral",
+  "medico clinico": "Clínica Geral",
+  "medicina geral": "Clínica Geral",
+  "ginicologista":  "Ginecologista",
+  "ginicologia":    "Ginecologia",
+}
+
+/** "GINECOLOGISTA" → "Ginecologista"; "clinica geral" → "Clínica Geral". */
+export function formatSpecialtyLabel(raw?: string | null): string {
+  const trimmed = (raw ?? "").trim()
+  if (!trimmed) return "Clínica Geral"
+  const key = normalizeSpecialtyKey(trimmed)
+  if (SPECIALTY_CANONICAL[key]) return SPECIALTY_CANONICAL[key]
+  return toTitleCase(trimmed)
+}
+
+export function uniqueSpecialtyLabels(values: Array<string | undefined | null>): string[] {
+  const map = new Map<string, string>()
+  for (const raw of values) {
+    const label = formatSpecialtyLabel(raw)
+    const key = normalizeSpecialtyKey(label)
+    if (!map.has(key)) map.set(key, label)
+  }
+  return [...map.values()].sort((a, b) => a.localeCompare(b, "pt-BR"))
+}
+
+export function specialtyMatches(a: string, b: string): boolean {
+  return normalizeSpecialtyKey(a) === normalizeSpecialtyKey(b)
+}
