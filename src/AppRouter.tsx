@@ -87,20 +87,8 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
       (!!currentUser.patientCpf && onlyDigits(p.cpf) === currentUser.patientCpf) ||
       (!!currentUser.email && p.email?.toLowerCase().trim() === currentUser.email.toLowerCase().trim())) ?? null
     : null
-  const fallbackPatient: Patient | null = isPatient && !linkedPatient
-    ? {
-      id: currentUser.patientId ?? currentUser.id,
-      name: currentUser.name,
-      cpf: currentUser.patientCpf ?? "",
-      email: currentUser.email,
-      phone: currentUser.phone ?? "",
-      dob: currentUser.dob ?? "",
-      gender: "Other",
-      status: "Active",
-    }
-    : null
-  const portalPatient = linkedPatient ?? fallbackPatient
-  const linkedPatientId = portalPatient?.id ?? currentUser.patientId ?? ""
+  const portalPatient = linkedPatient
+  const linkedPatientId = linkedPatient?.id ?? currentUser.patientId ?? ""
 
   // Médico vê apenas seus próprios agendamentos e pacientes vinculados
   const doctorAppts      = isDoctor

@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { getPatientAppointmentsByIdentity } from "../services/appointments"
 import {
   getPatientPrescriptionsByIdentity,
   getPatientReportsByIdentity,
 } from "../services/domain"
 import { getPatientByIdentity } from "../services/patients"
-import { resolveRememberedPatientId } from "../services/patientLinks"
 import type { Appointment, Patient, Prescription, Report, User } from "../types"
 
 export interface PatientIdentity {
@@ -18,11 +17,7 @@ export interface PatientIdentity {
 
 function buildIdentity(user: User, seed?: Patient | null): PatientIdentity {
   const portal = seed ?? null
-  const patientId = resolveRememberedPatientId({
-    name:  portal?.name ?? user.name,
-    email: portal?.email ?? user.email,
-    cpf:   portal?.cpf ?? user.patientCpf,
-  }) ?? portal?.id ?? user.patientId ?? ""
+  const patientId = portal?.id ?? user.patientId ?? ""
 
   return {
     patientId: patientId || undefined,
@@ -46,14 +41,26 @@ export function usePatientAIData(user: User | null, seedPatient?: Patient | null
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([])
   const [reports,       setReports]       = useState<Report[]>([])
   const [loading,       setLoading]       = useState(false)
+  const requestSeqRef = useRef(0)
 
   const identity = useMemo(
-    () => (user ? buildIdentity(user, patient ?? seedPatient ?? null) : null),
-    [user, patient, seedPatient],
+    () => (user ? buildIdentity(user, seedPatient ?? null) : null),
+    [user, seedPatient],
   )
 
   const reload = useCallback(async () => {
-    if (!user || !identity) return
+    const requestId = ++requestSeqRef.current
+    const isCurrentRequest = () => requestSeqRef.current === requestId
+
+    if (!user || !identity) {
+      setPatient(seedPatient ?? null)
+      setAppointments([])
+      setPrescriptions([])
+      setReports([])
+      setLoading(false)
+      return
+    }
+
     setLoading(true)
     try {
       const linked = await getPatientByIdentity({
@@ -64,7 +71,9 @@ export function usePatientAIData(user: User | null, seedPatient?: Patient | null
         cpf:       seedPatient?.cpf ?? user.patientCpf,
       }).catch(() => seedPatient ?? null)
 
-      if (linked) setPatient(linked)
+      if (!isCurrentRequest()) return
+
+      setPatient(linked ?? seedPatient ?? null)
 
       const id = linked?.id ?? identity.patientId
       if (!id) {
@@ -87,11 +96,14 @@ export function usePatientAIData(user: User | null, seedPatient?: Patient | null
         getPatientPrescriptionsByIdentity(resolvedIdentity).catch(() => []),
         getPatientReportsByIdentity(resolvedIdentity).catch(() => []),
       ])
+
+      if (!isCurrentRequest()) return
+
       setAppointments(appts)
       setPrescriptions(rx)
       setReports(reps)
     } finally {
-      setLoading(false)
+      if (isCurrentRequest()) setLoading(false)
     }
   }, [user, identity, seedPatient])
 

@@ -865,7 +865,6 @@ export async function deletePatient(id: string): Promise<void> {
 
   if (userId) {
     await deletePatientAuthUser(userId)
-    return
   }
 
   try {

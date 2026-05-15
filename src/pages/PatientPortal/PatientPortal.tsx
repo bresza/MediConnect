@@ -12,8 +12,6 @@ import { getPatientAppointmentsByIdentity } from "../../services/appointments"
 
 import { getPatientByIdentity } from "../../services/patients"
 
-import { resolveRememberedPatientId } from "../../services/patientLinks"
-
 import { Topbar } from "../../components/layout/Topbar/Topbar"
 
 import { Card } from "../../components/ui/Card/Card"
@@ -101,6 +99,32 @@ function isFutureAppointment(appointment: Appointment): boolean {
   const date = new Date(`${appointment.date}T${appointment.time}:00`)
 
   return !Number.isNaN(date.getTime()) && date > new Date()
+
+}
+
+
+function onlyDigits(value?: string): string {
+
+  return value?.replace(/\D/g, "") ?? ""
+
+}
+
+
+function patientBelongsToUser(patient: Patient | null, user: User): boolean {
+
+  if (!patient) return false
+
+  const userCpf = onlyDigits(user.patientCpf)
+  const patientCpf = onlyDigits(patient.cpf)
+  const userEmail = user.email?.toLowerCase().trim()
+  const patientEmail = patient.email?.toLowerCase().trim()
+
+  return Boolean(
+    (user.patientId && patient.id === user.patientId) ||
+    (patient.userId && patient.userId === user.id) ||
+    (userCpf && patientCpf && userCpf === patientCpf) ||
+    (userEmail && patientEmail && userEmail === patientEmail),
+  )
 
 }
 
@@ -328,19 +352,11 @@ export function PatientPortal({
 
 
 
-  const portalPatient = resolvedPatient ?? patient
+  const safeResolvedPatient = patientBelongsToUser(resolvedPatient, currentUser) ? resolvedPatient : null
 
-  const rememberedPatientId = resolveRememberedPatientId({
+  const portalPatient = safeResolvedPatient ?? patient
 
-    name: portalPatient?.name ?? patient?.name ?? currentUser.name,
-
-    email: portalPatient?.email ?? patient?.email ?? currentUser.email,
-
-    cpf: portalPatient?.cpf ?? patient?.cpf ?? currentUser.patientCpf,
-
-  })
-
-  const patientId = rememberedPatientId ?? portalPatient?.id ?? currentUser.patientId ?? ""
+  const patientId = portalPatient?.id ?? currentUser.patientId ?? ""
 
   const patientIdentity = useMemo(() => ({
 
@@ -369,6 +385,8 @@ export function PatientPortal({
   useEffect(() => {
 
     let alive = true
+
+    setResolvedPatient(patient)
 
     getPatientByIdentity({
 
