@@ -101,9 +101,9 @@ export function PatientConsultationsView({
 
   const upcomingAppointments = useMemo(
     () => activeConsultations
-      .filter((a) => appointmentTs(a) > Date.now() && a.date !== today)
+      .filter((a) => a.date > today)
       .sort((a, b) => appointmentTs(a) - appointmentTs(b)),
-    [activeConsultations],
+    [activeConsultations, today],
   )
 
   const groupedUpcoming = useMemo(() => {
