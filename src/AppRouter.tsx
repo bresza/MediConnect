@@ -87,9 +87,9 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
       (!!currentUser.patientCpf && onlyDigits(p.cpf) === currentUser.patientCpf) ||
       (!!currentUser.email && p.email?.toLowerCase().trim() === currentUser.email.toLowerCase().trim())) ?? null
     : null
-  const fallbackPatient: Patient | null = isPatient && !linkedPatient
+  const fallbackPatient: Patient | null = isPatient && !linkedPatient && currentUser.patientId
     ? {
-      id: currentUser.patientId ?? currentUser.id,
+      id: currentUser.patientId,
       name: currentUser.name,
       cpf: currentUser.patientCpf ?? "",
       email: currentUser.email,

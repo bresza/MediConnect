@@ -24,7 +24,6 @@ function keysFor(input: PatientLinkInput): string[] {
   return [
     input.email ? `email:${normalizeText(input.email)}` : "",
     input.cpf ? `cpf:${onlyDigits(input.cpf)}` : "",
-    input.name ? `name:${normalizeText(input.name)}` : "",
   ].filter(Boolean)
 }
 

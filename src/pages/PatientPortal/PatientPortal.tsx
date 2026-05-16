@@ -340,7 +340,7 @@ export function PatientPortal({
 
   })
 
-  const patientId = rememberedPatientId ?? portalPatient?.id ?? currentUser.patientId ?? ""
+  const patientId = portalPatient?.id ?? currentUser.patientId ?? rememberedPatientId ?? ""
 
   const patientIdentity = useMemo(() => ({
 
