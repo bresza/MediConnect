@@ -364,9 +364,10 @@ async function safeAvailabilitySlots(
   doctorId: string,
   date: string,
   appointmentType: string,
+  excludeAppointmentId?: string,
 ): Promise<string[]> {
   try {
-    return await getAvailableSlotsFromAvailability(doctorId, date, appointmentType)
+    return await getAvailableSlotsFromAvailability(doctorId, date, appointmentType, excludeAppointmentId)
   } catch (err) {
     if (err instanceof ApiError && [400, 404, 422, 500, 501, 502, 503].includes(err.status)) {
       return []
@@ -378,6 +379,8 @@ async function safeAvailabilitySlots(
 export interface GetAvailableSlotsOptions {
   /** Quando false, nao inventa horario comercial se nao houver grade cadastrada. */
   allowDefaultFallback?: boolean
+  /** Ignora o proprio agendamento ao calcular horarios para reagendamento. */
+  excludeAppointmentId?: string
 }
 
 export async function getAvailableSlots(
@@ -386,20 +389,22 @@ export async function getAvailableSlots(
   appointmentType = "presencial",
   options: GetAvailableSlotsOptions = {},
 ): Promise<string[]> {
-  const { allowDefaultFallback = true } = options
+  const { allowDefaultFallback = true, excludeAppointmentId } = options
   if (!doctorId || !date) return []
   if (date < localDate(new Date())) return []
 
-  try {
-    const apiSlots = await getAvailableSlotsFromApi(doctorId, date, appointmentType)
-    if (apiSlots.length > 0) return apiSlots
-  } catch (err) {
-    if (!(err instanceof ApiError)) throw err
-    const fallbackStatuses = [400, 404, 422, 500, 501, 502, 503]
-    if (!fallbackStatuses.includes(err.status)) throw err
+  if (!excludeAppointmentId) {
+    try {
+      const apiSlots = await getAvailableSlotsFromApi(doctorId, date, appointmentType)
+      if (apiSlots.length > 0) return apiSlots
+    } catch (err) {
+      if (!(err instanceof ApiError)) throw err
+      const fallbackStatuses = [400, 404, 422, 500, 501, 502, 503]
+      if (!fallbackStatuses.includes(err.status)) throw err
+    }
   }
 
-  const localSlots = await safeAvailabilitySlots(doctorId, date, appointmentType)
+  const localSlots = await safeAvailabilitySlots(doctorId, date, appointmentType, excludeAppointmentId)
   if (localSlots.length > 0) return localSlots
 
   if (!allowDefaultFallback) return []
@@ -423,6 +428,7 @@ async function getAvailableSlotsFromAvailability(
   doctorId: string,
   date: string,
   appointmentType = "presencial",
+  excludeAppointmentId?: string,
 ): Promise<string[]> {
   const today = localDate(new Date())
   if (date < today) return []
@@ -441,6 +447,7 @@ async function getAvailableSlotsFromAvailability(
   ])
 
   const busyRanges = (appointments ?? [])
+    .filter((appointment) => appointment.id !== excludeAppointmentId)
     .filter((appointment) => localDate(new Date(appointment.scheduled_at)) === date)
     .filter((appointment) => appointment.status !== "cancelled")
     .map((appointment) => {

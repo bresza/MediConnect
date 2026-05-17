@@ -22,7 +22,7 @@ interface PatientRescheduleModalProps {
 }
 
 const APPOINTMENT_TYPE = "presencial"
-const SLOT_OPTIONS = { allowDefaultFallback: false } as const
+const SLOT_OPTIONS = { allowDefaultFallback: false }
 
 function todayStr(): string {
   const d = new Date()
@@ -91,7 +91,12 @@ export function PatientRescheduleModal({
     return () => { alive = false }
   }, [isOpen, appointment?.doctorId])
 
-  const loadSlots = useCallback(async (doctorId: string, nextDate: string, schedule: DoctorAvailability[]) => {
+  const loadSlots = useCallback(async (
+    doctorId: string,
+    nextDate: string,
+    schedule: DoctorAvailability[],
+    appointmentId: string,
+  ) => {
     if (!doctorId || !nextDate) {
       setAvailableSlots([])
       setSlotsLoading(false)
@@ -111,7 +116,10 @@ export function PatientRescheduleModal({
     setSlotsError(null)
 
     try {
-      const slots = await getAvailableSlots(doctorId, nextDate, APPOINTMENT_TYPE, SLOT_OPTIONS)
+      const slots = await getAvailableSlots(doctorId, nextDate, APPOINTMENT_TYPE, {
+        ...SLOT_OPTIONS,
+        excludeAppointmentId: appointmentId,
+      })
       if (slotRequestRef.current !== requestId) return
       setAvailableSlots(slots)
       if (slots.length === 0) setSlotsError("Nenhum horário livre nesta data na agenda do médico.")
@@ -125,9 +133,9 @@ export function PatientRescheduleModal({
   }, [])
 
   useEffect(() => {
-    if (!isOpen || !appointment?.doctorId || !date || doctorSchedule.length === 0) return
-    void loadSlots(appointment.doctorId, date, doctorSchedule)
-  }, [isOpen, appointment?.doctorId, date, doctorSchedule, loadSlots])
+    if (!isOpen || !appointment?.doctorId || !appointment.id || !date || doctorSchedule.length === 0) return
+    void loadSlots(appointment.doctorId, date, doctorSchedule, appointment.id)
+  }, [isOpen, appointment?.doctorId, appointment?.id, date, doctorSchedule, loadSlots])
 
   function handleClose() {
     setFormError(null)
