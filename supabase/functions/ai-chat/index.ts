@@ -2,7 +2,8 @@
 // Edge Function: ai-chat
 // Proxy seguro para a OpenAI Chat Completions API.
 // A chave OPENAI_API_KEY fica como secret do projeto Supabase
-// e NUNCA e exposta ao navegador.
+// e NUNCA e exposta ao navegador. Como `verify_jwt` fica desligado
+// para liberar CORS preflight, validamos o JWT manualmente no Auth.
 //
 // Deploy:
 //   supabase functions deploy ai-chat
@@ -69,6 +70,10 @@ interface OpenAIResponse {
   error?:   { message?: string; type?: string; code?: string }
 }
 
+interface AuthUserResponse {
+  id?: string
+}
+
 function json(body: unknown, status: number, corsHeaders: Record<string, string>): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -85,6 +90,48 @@ function isValidMessage(m: unknown): m is Message {
   )
 }
 
+function extractBearerToken(authHeader: string): string | null {
+  const match = authHeader.match(/^bearer\s+(.+)$/i)
+  const token = match?.[1]?.trim()
+  return token || null
+}
+
+async function validateSupabaseJwt(authHeader: string, corsHeaders: Record<string, string>): Promise<Response | null> {
+  const token = extractBearerToken(authHeader)
+  if (!token) {
+    return json({ error: "Missing bearer token" }, 401, corsHeaders)
+  }
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")?.replace(/\/+$/, "")
+  const anonKey     = Deno.env.get("SUPABASE_ANON_KEY")
+  if (!supabaseUrl || !anonKey) {
+    return json({ error: "Supabase Auth nao configurado no servidor." }, 500, corsHeaders)
+  }
+
+  let res: Response
+  try {
+    res = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      headers: {
+        "apikey":        anonKey,
+        "Authorization": `Bearer ${token}`,
+      },
+    })
+  } catch {
+    return json({ error: "Nao foi possivel validar a sessao." }, 503, corsHeaders)
+  }
+
+  if (!res.ok) {
+    return json({ error: "Sessao invalida ou expirada." }, 401, corsHeaders)
+  }
+
+  const user = await res.json().catch(() => null) as AuthUserResponse | null
+  if (!user?.id) {
+    return json({ error: "Sessao invalida ou expirada." }, 401, corsHeaders)
+  }
+
+  return null
+}
+
 Deno.serve(async (req) => {
   const cors = buildCorsHeaders(req)
 
@@ -96,9 +143,8 @@ Deno.serve(async (req) => {
   }
 
   const auth = req.headers.get("Authorization") ?? ""
-  if (!auth.toLowerCase().startsWith("bearer ") || auth.length < 16) {
-    return json({ error: "Missing bearer token" }, 401, cors)
-  }
+  const authError = await validateSupabaseJwt(auth, cors)
+  if (authError) return authError
 
   const apiKey = Deno.env.get("OPENAI_API_KEY")
   if (!apiKey) {
