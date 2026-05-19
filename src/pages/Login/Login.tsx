@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { createPatientAccount, login as authLogin, requestPasswordReset } from "../../services/auth"
 import type { LoginResponse } from "../../services/auth"
-import { formatCpfBR, formatPhoneBR } from "../../utils"
+import { formatCpfBR, formatPhoneBR, hasAtLeastTwoNames, isValidCpf, isValidEmail } from "../../utils"
 import styles from "./Login.module.css"
 
 interface LoginProps {
@@ -34,11 +34,11 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
   const [mode,         setMode]         = useState<"login" | "signup">("login")
   const [email,        setEmail]        = useState("")
   const [password,     setPassword]     = useState("")
-  const [confirmPassword, setConfirmPassword] = useState("")
   const [name,         setName]         = useState("")
   const [cpf,          setCpf]          = useState("")
   const [phone,        setPhone]        = useState("")
   const [dob,          setDob]          = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [error,        setError]        = useState<string | null>(null)
@@ -48,7 +48,12 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!email.trim()) { setError("Preencha seu e-mail."); return }
+    if (!isValidEmail(email)) { setError("Informe um e-mail válido."); return }
     if (mode === "login" && !password.trim()) { setError("Preencha sua senha."); return }
+    if (mode === "signup" && !hasAtLeastTwoNames(name)) { setError("Informe seu nome completo com pelo menos dois nomes."); return }
+    if (mode === "signup" && cpf.replace(/\D/g, "").length !== 11) { setError("CPF deve ter 11 dígitos."); return }
+    if (mode === "signup" && !isValidCpf(cpf)) { setError("CPF inválido."); return }
+    if (mode === "signup" && phone.replace(/\D/g, "").length !== 11) { setError("Telefone deve estar no formato (00) 00000-0000."); return }
     if (mode === "signup" && password.trim() && password.trim().length < 6) {
       setError("A senha deve ter pelo menos 6 caracteres.")
       return
@@ -129,6 +134,7 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
 
   async function handlePasswordReset() {
     if (!email.trim()) { setError("Informe seu e-mail para recuperar a senha."); return }
+    if (!isValidEmail(email)) { setError("Informe um e-mail válido."); return }
     setError(null); setSuccess(null); setIsLoading(true)
     try {
       const response = await requestPasswordReset(email)
@@ -219,6 +225,9 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
           <form onSubmit={handleSubmit} className={styles.form}>
             {mode === "signup" && (
               <>
+                <p className={styles.signupHint}>
+                  O cadastro usa o endpoint público da API e envia o link de acesso para o e-mail do paciente.
+                </p>
                 <div className={styles.fieldGroup}>
                   <label className={styles.label}>Nome completo</label>
                   <input

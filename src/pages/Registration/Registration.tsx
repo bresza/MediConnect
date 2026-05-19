@@ -7,6 +7,7 @@ import { Select }   from "../../components/ui/Select/Select"
 import { Section }  from "../../components/ui/Section/Section"
 import {
   formatCepBR, formatCpfBR, formatPhoneBR,
+  hasAtLeastTwoNames, isValidCpf, isValidEmail, onlyDigits,
 } from "../../utils"
 import type { PageId, Patient } from "../../types"
 import styles from "./Registration.module.css"
@@ -244,10 +245,11 @@ function toForm(p: Patient): FormState {
   }
 }
 
-function toGender(v: string): Patient["gender"] {
+function toGender(v: string): Patient["gender"] | undefined {
   if (v === "Masculino") return "Male"
   if (v === "Feminino")  return "Female"
-  return "Other"
+  if (v === "Outro") return "Other"
+  return undefined
 }
 function toMarital(v: string): Patient["maritalStatus"] | undefined {
   const m: Record<string, Patient["maritalStatus"]> = {
@@ -312,7 +314,6 @@ const BR_STATES      = ["AC","AL","AM","AP","BA","CE","DF","ES","GO","MA","MG","
 const RELATIONS      = ["Cônjuge","Pai","Mãe","Filho(a)","Irmão/Irmã","Avô/Avó","Amigo(a)","Outro"]
 const RELIGIONS      = ["Católico","Evangélico","Espírita","Budista","Sem religião","Outro"]
 const TODAY = new Date().toISOString().slice(0, 10)
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 // ─── Component ────────────────────────────────────────────────────
 export function Registration({
@@ -366,32 +367,27 @@ export function Registration({
   function validationForStep(targetStep = step): Partial<Record<keyof FormState, string>> {
     const e: Partial<Record<keyof FormState, string>> = {}
     if (targetStep === 1) {
-      const trimmedName = form.name.trim()
-      if (!trimmedName) {
-        e.name = "Nome completo é obrigatório"
-      } else {
-        // Nome completo = pelo menos duas palavras (nome + sobrenome).
-        const nameParts = trimmedName.split(/\s+/).filter(Boolean)
-        if (nameParts.length < 2) e.name = "Informe nome e sobrenome"
-      }
+      if (!form.name.trim()) e.name = "Nome completo é obrigatório"
+      else if (!hasAtLeastTwoNames(form.name)) e.name = "Informe pelo menos dois nomes"
       if (!form.gender)      e.gender = "Sexo é obrigatório"
       if (!form.dob)         e.dob    = "Data de nascimento é obrigatória"
       else if (form.dob > TODAY) e.dob = "Data de nascimento deve estar no passado"
     }
     if (targetStep === 2) {
-      const cpf = form.cpf.replace(/\D/g, "")
+      const cpf = onlyDigits(form.cpf)
       if (!cpf)  e.cpf = "CPF é obrigatório"
       else if (cpf.length !== 11) e.cpf = "CPF deve ter 11 dígitos"
-      else if (patients.some((p) => p.cpf.replace(/\D/g,"") === cpf && p.id !== editingPatient?.id))
+      else if (!isValidCpf(cpf)) e.cpf = "CPF inválido"
+      else if (patients.some((p) => onlyDigits(p.cpf) === cpf && p.id !== editingPatient?.id))
         e.cpf = "CPF já cadastrado no sistema"
     }
     if (targetStep === 4) {
-      const phone = form.phone.replace(/\D/g, "")
+      const phone = onlyDigits(form.phone)
       const email = form.email.trim()
       if (!phone)        e.phone = "Celular é obrigatório"
-      else if (phone.length < 10 || phone.length > 11) e.phone = "Celular deve ter DDD e número"
+      else if (phone.length !== 11) e.phone = "Celular deve estar no formato (00)-00000-0000"
       if (!email) e.email = "E-mail é obrigatório"
-      else if (!EMAIL_RE.test(email)) e.email = "E-mail inválido"
+      else if (!isValidEmail(email)) e.email = "E-mail inválido"
       if (form.emergencyPhone && !form.emergencyName)
         e.emergencyName = "Informe o nome do contato de emergência"
       if (form.createPortalAccess) {
@@ -439,13 +435,13 @@ export function Registration({
       photoUrl:               isEditing
         ? form.photoUrl
         : (form.photoUrl || undefined),
-      cpf:                    form.cpf.replace(/\D/g, ""),
+      cpf:                    onlyDigits(form.cpf),
       rg:                     form.rg || undefined,
       healthInsurance:        form.healthInsurance && form.healthInsurance !== "Nenhum (Particular)" ? form.healthInsurance : undefined,
       healthInsuranceNumber:  form.healthInsuranceNumber || undefined,
-      phone:                  form.phone.replace(/\D/g, ""),
-      landline:               form.landline ? form.landline.replace(/\D/g, "") : undefined,
-      alternativePhone:       form.alternativePhone ? form.alternativePhone.replace(/\D/g, "") : undefined,
+      phone:                  onlyDigits(form.phone),
+      landline:               onlyDigits(form.landline) || undefined,
+      alternativePhone:       onlyDigits(form.alternativePhone) || undefined,
       email:                  form.email.trim(),
       preferredChannel:       toChannel(form.preferredChannel),
       communicationFrequency: toFrequency(form.communicationFrequency),
@@ -455,12 +451,12 @@ export function Registration({
       fatherName:             form.fatherName || undefined,
       fatherOccupation:       form.fatherOccupation || undefined,
       guardianName:           form.guardianName || undefined,
-      guardianCpf:            form.guardianCpf ? form.guardianCpf.replace(/\D/g, "") : undefined,
+      guardianCpf:            onlyDigits(form.guardianCpf) || undefined,
       spouseName:             form.spouseName || undefined,
       emergencyContact: form.emergencyName ? {
         name:         form.emergencyName,
         relationship: form.emergencyRelation,
-        phone:        form.emergencyPhone.replace(/\D/g, ""),
+        phone:        onlyDigits(form.emergencyPhone),
       } : undefined,
       address: form.street ? {
         zipCode:      form.zipCode.replace(/\D/g, ""),
@@ -646,7 +642,7 @@ export function Registration({
                 </div>
               </div>
               <div className={`${styles.grid3} ${styles.marginTop}`}>
-                <Select label="Sexo biológico" required options={GENDERS}
+                <Select label="Sexo biológico" options={GENDERS}
                   value={form.gender} onChange={(e) => set("gender", e.target.value)} />
                 <Input label="Data de nascimento" type="date" required max={TODAY}
                   value={form.dob} onChange={(e) => set("dob", e.target.value)} error={errors.dob} />

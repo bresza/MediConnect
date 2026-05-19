@@ -80,7 +80,11 @@ body {
   min-height: 100vh;
 }
 
-button, input, select, textarea { font-family: var(--font-sans); }
+button, input, select, textarea {
+  font-family: var(--font-sans);
+  max-width: 100%;
+  min-width: 0;
+}
 
 /* ── Table hover ──────────────────────────────────────────────── */
 tbody tr { transition: background-color 120ms ease; }

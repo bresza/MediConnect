@@ -9,9 +9,9 @@
 /* ── Search field ─────────────────────────────────────────────── */
 .searchWrapper {
   position: relative;
-  flex: 1;
-  max-width: 320px;
-  min-width: 180px;
+  flex: 1 1 220px;
+  max-width: 420px;
+  min-width: min(180px, 100%);
 }
 
 .searchIcon {
@@ -110,6 +110,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
 }
 
 .patientName {
@@ -122,6 +123,9 @@
   font-size: 11px;
   color: var(--muted-foreground);
   margin-top: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .actions {

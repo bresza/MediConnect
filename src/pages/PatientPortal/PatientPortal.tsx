@@ -467,7 +467,6 @@ export function PatientPortal({
     .sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`))[0]
 
 
-
   async function handleCancelConfirm() {
 
     if (!cancelTarget || !onUpdateAppointment) return

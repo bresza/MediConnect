@@ -1034,6 +1034,23 @@ function toE164BR(phone: string): string {
  * de entrega real depende de webhook do provedor (Twilio) e não está
  * implementada aqui.
  */
+interface SendSmsResponse {
+  success?: boolean
+  message_sid?: string
+  sid?: string
+  id?: string | number
+  status?: string
+  error?: string
+  message?: string
+}
+
+function normalizeMessageStatus(status?: string): Message["status"] {
+  const normalized = status?.trim().toLowerCase()
+  if (normalized === "delivered" || normalized === "sent" || normalized === "success") return "Delivered"
+  if (normalized === "failed" || normalized === "error") return "Failed"
+  return "Pending"
+}
+
 export async function sendMessage(
   d: Omit<Message, "id"> & { phoneNumber: string },
 ): Promise<Message> {
@@ -1042,32 +1059,46 @@ export async function sendMessage(
   if (!message) throw new Error("Mensagem não pode ser vazia.")
   if (!phone_number) throw new Error("Telefone inválido. Informe DDD + número.")
 
-  const body: { message: string; phone_number: string; patient_id?: string } = {
+  const body: {
+    message: string
+    phone_number: string
+    patient_id?: string
+    channel?: string
+    sent_by?: string
+  } = {
     message,
     phone_number,
+    channel: "SMS",
+    sent_by: getApiUserId() ?? undefined,
   }
   const patientId = d.patientId == null ? "" : String(d.patientId).trim()
   if (patientId) body.patient_id = patientId
 
+  let response: SendSmsResponse | undefined
   try {
-    await apiRequest<{ success?: boolean; message_sid?: string }>("/functions/v1/send-sms", {
+    response = await apiRequest<SendSmsResponse>("/functions/v1/send-sms", {
       method: "POST",
       body,
       logErrors: false,
     })
   } catch (err) {
     if (!(err instanceof ApiError) || err.status !== 404) throw err
-    await apiRequest<{ success?: boolean; message_sid?: string }>("/send-sms", {
+    response = await apiRequest<SendSmsResponse>("/send-sms", {
       method: "POST",
       body,
     })
   }
 
+  if (response?.success === false || response?.error) {
+    throw new Error(response.error ?? response.message ?? "Não foi possível enviar o SMS.")
+  }
+
   return {
     ...d,
-    id: Date.now(),
+    id: Number(response?.id) || Date.now(),
     channel: "SMS",
-    status: "Delivered",
+    status: normalizeMessageStatus(response?.status),
+    sentBy: response?.message_sid ?? response?.sid ?? d.sentBy,
   }
 }
 

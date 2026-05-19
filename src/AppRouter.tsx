@@ -95,7 +95,6 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
       email: currentUser.email,
       phone: currentUser.phone ?? "",
       dob: currentUser.dob ?? "",
-      gender: "Other",
       status: "Active",
     }
     : null

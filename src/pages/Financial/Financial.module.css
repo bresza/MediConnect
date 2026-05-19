@@ -19,10 +19,9 @@
 /* ── Stats grid ───────────────────────────────────────────────── */
 .statsGrid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr));
   gap: 12px; margin-bottom: 16px;
 }
-@media (min-width: 768px) { .statsGrid { grid-template-columns: repeat(4, 1fr); } }
 
 .statCard { padding: 16px 18px; }
 
@@ -173,7 +172,7 @@
   display: flex; flex-wrap: wrap; gap: 8px;
   align-items: center; margin-bottom: 14px;
 }
-.searchWrapper { position: relative; flex: 1; max-width: 280px; min-width: 160px; }
+.searchWrapper { position: relative; flex: 1 1 220px; max-width: 420px; min-width: min(160px, 100%); }
 .searchIcon {
   position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
   color: var(--muted-foreground); pointer-events: none;
@@ -298,9 +297,9 @@
 
 /* ── Modal form ───────────────────────────────────────────────── */
 .formGrid { display: flex; flex-direction: column; }
-.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 12px; }
 @media (max-width: 767px) { .grid2 { grid-template-columns: 1fr; } }
-.colSpan2 { grid-column: span 2; }
+.colSpan2 { grid-column: 1 / -1; }
 @media (max-width: 767px) { .colSpan2 { grid-column: span 1; } }
 
 .obsTextarea {

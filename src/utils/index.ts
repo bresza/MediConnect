@@ -7,6 +7,11 @@ export {
   formatPhoneBR,
   onlyDigits,
 } from "./masks"
+export {
+  formatCpfBR as formatCpf,
+  formatPhoneBR as formatPhone,
+  formatZipCodeBR as formatZipCode,
+} from "./masks"
 
 // ─── Time helpers ─────────────────────────────────────────────────
 export function timeToMinutes(time: string): number {
@@ -178,4 +183,28 @@ export function uniqueSpecialtyLabels(values: Array<string | undefined | null>):
 
 export function specialtyMatches(a: string, b: string): boolean {
   return normalizeSpecialtyKey(a) === normalizeSpecialtyKey(b)
+}
+
+export function isValidEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
+}
+
+export function isValidCpf(value: string): boolean {
+  const cpf = value.replace(/\D/g, "")
+  if (cpf.length !== 11 || /^(\d)\1{10}$/.test(cpf)) return false
+
+  const calcDigit = (length: number) => {
+    let sum = 0
+    for (let i = 0; i < length; i += 1) {
+      sum += Number(cpf[i]) * (length + 1 - i)
+    }
+    const rest = (sum * 10) % 11
+    return rest === 10 ? 0 : rest
+  }
+
+  return calcDigit(9) === Number(cpf[9]) && calcDigit(10) === Number(cpf[10])
+}
+
+export function hasAtLeastTwoNames(value: string): boolean {
+  return value.trim().split(/\s+/).filter(Boolean).length >= 2
 }

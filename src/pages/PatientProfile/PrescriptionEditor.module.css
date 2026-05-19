@@ -22,6 +22,7 @@
   display: flex;
   align-items: center;
   gap: 14px;
+  min-width: 0;
 }
 
 .backBtn {
@@ -68,6 +69,7 @@
   gap: 0;
   flex: 1;
   overflow: hidden;
+  min-width: 0;
 }
 
 /* ── Left column ──────────────────────────────────────────────── */
@@ -89,10 +91,12 @@
   border: 1px solid color-mix(in srgb, var(--primary) 20%, transparent);
   border-radius: var(--radius-xl);
   overflow: hidden;
+  min-width: 0;
 }
 
 .infoBlock {
   flex: 1;
+  min-width: 0;
   padding: 14px 18px;
 }
 
@@ -191,6 +195,7 @@
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  min-width: 0;
 }
 
 .typeCard {
@@ -329,6 +334,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   padding: 14px 16px;
+  min-width: 0;
 }
 
 .medRowNum {
@@ -349,8 +355,9 @@
 .medRowFields {
   flex: 1;
   display: grid;
-  grid-template-columns: 2fr 1fr;
+  grid-template-columns: minmax(0, 2fr) minmax(180px, 1fr);
   gap: 10px;
+  min-width: 0;
 }
 
 .medFieldWide  { grid-column: span 2; }
@@ -407,6 +414,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  max-width: 100%;
 }
 
 .catalogTitle {
@@ -536,7 +544,7 @@
 
 .previewToolbar {
   width: 100%;
-  max-width: 720px;
+  max-width: min(720px, 100%);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -552,9 +560,83 @@
   border-radius: 8px;
   padding: 40px 48px;
   width: 100%;
-  max-width: 720px;
+  max-width: min(720px, 100%);
   box-shadow: 0 4px 24px rgb(0 0 0 / 0.08);
   color: var(--foreground);
+}
+
+@media (max-width: 900px) {
+  .body {
+    flex-direction: column;
+    overflow: auto;
+  }
+
+  .leftCol {
+    overflow: visible;
+    padding: 16px;
+  }
+
+  .catalog {
+    width: 100%;
+    max-height: 360px;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .infoCard {
+    flex-direction: column;
+  }
+
+  .infoBlockDivider {
+    width: 100%;
+    height: 1px;
+  }
+
+  .medRowFields {
+    grid-template-columns: 1fr;
+  }
+
+  .medFieldWide,
+  .medFieldFull {
+    grid-column: span 1;
+  }
+}
+
+@media (max-width: 640px) {
+  .header,
+  .leftCol,
+  .previewRoot {
+    padding-inline: 14px;
+  }
+
+  .headerActions {
+    width: 100%;
+  }
+
+  .headerActions > * {
+    flex: 1 1 140px;
+  }
+
+  .typeRow,
+  .medRow,
+  .footer,
+  .rxClinic,
+  .rxPatientField {
+    flex-direction: column;
+  }
+
+  .removeMedBtn,
+  .medRowNum {
+    margin-top: 0;
+  }
+
+  .rxDocument {
+    padding: 24px 18px;
+  }
+
+  .rxDateBlock {
+    text-align: left;
+  }
 }
 
 :global(.dark) .rxDocument {
@@ -731,4 +813,10 @@
 .rxDoctorInfo {
   font-size: 12px;
   color: var(--muted-foreground);
+}
+
+@media (max-width: 640px) {
+  .rxDateBlock {
+    text-align: left;
+  }
 }

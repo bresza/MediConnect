@@ -1,11 +1,10 @@
 /* ── Stats grid ───────────────────────────────────────────────── */
 .statsGrid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr));
   gap: 12px;
   margin-bottom: 20px;
 }
-@media (min-width: 768px) { .statsGrid { grid-template-columns: repeat(4, 1fr); } }
 
 .statCard { padding: 16px 18px; }
 
@@ -61,10 +60,9 @@
 /* ── Content grid ─────────────────────────────────────────────── */
 .contentGrid {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));
   gap: 16px;
 }
-@media (min-width: 1024px) { .contentGrid { grid-template-columns: repeat(2, 1fr); } }
 
 /* ── Card header ──────────────────────────────────────────────── */
 .cardHeader {

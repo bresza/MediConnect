@@ -3,15 +3,16 @@
   padding: 18px 20px;
   display: flex;
   align-items: flex-end;
+  justify-content: space-between;
   flex-wrap: wrap;
-  gap: 14px 20px;
+  gap: 16px;
   margin-bottom: 16px;
 }
 
 .doctorField {
   flex: 1 1 280px;
   min-width: 0;
-  max-width: 420px;
+  width: min(420px, 100%);
 }
 
 .label {
@@ -275,6 +276,7 @@
   .row {
     align-items: stretch;
     flex-direction: column;
+    padding: 14px;
   }
 
   .actions {
