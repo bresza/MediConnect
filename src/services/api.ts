@@ -1,5 +1,33 @@
-export const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL      as string
-export const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string
+// Le e normaliza as credenciais do Supabase. Sem esse passo, qualquer build
+// que tenha sido gerado sem VITE_SUPABASE_URL acaba chamando `undefined/auth/...`,
+// o que vira um 404 no proprio dominio do Vercel e quebra o login silenciosamente.
+const RAW_SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL
+const RAW_SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+
+function sanitizeSupabaseUrl(value: unknown): string {
+  if (typeof value !== "string") return ""
+  return value.trim().replace(/\/+$/, "")
+}
+
+export const SUPABASE_URL      = sanitizeSupabaseUrl(RAW_SUPABASE_URL)
+export const SUPABASE_ANON_KEY = typeof RAW_SUPABASE_ANON_KEY === "string" ? RAW_SUPABASE_ANON_KEY.trim() : ""
+
+export const SUPABASE_CONFIG_ERROR: string | null = (() => {
+  const missing: string[] = []
+  if (!SUPABASE_URL)      missing.push("VITE_SUPABASE_URL")
+  if (!SUPABASE_ANON_KEY) missing.push("VITE_SUPABASE_ANON_KEY")
+  if (missing.length === 0) return null
+  return (
+    `Configuracao do Supabase ausente no build: defina ${missing.join(" e ")} ` +
+    "no painel do Vercel (Settings -> Environment Variables, escopo Production) " +
+    "e disparare um novo Deploy. Variaveis do Vite sao lidas em tempo de build."
+  )
+})()
+
+if (SUPABASE_CONFIG_ERROR && typeof console !== "undefined") {
+  console.error(`[mediconnect] ${SUPABASE_CONFIG_ERROR}`)
+}
+
 const REQUEST_TIMEOUT_MS = 15000
 const REFRESH_LEEWAY_MS  = 60_000 // renova quando faltar < 60s para expirar
 
@@ -151,6 +179,9 @@ function parseErrorMessage(raw: string): string {
 }
 
 async function performFetch(path: string, options: RequestOptions): Promise<Response> {
+  if (SUPABASE_CONFIG_ERROR) {
+    throw new ApiError(0, SUPABASE_CONFIG_ERROR)
+  }
   const { body, ...rest } = options
   const headers: Record<string, string> = {
     "Content-Type": "application/json",

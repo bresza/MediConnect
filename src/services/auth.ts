@@ -1,4 +1,4 @@
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./api"
+import { SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_CONFIG_ERROR } from "./api"
 import {
   invokeRegisterPatient,
   invokeRegisterPatientWithPassword,
@@ -6,6 +6,10 @@ import {
   RegisterPatientApiError,
 } from "./registerPatient"
 import type { User, UserRole } from "../types"
+
+function assertSupabaseConfigured(): void {
+  if (SUPABASE_CONFIG_ERROR) throw new Error(SUPABASE_CONFIG_ERROR)
+}
 
 export interface LoginPayload  { email: string; password: string }
 export interface PatientSignupPayload {
@@ -709,6 +713,7 @@ async function withRoleLinks(user: User, token: string): Promise<User> {
 }
 
 export async function login(payload: LoginPayload): Promise<LoginResponse> {
+  assertSupabaseConfigured()
   // Passo 1 — autenticar. Usamos sempre email/senha em formato normalizado
   // (trim + lowercase no email) para evitar falhas por espaços invisiveis.
   const normalizedEmail    = payload.email.trim().toLowerCase()
