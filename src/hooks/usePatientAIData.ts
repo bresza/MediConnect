@@ -47,9 +47,16 @@ export function usePatientAIData(user: User | null, seedPatient?: Patient | null
   const [reports,       setReports]       = useState<Report[]>([])
   const [loading,       setLoading]       = useState(false)
 
+  // IMPORTANTE: o memo de `identity` NUNCA pode depender do estado interno
+  // `patient`. Como `setPatient(linked)` corre dentro de `reload`, ligar a
+  // identity ao patient cria o ciclo:
+  //   reload → setPatient → identity (nova ref) → reload (nova ref) →
+  //   useEffect dispara → reload → ...
+  // O enriquecimento com o registro encontrado é feito *dentro* do reload
+  // ao montar `resolvedIdentity`, sem precisar voltar pro memo.
   const identity = useMemo(
-    () => (user ? buildIdentity(user, patient ?? seedPatient ?? null) : null),
-    [user, patient, seedPatient],
+    () => (user ? buildIdentity(user, seedPatient ?? null) : null),
+    [user, seedPatient],
   )
 
   const reload = useCallback(async () => {
@@ -64,7 +71,10 @@ export function usePatientAIData(user: User | null, seedPatient?: Patient | null
         cpf:       seedPatient?.cpf ?? user.patientCpf,
       }).catch(() => seedPatient ?? null)
 
-      if (linked) setPatient(linked)
+      if (linked) {
+        // Só atualiza se mudou de fato, evitando re-renders/refetches em série.
+        setPatient((prev) => (prev && prev.id === linked.id ? prev : linked))
+      }
 
       const id = linked?.id ?? identity.patientId
       if (!id) {
