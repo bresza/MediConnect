@@ -15,11 +15,14 @@ import { Financial }      from "./pages/Financial/Financial"
 import { Settings }       from "./pages/Settings/Settings"
 import { Team }           from "./pages/Team/Team"
 import { canAccess, canDo, getDefaultPage } from "./utils/permissions"
+import { buildAIApiContextFromAppState } from "./services/aiContext"
 import { useAuth }          from "./contexts/authStore"
 import { usePatients }      from "./hooks/usePatients"
 import { useAppointments }  from "./hooks/useAppointments"
 import { useMedicalData }   from "./hooks/useMedicalData"
+import { useFinancial }     from "./hooks/useFinancial"
 import { useStaff }         from "./hooks/useStaff"
+import { usePatientAIData } from "./hooks/usePatientAIData"
 import { useToast }         from "./hooks/useToast"
 import type { PageId, Patient } from "./types"
 import styles from "./App.module.css"
@@ -38,20 +41,23 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
     error: appointmentsError, reload: reloadAppointments,
   } = useAppointments()
   const {
-    prescriptions, addPrescription,
+    prescriptions, addPrescription, addMedicalRecord,
     error: medicalDataError, reload: reloadMedicalData,
   } = useMedicalData()
+  const { addRecord: addFinancialRecord, reload: reloadFinancial } = useFinancial()
   const {
     staff, addStaff, updateStaff, deleteStaff,
     error: staffError, reload: reloadStaff,
   } = useStaff()
   const { toasts,       toast,         dismiss }                                       = useToast()
+  const patientAIData = usePatientAIData(user)
 
   const reloadAll = async () => {
     await Promise.all([
       reloadPatients(),
       reloadAppointments(),
       reloadMedicalData(),
+      reloadFinancial(),
       reloadStaff(),
     ])
   }
@@ -113,6 +119,22 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
   const visiblePrescriptions = isPatient
     ? prescriptions.filter((p) => p.patientId === linkedPatientId)
     : isDoctor ? prescriptions.filter((p) => doctorPatientIds!.has(p.patientId)) : prescriptions
+
+  const aiPatients = isPatient
+    ? (patientAIData.patient ? [patientAIData.patient] : visiblePatients)
+    : visiblePatients
+  const aiAppointments = isPatient ? patientAIData.appointments : visibleAppointments
+  const aiPrescriptions = isPatient ? patientAIData.prescriptions : visiblePrescriptions
+
+  const aiApiContextSnapshot = buildAIApiContextFromAppState({
+    role:          currentUser.role,
+    patients:      aiPatients,
+    appointments:  aiAppointments,
+    prescriptions: aiPrescriptions,
+    staff:         isPatient ? [] : staff,
+    reports:       isPatient ? patientAIData.reports : undefined,
+  })
+
   const dataErrors = [
     patientsError && `Pacientes: ${patientsError}`,
     appointmentsError && `Agenda: ${appointmentsError}`,
@@ -192,6 +214,8 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
             patient={portalPatient}
             appointments={visibleAppointments}
             prescriptions={visiblePrescriptions}
+            onBookAppointment={addAppointment}
+            onUpdateAppointment={updateAppointment}
           />
         )
 
@@ -233,7 +257,9 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
             currentUser={currentUser}
             onNavigate={handleNavigate}
             onEditPatient={handleEditPatient}
-            onAddPrescription={canDo(currentUser.role, "create_reports") ? addPrescription : async () => {}}
+            onAddPrescription={canDo(currentUser.role, "create_reports")
+              ? (async (p) => { await addPrescription(p) })
+              : async () => {}}
           />
         ) : (
           <Patients
@@ -275,6 +301,9 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
             onAddAppointment={addAppointment}
             onUpdateAppointment={updateAppointment}
             onRefresh={reloadAppointments}
+            onAddMedicalRecord={addMedicalRecord}
+            onAddPrescription={addPrescription}
+            onAddFinancialRecord={addFinancialRecord}
           />
         )
 
@@ -366,7 +395,11 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
         </div>
       </main>
       <ToastContainer toasts={toasts} onDismiss={dismiss} />
-      <AIAssistant currentUser={currentUser} clinicName={clinicName} />
+      <AIAssistant
+        currentUser={currentUser}
+        clinicName={clinicName}
+        apiContextSnapshot={aiApiContextSnapshot}
+      />
     </div>
   )
 }

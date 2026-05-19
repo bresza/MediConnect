@@ -1,4 +1,5 @@
 import { ApiError, apiRequest } from "./api"
+import { formatSpecialtyLabel } from "../utils"
 
 export interface DoctorAvailability {
   id: string
@@ -118,7 +119,7 @@ function apiToDoctor(api: ApiDoctor): AvailabilityDoctor {
     name: api.full_name,
     email: api.email,
     crm: api.crm,
-    specialty: api.specialty,
+    specialty: api.specialty ? formatSpecialtyLabel(api.specialty) : undefined,
   }
 }
 
@@ -156,13 +157,92 @@ async function findAvailability(
 export async function getAvailabilityDoctors(): Promise<AvailabilityDoctor[]> {
   // Usamos `select=*` para nao depender de colunas opcionais (ex.: `active`) que podem nao
   // existir em projetos antigos. O filtro de `active` e aplicado no client.
-  const data = await apiRequest<(ApiDoctor & { active?: boolean | null })[]>(
-    "/rest/v1/doctors?select=*&order=full_name.asc",
-  )
+  // Se a coluna `full_name` nao existir, retiramos o `order` e logamos
+  // silenciosamente — a ordenacao volta para o client.
+  let data: (ApiDoctor & { active?: boolean | null })[] | null = null
+  try {
+    data = await apiRequest<(ApiDoctor & { active?: boolean | null })[]>(
+      "/rest/v1/doctors?select=*&order=full_name.asc",
+      { logErrors: false },
+    )
+  } catch (err) {
+    if (err instanceof ApiError && (err.status === 400 || err.status === 406)) {
+      data = await apiRequest<(ApiDoctor & { active?: boolean | null })[]>(
+        "/rest/v1/doctors?select=*",
+        { logErrors: false },
+      )
+    } else {
+      throw err
+    }
+  }
 
   return (data ?? [])
     .filter((doctor) => doctor.active !== false)
     .map(apiToDoctor)
+}
+
+export async function getBookableDoctors(): Promise<AvailabilityDoctor[]> {
+  const doctors = await getAvailabilityDoctors()
+  if (doctors.length === 0) return []
+
+  let rows: { doctor_id: string; active?: boolean | null }[] = []
+  try {
+    rows = await apiRequest<{ doctor_id: string; active?: boolean | null }[]>(
+      "/rest/v1/doctor_availability?select=doctor_id,active",
+      { logErrors: false },
+    )
+  } catch {
+    return doctors
+  }
+
+  const withSchedule = new Set(
+    (rows ?? [])
+      .filter((row) => row.active !== false)
+      .map((row) => row.doctor_id),
+  )
+  return doctors.filter((doctor) => withSchedule.has(doctor.id))
+}
+
+const WEEKDAY_LABELS_PT = [
+  "domingo", "segunda-feira", "terça-feira", "quarta-feira",
+  "quinta-feira", "sexta-feira", "sábado",
+]
+
+export function weekdayFromDate(date: string): number {
+  return new Date(`${date}T12:00:00`).getDay()
+}
+
+function timeToMinutes(value: string): number {
+  const [hours, minutes] = value.slice(0, 5).split(":").map(Number)
+  return hours * 60 + minutes
+}
+
+export function isDateOnDoctorSchedule(date: string, rows: DoctorAvailability[]): boolean {
+  if (!date) return false
+  const day = weekdayFromDate(date)
+  return rows.some((row) => row.active && row.weekday === day)
+}
+
+export function slotDurationForDateTime(
+  date: string,
+  time: string,
+  rows: DoctorAvailability[],
+): number {
+  const day = weekdayFromDate(date)
+  const minutes = timeToMinutes(time)
+  const match = rows.find((row) =>
+    row.active &&
+    row.weekday === day &&
+    minutes >= timeToMinutes(row.startTime) &&
+    minutes < timeToMinutes(row.endTime),
+  )
+  return match?.slotMinutes ?? 30
+}
+
+export function summarizeDoctorWeekdays(rows: DoctorAvailability[]): string {
+  const days = [...new Set(rows.filter((row) => row.active).map((row) => row.weekday))].sort()
+  if (days.length === 0) return "Sem horários cadastrados na agenda médica."
+  return days.map((day) => WEEKDAY_LABELS_PT[day] ?? `dia ${day}`).join(", ")
 }
 
 export async function getDoctorAvailability(doctorId: string): Promise<DoctorAvailability[]> {

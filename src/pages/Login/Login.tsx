@@ -49,23 +49,59 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
     e.preventDefault()
     if (!email.trim()) { setError("Preencha seu e-mail."); return }
     if (mode === "login" && !password.trim()) { setError("Preencha sua senha."); return }
-    if (mode === "signup" && !password.trim()) { setError("Crie uma senha para acessar o portal."); return }
-    if (mode === "signup" && password.trim().length < 6) { setError("A senha deve ter pelo menos 6 caracteres."); return }
-    if (mode === "signup" && password !== confirmPassword) { setError("As senhas não coincidem."); return }
+    if (mode === "signup" && password.trim() && password.trim().length < 6) {
+      setError("A senha deve ter pelo menos 6 caracteres.")
+      return
+    }
+    if (mode === "signup" && password.trim() && password !== confirmPassword) {
+      setError("As senhas não coincidem.")
+      return
+    }
     setError(null); setSuccess(null); setIsLoading(true)
     try {
       if (mode === "signup") {
-        await createPatientAccount({ name, email, password, cpf, phone, dob })
+        const signupResult = await createPatientAccount({
+          name,
+          email,
+          cpf,
+          phone,
+          dob,
+          password: password.trim() || undefined,
+        })
 
-        // Apos criar a conta, tenta logar automaticamente com as mesmas credenciais.
-        // Se o ambiente exigir confirmacao por e-mail, exibimos uma mensagem clara
-        // ao inves de bloquear o usuario com "E-mail ou senha invalidos".
+        if (signupResult.magicLinkSent) {
+          setSuccess(
+            signupResult.message ??
+              "Enviamos um link de acesso para o seu e-mail. Abra a mensagem para concluir o primeiro acesso.",
+          )
+          setMode("login")
+          setPassword("")
+          setConfirmPassword("")
+          setName("")
+          setCpf("")
+          setPhone("")
+          setDob("")
+          return
+        }
+
+        if (!password.trim()) {
+          setSuccess(signupResult.message ?? "Conta criada. Use a aba Entrar para acessar.")
+          setMode("login")
+          setPassword("")
+          setConfirmPassword("")
+          return
+        }
+
         try {
-          onLogin(await authLogin({ email, password }))
+          onLogin(await authLogin({ email, password: password.trim() }))
           return
         } catch (loginErr) {
           const msg = loginErr instanceof Error ? loginErr.message : ""
-          if (/confirma|n[ãa]o foi confirmada|email not confirmed/i.test(msg)) {
+          if (signupResult.loginReady) {
+            setSuccess(
+              "Conta criada! Tente entrar novamente em alguns segundos — o servidor está finalizando seu cadastro.",
+            )
+          } else if (/confirma|n[ãa]o foi confirmada|email not confirmed/i.test(msg)) {
             setSuccess(
               "Conta criada! Confirme seu e-mail clicando no link enviado para sua caixa de entrada e depois entre normalmente.",
             )
@@ -158,7 +194,7 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
             <p className={styles.formSub}>
               {mode === "login"
                 ? "Faça login para acessar o sistema"
-                : "Cadastre-se com e-mail e senha para acessar o portal"}
+                : "Informe seus dados. Você receberá um link por e-mail para o primeiro acesso. Se a clínica já cadastrou você sem portal, defina também uma senha para vincular o acesso."}
             </p>
           </div>
 
@@ -232,7 +268,7 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
             {mode === "signup" && (
               <div className={styles.signupGrid}>
                 <div className={styles.fieldGroup}>
-                  <label className={styles.label}>Senha</label>
+                  <label className={styles.label}>Senha <span style={{ fontWeight: 400, opacity: 0.75 }}>(opcional)</span></label>
                   <div className={styles.passwordWrapper}>
                     <input
                       type={showPassword ? "text" : "password"} placeholder="Mínimo 6 caracteres" value={password}
@@ -247,7 +283,7 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
                   </div>
                 </div>
                 <div className={styles.fieldGroup}>
-                  <label className={styles.label}>Confirmar senha</label>
+                  <label className={styles.label}>Confirmar <span style={{ fontWeight: 400, opacity: 0.75 }}>(se definiu senha)</span></label>
                   <div className={styles.passwordWrapper}>
                     <input
                       type={showConfirmPassword ? "text" : "password"} placeholder="Repita a senha" value={confirmPassword}

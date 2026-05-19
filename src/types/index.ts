@@ -132,6 +132,56 @@ export interface Prescription {
   cid10?: string; observations?: string; status: "draft" | "emitted"
 }
 
+// ─── WAITLIST (FILA DE ESPERA POR PRIORIDADE) ─────────────────────
+// Modelo derivado das diretrizes do Ministério da Saúde para regulação
+// ambulatorial (cores) + Lei 10.048/2000 (prioridades legais).
+// As cores seguem a estratificação do SUS para fila eletiva:
+//   red    → atendimento até 1 mês
+//   yellow → até 3 meses
+//   green  → até 6 meses
+//   blue   → até 1 ano
+export type WaitlistPriorityColor = "red" | "yellow" | "green" | "blue"
+
+/** Flags de prioridade legal (Lei 10.048/2000, atualizada pela 13.146/15 e 14.626/23). */
+export interface WaitlistLegalFlags {
+  elderly?:         boolean   // >= 60 anos
+  pregnant?:        boolean
+  lactating?:       boolean
+  infantInArms?:    boolean   // criança de colo (< 2 anos)
+  disability?:      boolean   // pessoa com deficiência (PcD)
+  asd?:             boolean   // transtorno do espectro autista
+  severeObesity?:   boolean
+  reducedMobility?: boolean
+}
+
+export type WaitlistStatus = "waiting" | "scheduled" | "removed"
+
+export interface WaitlistEntry {
+  id:              string
+  patientId:       string
+  patientName:     string
+  /** Especialidade desejada (ex.: "Cardiologia"). */
+  specialty?:      string
+  /** Médico desejado (opcional — fila pode ser por especialidade). */
+  doctorId?:       string
+  doctorName?:     string
+  cid10?:          string
+  clinicalNotes?:  string
+  flags:           WaitlistLegalFlags
+  /** Cor inferida pelo serviço — não editada manualmente. */
+  priorityColor:   WaitlistPriorityColor
+  /** ISO datetime — quando entrou na fila. */
+  enteredAt:       string
+  /** ISO date — prazo-alvo calculado a partir da cor. */
+  dueBy:           string
+  lastNoShowAt?:  string
+  /** ID do usuário que cadastrou (médico ou secretária). */
+  addedBy?:        string
+  addedByName?:   string
+  status:          WaitlistStatus
+  notes?:          string
+}
+
 // ─── TOAST ────────────────────────────────────────────────────────
 export type ToastVariant = "success" | "error" | "warning" | "info"
 export interface Toast { id: string; message: string; variant: ToastVariant }

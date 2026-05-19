@@ -16,13 +16,34 @@ declare const Deno: {
   serve(handler: (req: Request) => Response | Promise<Response>): void
 }
 
-const ALLOW_ORIGIN = Deno.env.get("AI_CHAT_ALLOWED_ORIGIN") ?? "*"
+// `AI_CHAT_ALLOWED_ORIGIN` aceita "*" ou uma lista separada por virgula.
+// Em dev sem nada configurado, ja liberamos localhost/127.0.0.1 para o Vite.
+const DEV_FALLBACK_ORIGINS = [
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+]
 
-const CORS_HEADERS: Record<string, string> = {
-  "Access-Control-Allow-Origin":  ALLOW_ORIGIN,
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Vary":                         "Origin",
+const RAW_ORIGIN_ENV = Deno.env.get("AI_CHAT_ALLOWED_ORIGIN")?.trim() ?? ""
+const ALLOW_LIST = RAW_ORIGIN_ENV
+  ? RAW_ORIGIN_ENV.split(",").map((o) => o.trim()).filter(Boolean)
+  : []
+const ALLOW_ANY = RAW_ORIGIN_ENV === "" || ALLOW_LIST.includes("*")
+
+function resolveAllowedOrigin(requestOrigin: string | null): string {
+  if (ALLOW_ANY) return requestOrigin || "*"
+  if (requestOrigin && ALLOW_LIST.includes(requestOrigin)) return requestOrigin
+  if (requestOrigin && DEV_FALLBACK_ORIGINS.includes(requestOrigin)) return requestOrigin
+  return ALLOW_LIST[0] ?? "*"
+}
+
+function buildCorsHeaders(req: Request): Record<string, string> {
+  return {
+    "Access-Control-Allow-Origin":  resolveAllowedOrigin(req.headers.get("Origin")),
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Max-Age":       "86400",
+    "Vary":                         "Origin",
+  }
 }
 
 type Role = "system" | "user" | "assistant"
@@ -48,10 +69,10 @@ interface OpenAIResponse {
   error?:   { message?: string; type?: string; code?: string }
 }
 
-function json(body: unknown, status = 200): Response {
+function json(body: unknown, status: number, corsHeaders: Record<string, string>): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
   })
 }
 
@@ -65,37 +86,35 @@ function isValidMessage(m: unknown): m is Message {
 }
 
 Deno.serve(async (req) => {
-  // Preflight CORS: precisa retornar 200/204 sem exigir Authorization,
-  // se nao o browser bloqueia a requisicao real.
+  const cors = buildCorsHeaders(req)
+
   if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: CORS_HEADERS })
+    return new Response(null, { status: 204, headers: cors })
   }
   if (req.method !== "POST") {
-    return json({ error: "Method not allowed" }, 405)
+    return json({ error: "Method not allowed" }, 405, cors)
   }
 
-  // `verify_jwt = false` no config.toml libera o preflight, mas ainda exigimos
-  // Bearer JWT aqui para impedir uso anonimo da Edge Function.
   const auth = req.headers.get("Authorization") ?? ""
   if (!auth.toLowerCase().startsWith("bearer ") || auth.length < 16) {
-    return json({ error: "Missing bearer token" }, 401)
+    return json({ error: "Missing bearer token" }, 401, cors)
   }
 
   const apiKey = Deno.env.get("OPENAI_API_KEY")
   if (!apiKey) {
-    return json({ error: "OPENAI_API_KEY nao configurada no servidor." }, 500)
+    return json({ error: "OPENAI_API_KEY nao configurada no servidor." }, 500, cors)
   }
 
   let payload: RequestBody = {}
   try {
     payload = await req.json() as RequestBody
   } catch {
-    return json({ error: "JSON invalido." }, 400)
+    return json({ error: "JSON invalido." }, 400, cors)
   }
 
   const messages = Array.isArray(payload.messages) ? payload.messages.filter(isValidMessage) : []
   if (messages.length === 0) {
-    return json({ error: "Lista de mensagens vazia ou invalida." }, 400)
+    return json({ error: "Lista de mensagens vazia ou invalida." }, 400, cors)
   }
 
   const model       = typeof payload.model === "string" && payload.model.trim() ? payload.model : "gpt-4o-mini"
@@ -114,7 +133,7 @@ Deno.serve(async (req) => {
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    return json({ error: `Falha de rede ao chamar OpenAI: ${msg}` }, 502)
+    return json({ error: `Falha de rede ao chamar OpenAI: ${msg}` }, 502, cors)
   }
 
   const raw = await res.text().catch(() => "")
@@ -126,15 +145,15 @@ Deno.serve(async (req) => {
       ?? (res.status === 401 ? "Chave da OpenAI invalida ou nao autorizada."
         : res.status === 429 ? "Limite de uso da OpenAI atingido."
         : `Erro ${res.status} ao consultar a OpenAI.`)
-    return json({ error: message }, res.status)
+    return json({ error: message }, res.status, cors)
   }
 
   const content = parsed?.choices?.[0]?.message?.content?.trim() ?? ""
-  if (!content) return json({ error: "OpenAI nao retornou conteudo." }, 502)
+  if (!content) return json({ error: "OpenAI nao retornou conteudo." }, 502, cors)
 
   return json({
     content,
     model: parsed?.model ?? model,
     usage: parsed?.usage,
-  })
+  }, 200, cors)
 })

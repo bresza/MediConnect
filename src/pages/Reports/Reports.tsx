@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, type ChangeEvent } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef, type ChangeEvent } from "react"
 import { getReports, createReport, updateReport } from "../../services/domain"
 import { REPORT_TEMPLATES, TEMPLATE_SPECIALTIES } from "../../data/reportTemplates"
 import type { ReportTemplate } from "../../data/reportTemplates"
@@ -11,6 +11,8 @@ import { Avatar }  from "../../components/ui/Avatar/Avatar"
 import { Modal }   from "../../components/ui/Modal/Modal"
 import { Select }  from "../../components/ui/Select/Select"
 import { RefreshButton } from "../../components/ui/RefreshButton/RefreshButton"
+import { RichTextEditor } from "../../components/ui/RichTextEditor/RichTextEditor"
+import { chatComplete, isAIConfigured, AIError, type ChatMessage } from "../../services/ai"
 import { formatCrm, formatDate, sortByName, toTitleCase } from "../../utils"
 import styles from "./Reports.module.css"
 
@@ -43,30 +45,194 @@ const EXAM_TYPES = Array.from(
   new Set(["Laudo Médico", ...REPORT_TEMPLATES.map((t) => t.exam)]),
 ).sort((a, b) => a.localeCompare(b, "pt-BR"))
 
-// ─── IA — completa laudo via Anthropic API ────────────────────────
+// ─── IA — completa laudo via OpenAI (proxy/direto) ────────────────
+//
+// Pedimos o retorno em JSON estrito para conseguirmos preencher
+// diagnostico, conclusao e o conteudo do laudo (em HTML) com o
+// minimo de pos-processamento. O HTML usa tags simples (h2, p, ul,
+// li, strong) que o BlockNote consegue importar via
+// `tryParseHTMLToBlocks` sem perder estrutura.
+//
+// Quando o modelo retorna texto fora do JSON (lixo antes/depois),
+// extraimos o primeiro bloco "{ ... }" e tentamos parsear.
+
+interface AiCompletionResult {
+  diagnosis:   string
+  conclusion:  string
+  contentHtml: string
+}
+
+function extractJsonBlock(raw: string): string | null {
+  if (!raw) return null
+  const trimmed = raw.trim()
+  if (trimmed.startsWith("{") && trimmed.endsWith("}")) return trimmed
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]+?)\s*```/i)
+  if (fenced?.[1]) return fenced[1].trim()
+  const first = trimmed.indexOf("{")
+  const last  = trimmed.lastIndexOf("}")
+  if (first >= 0 && last > first) return trimmed.slice(first, last + 1)
+  return null
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+}
+
+function plainTextToHtml(value: string): string {
+  return value
+    .split(/\n{2,}/)
+    .filter(Boolean)
+    .map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, "<br/>")}</p>`)
+    .join("\n")
+}
+
+// ─── Fallback offline (sem chamar OpenAI) ─────────────────────────
+// Quando a IA externa nao esta disponivel (sem chave direta + proxy
+// `ai-chat` bloqueando CORS), montamos um laudo coerente a partir do
+// template ativo, dos dados ja preenchidos e do paciente. NAO e
+// inteligencia generativa, mas garante que o medico nunca fique com
+// o botao "Completar com IA" inutilizavel.
+function aiCompleteReportLocal(
+  form: ReportForm,
+  patient: Patient | undefined,
+  currentUser: User,
+): AiCompletionResult {
+  const today    = new Date().toLocaleDateString("pt-BR")
+  const template = REPORT_TEMPLATES.find((t) => t.exam === form.type)
+  const ageYears = patient?.dob
+    ? new Date().getFullYear() - new Date(patient.dob).getFullYear()
+    : null
+
+  const patientLine = [
+    patient?.name ?? form.patientName ?? "[NOME DO PACIENTE]",
+    ageYears !== null ? `${ageYears} anos` : "",
+    patient?.gender ? patient.gender : "",
+    patient?.healthInsurance ? `Convênio ${patient.healthInsurance}` : "Particular",
+  ].filter(Boolean).join(" · ")
+
+  const diagnosis  = form.diagnosis.trim()  || template?.diagnosis  ||
+    "Quadro clínico em avaliação, correlacionado aos achados apresentados na consulta."
+  const conclusion = form.conclusion.trim() || template?.conclusion ||
+    "Conclusão compatível com os dados clínicos informados; seguimento conforme critério médico."
+  const cidLine = form.cid10 || template?.cid10 || ""
+  const crmText = currentUser.crm ? formatCrm(currentUser.crm) || currentUser.crm : ""
+
+  const conductLines = template?.content
+    ? template.content
+        .split(/\n/)
+        .filter((line) => line.trim().startsWith("-"))
+        .slice(0, 5)
+        .map((line) => `<li>${escapeHtml(line.replace(/^[-•]\s*/, ""))}</li>`)
+        .join("\n")
+    : ""
+
+  const conductBlock = conductLines || [
+    "<li>Seguir o plano terapêutico discutido em consulta.</li>",
+    "<li>Manter rotina de exames e retornos conforme orientação.</li>",
+    "<li>Comunicar imediatamente sinais de alarme ou piora clínica.</li>",
+  ].join("\n")
+
+  const contentHtml = [
+    "<h2>Identificação</h2>",
+    `<p>${escapeHtml(patientLine)}</p>`,
+    `<p><strong>Médico responsável:</strong> ${escapeHtml(currentUser.name)}${crmText ? ` — CRM ${escapeHtml(crmText)}` : ""}</p>`,
+    `<p><strong>Data:</strong> ${escapeHtml(today)}</p>`,
+    cidLine ? `<p><strong>CID-10:</strong> ${escapeHtml(cidLine)}</p>` : "",
+    "<h2>Avaliação clínica</h2>",
+    `<p>${escapeHtml(diagnosis)}</p>`,
+    patient?.observations ? "<h2>Observações</h2>" : "",
+    patient?.observations ? `<p>${escapeHtml(patient.observations)}</p>` : "",
+    "<h2>Conduta sugerida</h2>",
+    `<ul>${conductBlock}</ul>`,
+    "<h2>Conclusão</h2>",
+    `<p>${escapeHtml(conclusion)}</p>`,
+    "<p><em>Decisão clínica final do(a) médico(a) responsável.</em></p>",
+  ].filter(Boolean).join("\n")
+
+  return { diagnosis, conclusion, contentHtml }
+}
+
 async function aiCompleteReport(
   form: ReportForm,
   patientInfo: string,
-): Promise<Partial<ReportForm>> {
-  await new Promise((resolve) => setTimeout(resolve, 250))
-  const diagnosis = form.diagnosis.trim() || "Quadro clinico em avaliacao, correlacionado aos achados apresentados."
-  const conclusion = form.conclusion.trim() || "Conclusao compativel com os dados clinicos informados, recomendando seguimento conforme criterio medico."
-  const contentHtml = (form.contentHtml || "")
-    .replace(/\[DIAGNOSTICO\]/g, diagnosis)
-    .replace(/\[CONCLUSAO\]/g, conclusion)
-    .replace(/\[CID\]/g, form.cid10 || "Nao informado")
-    .replace(/\[DADOS DO PACIENTE\]/g, patientInfo)
+  currentUser: User,
+): Promise<AiCompletionResult> {
+  const template = REPORT_TEMPLATES.find((t) => t.exam === form.type)
+  const baseContent = form.contentHtml.trim()
+
+  const systemMessages: ChatMessage[] = [
+    {
+      role: "system",
+      content: [
+        "Voce e o assistente clinico do MediConnect que ajuda medicos a redigir laudos em portugues do Brasil.",
+        "Gere SEMPRE um JSON valido (UTF-8) e nada mais, sem comentarios, sem texto fora do JSON e sem markdown.",
+        "Estrutura obrigatoria: { \"diagnosis\": string, \"conclusion\": string, \"contentHtml\": string }.",
+        "diagnosis: paragrafo objetivo (1-3 frases) descrevendo o quadro do paciente.",
+        "conclusion: paragrafo (1-2 frases) com a conclusao do laudo e orientacao geral.",
+        "contentHtml: HTML simples usando apenas <h2>, <p>, <ul>, <li>, <strong>. Sem <html>, <body>, <style>, scripts ou classes.",
+        "Estruture contentHtml em secoes: Identificacao do paciente, Anamnese e achados, Avaliacao clinica, Conduta sugerida e Conclusao.",
+        "Nao invente exames, valores numericos, doses ou nomes que nao tenham sido informados; use [VALOR] ou [A DEFINIR] quando faltarem dados.",
+        "Nao inclua diagnostico definitivo, prescricao ou doses sem ressalva: deixe explicito que a decisao final e do(a) medico(a).",
+      ].join(" "),
+    },
+  ]
+
+  const userPrompt: ChatMessage = {
+    role: "user",
+    content: [
+      `Medico responsavel: ${currentUser.name}${currentUser.crm ? ` (CRM ${formatCrm(currentUser.crm)})` : ""}.`,
+      `Paciente: ${patientInfo}.`,
+      `Tipo de laudo: ${form.type}.`,
+      form.cid10 ? `CID-10 informado: ${form.cid10}.` : "Sem CID-10 informado.",
+      form.diagnosis ? `Diagnostico em rascunho: ${form.diagnosis}.` : "Sem diagnostico em rascunho.",
+      form.conclusion ? `Conclusao em rascunho: ${form.conclusion}.` : "Sem conclusao em rascunho.",
+      template?.diagnosis ? `Diagnostico de referencia do template: ${template.diagnosis}.` : "",
+      template?.conclusion ? `Conclusao de referencia do template: ${template.conclusion}.` : "",
+      baseContent ? `Rascunho atual do laudo (HTML ou texto): ${baseContent}` : "Sem rascunho de conteudo.",
+      "Refine os campos com base nesse contexto, mantendo o que ja faz sentido e completando o que falta.",
+      "Responda APENAS com o JSON descrito.",
+    ].filter(Boolean).join("\n"),
+  }
+
+  const raw = await chatComplete([...systemMessages, userPrompt], {
+    temperature: 0.3,
+    maxTokens:   900,
+  })
+
+  const jsonBlock = extractJsonBlock(raw)
+  let parsed: Partial<AiCompletionResult> = {}
+  if (jsonBlock) {
+    try {
+      parsed = JSON.parse(jsonBlock) as Partial<AiCompletionResult>
+    } catch {
+      parsed = {}
+    }
+  }
+
+  const diagnosis  = (parsed.diagnosis  ?? form.diagnosis ?? "").trim()
+  const conclusion = (parsed.conclusion ?? form.conclusion ?? "").trim()
+  let contentHtml  = (parsed.contentHtml ?? "").trim()
+
+  // Fallback resiliente: se o modelo nao devolveu JSON valido, usamos
+  // a resposta como texto e montamos paragrafos.
+  if (!contentHtml) {
+    if (raw.trim().startsWith("<")) {
+      contentHtml = raw.trim()
+    } else {
+      contentHtml = plainTextToHtml(raw.trim() || [
+        diagnosis ? `Diagnostico: ${diagnosis}` : "",
+        conclusion ? `Conclusao: ${conclusion}` : "",
+      ].filter(Boolean).join("\n\n"))
+    }
+  }
 
   return {
-    diagnosis,
-    conclusion,
-    contentHtml: contentHtml.trim() || [
-      `Paciente: ${patientInfo}`,
-      `Tipo de laudo: ${form.type}`,
-      form.cid10 ? `CID-10: ${form.cid10}` : "",
-      `Diagnostico: ${diagnosis}`,
-      `Conclusao: ${conclusion}`,
-    ].filter(Boolean).join("\n\n"),
+    diagnosis:  diagnosis  || "Quadro clinico em avaliacao, correlacionado aos achados apresentados.",
+    conclusion: conclusion || "Conclusao compativel com os dados informados; seguimento conforme criterio medico.",
+    contentHtml,
   }
 }
 
@@ -171,11 +337,17 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
   const [form,        setForm]        = useState<ReportForm>(EMPTY_FORM)
   const [isSaving,    setIsSaving]    = useState(false)
   const [isAiLoading, setIsAiLoading] = useState(false)
+  const [aiNotice,    setAiNotice]    = useState<{ tone: "ai" | "local"; text: string } | null>(null)
   const [error,       setError]       = useState<string | null>(null)
   const [listError,   setListError]   = useState<string | null>(null)
   const [updatingId,  setUpdatingId]  = useState<string | null>(null)
   const [search,      setSearch]      = useState("")
   const [filterStatus, setFilterStatus] = useState<ReportStatus | "All">("All")
+  // Marca a Edge Function `ai-chat` como inacessível depois da primeira
+  // falha de CORS/rede; nas próximas tentativas, pulamos direto para o
+  // fallback local sem tentar de novo o proxy.
+  const aiProxyDownRef = useRef(false)
+  const aiAvailable = useMemo(() => isAIConfigured(), [])
 
   const visibleReports = sortByName(
     reports
@@ -230,25 +402,86 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
   }
 
   // ── Completar com IA ─────────────────────────────────────────────
+  //
+  // Estratégia em duas etapas:
+  //  1. Se a IA externa estiver configurada (OPENAI direct ou Edge
+  //     Function proxy disponível), chama `aiCompleteReport`. Em
+  //     sucesso, aplica o resultado e marca como "IA real".
+  //  2. Em falha (CORS, 404, sem chave, timeout) OU quando a IA não
+  //     está configurada, monta o laudo via `aiCompleteReportLocal`
+  //     (determinístico, sem chamada externa) e avisa o usuário.
+  //
+  // O laudo NUNCA fica sem ser preenchido — o botão sempre faz algo
+  // útil para o médico, mesmo sem back-end.
   async function handleAiComplete() {
-    setIsAiLoading(true); setError(null)
+    if (!form.patientName && !form.patientId) {
+      setError("Selecione um paciente antes de completar com IA.")
+      return
+    }
+    if (!form.type) {
+      setError("Informe o tipo de laudo antes de completar com IA.")
+      return
+    }
+
+    setIsAiLoading(true); setError(null); setAiNotice(null)
+    const patient = patients.find((p) => p.id === form.patientId)
+    const ageYears = patient?.dob
+      ? new Date().getFullYear() - new Date(patient.dob).getFullYear()
+      : null
+    const patientInfo = [
+      `Nome: ${patient?.name ?? form.patientName}`,
+      ageYears !== null ? `Idade: ${ageYears} anos` : "",
+      patient?.gender ? `Sexo: ${patient.gender}` : "",
+      patient?.healthInsurance ? `Convênio: ${patient.healthInsurance}` : "Convênio: Particular",
+      patient?.observations ? `Observações: ${patient.observations}` : "",
+    ].filter(Boolean).join(", ")
+
+    const useExternal = aiAvailable && !aiProxyDownRef.current
+    const applyResult = (
+      result: AiCompletionResult,
+      source: "ai" | "local",
+      reason?: "fallback" | "unconfigured",
+    ) => {
+      setForm((prev) => ({
+        ...prev,
+        diagnosis:   result.diagnosis,
+        conclusion:  result.conclusion,
+        contentHtml: result.contentHtml,
+      }))
+      const text = source === "ai"
+        ? "Laudo gerado com IA. Revise antes de finalizar."
+        : reason === "fallback"
+          ? "Laudo gerado localmente porque a IA externa não respondeu agora. Você pode finalizar ou clicar novamente para tentar a IA."
+          : "Laudo gerado localmente a partir do template e dos dados do paciente. Para ativar a IA generativa, defina VITE_OPENAI_API_KEY no .env."
+      setAiNotice({ tone: source, text })
+    }
+
     try {
-      const patient    = patients.find((p) => p.id === form.patientId)
-      const patientInfo = patient
-        ? `Nome: ${patient.name}, Idade: ${patient.dob ? new Date().getFullYear() - new Date(patient.dob).getFullYear() : "N/A"} anos, Convênio: ${patient.healthInsurance ?? "Particular"}, Observações: ${patient.observations ?? "Nenhuma"}`
-        : "Paciente não identificado"
-      const result = await aiCompleteReport(form, patientInfo)
-      if (result.diagnosis)   setField("diagnosis",   result.diagnosis)
-      if (result.conclusion)  setField("conclusion",  result.conclusion)
-      if (result.contentHtml) setField("contentHtml", result.contentHtml)
-    } catch {
-      setError("IA indisponível no momento. Continue preenchendo manualmente.")
-    } finally { setIsAiLoading(false) }
+      if (useExternal) {
+        const result = await aiCompleteReport(form, patientInfo, currentUser)
+        applyResult(result, "ai")
+        return
+      }
+      const result = aiCompleteReportLocal(form, patient, currentUser)
+      applyResult(result, "local", "unconfigured")
+    } catch (err) {
+      // Falha de proxy/CORS/rede → cai no fallback local automaticamente.
+      const msg = err instanceof AIError ? err.message
+        : err instanceof Error ? err.message
+        : ""
+      if (/CORS|rede|Edge Function|nao encontrada|404|fetch|network/i.test(msg)) {
+        aiProxyDownRef.current = true
+      }
+      const result = aiCompleteReportLocal(form, patient, currentUser)
+      applyResult(result, "local", "fallback")
+    } finally {
+      setIsAiLoading(false)
+    }
   }
 
   // ── Abrir modal vazio ────────────────────────────────────────────
   function openNew() {
-    setEditingReport(null); setForm(EMPTY_FORM); setError(null); setModalOpen(true)
+    setEditingReport(null); setForm(EMPTY_FORM); setError(null); setAiNotice(null); setModalOpen(true)
   }
 
   // ── Editar laudo ─────────────────────────────────────────────────
@@ -266,7 +499,7 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
       hideSignature: r.hideSignature ?? false,
       status:        r.status,
     })
-    setError(null); setModalOpen(true)
+    setError(null); setAiNotice(null); setModalOpen(true)
   }
 
   async function handleQuickStatusUpdate(r: Report, nextStatus: ReportStatus) {
@@ -338,9 +571,6 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
         action={
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
             <RefreshButton onRefresh={load} />
-            <Button variant="outline" onClick={() => setTemplateModal(true)}>
-              📋 Templates
-            </Button>
             <Button onClick={openNew}>+ Novo laudo</Button>
           </div>
         }
@@ -460,12 +690,21 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
             <button
               onClick={handleAiComplete}
               disabled={isAiLoading}
+              title={
+                !form.patientName && !form.patientId
+                  ? "Selecione um paciente antes de gerar."
+                  : !form.type
+                    ? "Informe o tipo de laudo antes de gerar."
+                    : aiAvailable && !aiProxyDownRef.current
+                      ? "Gera diagnóstico, conclusão e conteúdo via IA."
+                      : "Gera o laudo localmente a partir do template e dos dados do paciente (sem chamada externa)."
+              }
               style={{
                 padding: "8px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600,
                 background: "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "white",
                 border: "none", cursor: isAiLoading ? "not-allowed" : "pointer", opacity: isAiLoading ? 0.7 : 1,
               }}>
-              {isAiLoading ? "⏳ Completando..." : "✨ Completar com IA"}
+              {isAiLoading ? "⏳ Gerando laudo..." : "✨ Completar com IA"}
             </button>
             <Button variant="outline" onClick={() => handleSave("Draft")} disabled={isSaving}>
               Salvar rascunho
@@ -477,17 +716,6 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
         }
       >
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-
-          {/* Banner IA */}
-          <div style={{ padding: "10px 14px", borderRadius: 10, background: "linear-gradient(135deg,#ede9fe,#ddd6fe)", border: "1px solid #c4b5fd", display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 20, flexShrink: 0 }}>✨</span>
-            <div>
-              <p style={{ fontSize: 13, fontWeight: 600, color: "#5b21b6", margin: 0 }}>Assistente IA disponível</p>
-              <p style={{ fontSize: 11, color: "#6d28d9", margin: 0 }}>
-                Selecione um template → escolha o paciente → clique em "Completar com IA" para gerar o laudo personalizado.
-              </p>
-            </div>
-          </div>
 
           {/* Paciente */}
           <div>
@@ -536,8 +764,12 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
           {/* Conteúdo */}
           <div>
             <label style={labelStyle}>Conteúdo do laudo</label>
-            <textarea value={form.contentHtml} onChange={(e) => setField("contentHtml", e.target.value)}
-              rows={8} placeholder="Use um template acima ou escreva o conteúdo completo do laudo..." style={textareaStyle} />
+            <RichTextEditor
+              key={editingReport?.id ?? "new"}
+              value={form.contentHtml}
+              onChange={(html) => setField("contentHtml", html)}
+              placeholder="Use um template acima ou escreva o conteúdo completo do laudo..."
+            />
           </div>
 
           {/* Conclusão */}
@@ -561,6 +793,25 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
               </label>
             ))}
           </div>
+
+          {aiNotice && (
+            <div
+              style={{
+                fontSize: 12,
+                padding: "8px 12px",
+                borderRadius: 8,
+                margin: 0,
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 8,
+                color: aiNotice.tone === "ai" ? "#065f46" : "#92400e",
+                background: aiNotice.tone === "ai" ? "#ecfdf5" : "#fffbeb",
+                border: aiNotice.tone === "ai" ? "1px solid #10b981" : "1px solid #f59e0b",
+              }}>
+              <span aria-hidden style={{ flexShrink: 0 }}>{aiNotice.tone === "ai" ? "✓" : "ⓘ"}</span>
+              <span>{aiNotice.text}</span>
+            </div>
+          )}
 
           {error && (
             <p style={{ fontSize: 12, color: "var(--destructive)", padding: "8px 12px", borderRadius: 8, background: "#fef2f2", border: "1px solid var(--destructive)", margin: 0 }}>

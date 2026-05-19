@@ -1,6 +1,18 @@
 export { login, createPatientAccount, requestPasswordReset, refreshSession } from "./auth"
 export type { LoginResponse, LoginPayload, PatientSignupPayload, PatientSignupResponse, RefreshSessionResponse } from "./auth"
 
+export {
+  invokeRegisterPatient,
+  invokeRegisterPatientWithPassword,
+  isRegisterPatientConflict,
+  RegisterPatientApiError,
+} from "./registerPatient"
+export type {
+  RegisterPatientRequest,
+  RegisterPatientWithPasswordRequest,
+  RegisterPatientSuccess,
+} from "./registerPatient"
+
 export { apiRequest, setApiContext, ApiError, setUnauthorizedHandler, setSessionRefresher } from "./api"
 
 export {
@@ -23,3 +35,6 @@ export {
   getMessages,       getMessageTemplates, sendMessage,
   getStaff,          createStaffMember,   updateStaffMember, deleteStaffMember,
 } from "./domain"
+
+export { buildAIApiContextFromAppState } from "./aiContext"
+export type { AIContextFromAppStateInput } from "./aiContext"

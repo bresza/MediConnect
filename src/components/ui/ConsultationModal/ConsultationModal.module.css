@@ -1,0 +1,147 @@
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+
+.tab {
+  padding: 8px 14px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted-foreground);
+  font-weight: 500;
+  font-size: 13px;
+  cursor: pointer;
+}
+.tabActive {
+  color: var(--foreground);
+  border-bottom-color: var(--primary, #2563eb);
+  font-weight: 600;
+}
+
+.grid2 {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+.grid3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.full { grid-column: 1 / -1 }
+
+.sectionTitle {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted-foreground);
+  margin: 16px 0 8px;
+}
+
+.label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--foreground);
+  display: block;
+  margin-bottom: 4px;
+}
+
+.input,
+.textarea,
+.select {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  background: var(--background);
+  color: var(--foreground);
+  outline: none;
+  box-sizing: border-box;
+  font-family: inherit;
+}
+.textarea { resize: vertical; min-height: 60px }
+.input:focus,
+.textarea:focus,
+.select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 25%, transparent);
+}
+
+.medList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.medCard {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--background);
+}
+.medHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.medTitle {
+  font-size: 13px;
+  font-weight: 600;
+}
+.removeBtn {
+  background: transparent;
+  border: none;
+  color: var(--destructive, #b91c1c);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.financeSummary {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--primary, #2563eb) 10%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+.financeTotal {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.errorBox {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fef2f2;
+  color: var(--destructive, #b91c1c);
+  border: 1px solid var(--destructive, #b91c1c);
+  font-size: 12px;
+}
+
+.summaryHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--muted, rgba(148,163,184,0.08));
+}
+.patientName { font-weight: 600; font-size: 14px; margin: 0 }
+.patientMeta { font-size: 12px; color: var(--muted-foreground); margin: 2px 0 0 }
+.checklistBox {
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.checklistBox ul { margin: 6px 0 0; padding-left: 18px }

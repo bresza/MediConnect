@@ -1,4 +1,5 @@
 import { ApiError, apiRequest, getApiUserId } from "./api"
+import { isDataUrl, isRemotePhotoUrl, resolvePatientPhotoUrl, attachPatientPhotos, attachPatientPhoto, deletePatientPhotoFromStorage } from "./patientPhoto"
 import { rememberPatientLink } from "./patientLinks"
 import type {
   Patient, Gender, PatientStatus, MaritalStatus,
@@ -170,7 +171,6 @@ function patientToFullApi(p: Omit<Patient, "id"> | Patient): Record<string, unkn
     communication_frequency: p.communicationFrequency,
     opt_in:                  p.optIn,
     behavior_score:          p.behaviorScore,
-    photo_url:               p.photoUrl,
     landline:                onlyDigits(p.landline),
     alternative_phone:       onlyDigits(p.alternativePhone),
     mother_name:             p.motherName,
@@ -187,13 +187,14 @@ function patientToFullApi(p: Omit<Patient, "id"> | Patient): Record<string, unkn
 
 function patientToApi(p: Omit<Patient, "id"> | Patient): Record<string, unknown> {
   const payload = patientToFullApi(p)
-  return compactPayload({
+  const minimal = compactPayload({
     full_name:    payload.full_name,
     cpf:          payload.cpf,
     email:        payload.email,
     phone_mobile: payload.phone_mobile,
     birth_date:   payload.birth_date,
   })
+  return minimal
 }
 
 function patientToDirectApi(p: Omit<Patient, "id"> | Patient): Record<string, unknown> {
@@ -287,6 +288,9 @@ async function createPatientDirect(
   if (!raw) throw new Error("Paciente criado, mas a API não retornou o registro cadastrado.")
   const patient = apiToPatient(raw)
   rememberPatientLink({ patientId: patient.id, name: patient.name, email: patient.email, cpf: patient.cpf })
+  if (data.photoUrl) {
+    return updatePatient({ ...patient, ...data, id: patient.id })
+  }
   return patient
 }
 
@@ -551,18 +555,33 @@ export async function getPatientByIdentity(identity: PatientIdentity): Promise<P
 
   if (!best) return null
   await syncResolvedPatientProfile(identity.userId, best)
-  return apiToPatient(best)
+  return attachPatientPhoto(apiToPatient(best))
 }
 
 export async function getPatients(): Promise<Patient[]> {
-  const data = await apiRequest<ApiPatient[]>(
-    "/rest/v1/patients?select=*&order=full_name.asc",
-  )
-  return (data ?? []).map((row) => {
+  // Tenta com `order=full_name.asc`; se o projeto Supabase nao tiver a
+  // coluna `full_name` (alguns esquemas usam `name` ou outro layout), o
+  // PostgREST devolve 400. Nesse caso refazemos sem o `order` para
+  // evitar erro no console e ordenamos client-side por nome.
+  let data: ApiPatient[] | null = null
+  try {
+    data = await apiRequest<ApiPatient[]>(
+      "/rest/v1/patients?select=*&order=full_name.asc",
+      { logErrors: false },
+    )
+  } catch (err) {
+    if (err instanceof ApiError && (err.status === 400 || err.status === 406)) {
+      data = await apiRequest<ApiPatient[]>("/rest/v1/patients?select=*", { logErrors: false })
+    } else {
+      throw err
+    }
+  }
+  const patients = (data ?? []).map((row) => {
     const patient = apiToPatient(row)
     rememberPatientLink({ patientId: patient.id, name: patient.name, email: patient.email, cpf: patient.cpf })
     return patient
   })
+  return attachPatientPhotos(patients)
 }
 
 export async function getPatientsForReports(): Promise<Patient[]> {
@@ -683,27 +702,47 @@ export async function createPatientPortalAccess(
   return updatePatient({ ...patient, userId })
 }
 
+async function persistPatientPhoto(patient: Patient): Promise<Patient> {
+  const clearing = patient.photoUrl === "" || patient.photoUrl === null
+  if (clearing) {
+    await deletePatientPhotoFromStorage(patient.id).catch(() => undefined)
+    return { ...patient, photoUrl: undefined }
+  }
+  if (!patient.photoUrl) return patient
+  if (!isDataUrl(patient.photoUrl) && isRemotePhotoUrl(patient.photoUrl)) return patient
+
+  const photoUrl = await resolvePatientPhotoUrl(patient.id, patient.photoUrl)
+  return { ...patient, photoUrl }
+}
+
 export async function updatePatient(patient: Patient): Promise<Patient> {
   const linkedProfile = patient.userId ? null : await findProfileByEmail(patient.email)
   const patientWithUser = linkedProfile?.id ? { ...patient, userId: linkedProfile.id } : patient
+  const patientWithPhoto = await persistPatientPhoto(patientWithUser)
 
   try {
-    await apiRequest(`/rest/v1/patients?id=eq.${patientWithUser.id}`, {
+    await apiRequest(`/rest/v1/patients?id=eq.${patientWithPhoto.id}`, {
       method: "PATCH",
       headers: { Prefer: "return=minimal" },
-      body: patientToFullApi(patientWithUser),
+      body: patientToFullApi(patientWithPhoto),
       logErrors: false,
     })
   } catch (err) {
     if (!isSchemaMismatch(err)) throw err
-    await apiRequest(`/rest/v1/patients?id=eq.${patientWithUser.id}`, {
+    await apiRequest(`/rest/v1/patients?id=eq.${patientWithPhoto.id}`, {
       method: "PATCH",
       headers: { Prefer: "return=minimal" },
-      body: patientToApi(patientWithUser),
+      body: patientToApi(patientWithPhoto),
     })
   }
-  rememberPatientLink({ patientId: patientWithUser.id, name: patientWithUser.name, email: patientWithUser.email, cpf: patientWithUser.cpf })
-  return patientWithUser
+
+  rememberPatientLink({
+    patientId: patientWithPhoto.id,
+    name: patientWithPhoto.name,
+    email: patientWithPhoto.email,
+    cpf: patientWithPhoto.cpf,
+  })
+  return patientWithPhoto
 }
 
 async function deletePatientDependencies(id: string): Promise<void> {

@@ -1,6 +1,6 @@
 .hero {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 20px;
   align-items: center;
   padding: 22px;
@@ -8,6 +8,124 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--card);
+}
+
+.featureGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.featureTile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 132px;
+  padding: 18px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+  font-family: var(--font-sans);
+}
+
+.featureTile:hover {
+  border-color: #14b8a6;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px color-mix(in srgb, #000 12%, transparent);
+}
+
+.featureTileAccent {
+  border-color: color-mix(in srgb, #14b8a6 45%, var(--border));
+  background: color-mix(in srgb, #14b8a6 10%, var(--card));
+}
+
+.featureIcon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #14b8a6;
+  background: color-mix(in srgb, #14b8a6 14%, transparent);
+}
+
+.featureTileAccent .featureIcon {
+  color: #fff;
+  background: #14b8a6;
+}
+
+.featureLabel {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--foreground);
+}
+
+.featureCount {
+  min-width: 24px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--foreground);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sectionCard {
+  padding: 0;
+  overflow: hidden;
+}
+
+.sectionHeader {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 14px;
+  align-items: center;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.backBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  cursor: pointer;
+}
+
+.backBtn:hover {
+  border-color: #14b8a6;
+  color: #14b8a6;
+}
+
+.sectionHeader h2 {
+  margin: 0 0 2px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+.sectionHeader p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
 }
 
 .identity {
@@ -268,7 +386,7 @@
 @media (max-width: 900px) {
   .hero {
     align-items: stretch;
-    flex-direction: column;
+    grid-template-columns: 1fr;
   }
 
   .heroStats {
