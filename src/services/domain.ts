@@ -1,9 +1,8 @@
 import { apiRequest, ApiError, getApiUserId } from "./api"
-import { MESSAGES, MESSAGE_TEMPLATES } from "../data/mock"
 import { formatSpecialtyLabel } from "../utils"
 import type {
   MedicalRecord, Prescription, Report, ReportStatus,
-  Message, MessageTemplate, StaffMember, StaffRole, StaffStatus,
+  Message, StaffMember, StaffRole, StaffStatus,
   MedicalRecordStatus, PrescriptionMedication, PrescriptionType,
 } from "../types"
 
@@ -1011,24 +1010,44 @@ export async function createPrescription(data: Omit<Prescription, "id">): Promis
   return reportToPrescription(raw, data.patientName, data.doctorName)
 }
 
-// ─── MOCK — módulos ainda sem contrato de persistência ────────────
-export async function getMessages(): Promise<Message[]> { return MESSAGES }
-export async function getMessageTemplates(): Promise<MessageTemplate[]> { return MESSAGE_TEMPLATES }
+// ─── MENSAGENS (SMS via Edge Function `send-sms`) ─────────────────
+// Nao existe endpoint de listagem de mensagens persistidas no projeto. O
+// histórico exibido na UI fica em memória da sessão atual ate que uma
+// tabela `messages` seja criada e exposta via PostgREST/Edge Function.
+export async function getMessages(): Promise<Message[]> { return [] }
 
 function toE164BR(phone: string): string {
   const digits = phone.replace(/\D/g, "")
+  if (!digits) return ""
   if (digits.startsWith("55")) return `+${digits}`
   return `+55${digits}`
 }
 
+/**
+ * Envia SMS via Edge Function `/functions/v1/send-sms` do Supabase.
+ *
+ * Contrato exato do endpoint:
+ *   { message: string; phone_number: string; patient_id?: string }
+ *
+ * O retorno desta função reflete o que foi enviado (id local da sessão,
+ * status "Delivered" quando o gateway aceitou a requisição). A confirmação
+ * de entrega real depende de webhook do provedor (Twilio) e não está
+ * implementada aqui.
+ */
 export async function sendMessage(
   d: Omit<Message, "id"> & { phoneNumber: string },
 ): Promise<Message> {
-  const body = {
-    phone_number: toE164BR(d.phoneNumber),
-    message: d.content,
-    patient_id: String(d.patientId),
+  const message = d.content.trim()
+  const phone_number = toE164BR(d.phoneNumber)
+  if (!message) throw new Error("Mensagem não pode ser vazia.")
+  if (!phone_number) throw new Error("Telefone inválido. Informe DDD + número.")
+
+  const body: { message: string; phone_number: string; patient_id?: string } = {
+    message,
+    phone_number,
   }
+  const patientId = d.patientId == null ? "" : String(d.patientId).trim()
+  if (patientId) body.patient_id = patientId
 
   try {
     await apiRequest<{ success?: boolean; message_sid?: string }>("/functions/v1/send-sms", {

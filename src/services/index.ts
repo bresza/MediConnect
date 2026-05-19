@@ -32,7 +32,7 @@ export {
   getMedicalRecords, createMedicalRecord, updateMedicalRecord,
   getPrescriptions,  createPrescription,
   getReports,        createReport,        updateReport,
-  getMessages,       getMessageTemplates, sendMessage,
+  getMessages,       sendMessage,
   getStaff,          createStaffMember,   updateStaffMember, deleteStaffMember,
 } from "./domain"
 

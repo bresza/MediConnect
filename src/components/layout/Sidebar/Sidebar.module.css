@@ -2,6 +2,7 @@
 .sidebar {
   width: 240px;
   height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   background-color: var(--sidebar);
@@ -17,7 +18,13 @@
 .sidebarOpen { transform: translateX(0); }
 
 @media (min-width: 1024px) {
-  .sidebar { position: sticky; transform: translateX(0); }
+  .sidebar {
+    position: relative;
+    top: auto; left: auto;
+    height: 100%;
+    transform: none;
+    transition: none;
+  }
 }
 
 /* ── Logo ─────────────────────────────────────────────────────── */

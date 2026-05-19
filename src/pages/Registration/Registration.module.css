@@ -1,11 +1,17 @@
 .formCard {
-  padding: 24px;
-  max-width: 768px;
+  padding: 20px;
+  max-width: 1100px;
   width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
 }
 
 @media (min-width: 640px) {
-  .formCard { padding: 32px; }
+  .formCard { padding: 28px; }
+}
+
+@media (min-width: 1024px) {
+  .formCard { padding: 32px 36px; }
 }
 
 /* ── Stepper ──────────────────────────────────────────────────── */
@@ -107,6 +113,10 @@
 }
 
 @media (min-width: 640px) {
+  .grid3 { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (min-width: 1024px) {
   .grid3 { grid-template-columns: repeat(3, 1fr); }
 }
 
@@ -145,7 +155,7 @@
 
 @media (max-width: 639px) {
   .formCard {
-    padding: 16px;
+    padding: 14px;
     max-width: none;
   }
 
@@ -163,8 +173,9 @@
   }
 
   .stepLine {
-    width: 28px;
-    flex: 0 0 28px;
+    width: 22px;
+    flex: 0 0 22px;
+    margin: 0 6px;
   }
 }
 

@@ -1,61 +1,6 @@
 import type {
-  Message,
-  MessageTemplate,
   StaffMember,
 } from "../types"
-
-// ─── MESSAGES ─────────────────────────────────────────────────────
-export const MESSAGES: Message[] = [
-  {
-    id: 1,
-    patientId: 1,
-    patientName: "Ana Souza",
-    channel: "WhatsApp",
-    content: "Lembrete de consulta amanhã às 08:00",
-    status: "Delivered",
-    sentBy: "Sistema",
-    date: "2026-03-09",
-  },
-  {
-    id: 2,
-    patientId: 2,
-    patientName: "Carlos Mendes",
-    channel: "Email",
-    content: "Confirmação de agendamento",
-    status: "Delivered",
-    sentBy: "Sistema",
-    date: "2026-03-06",
-  },
-  {
-    id: 3,
-    patientId: 3,
-    patientName: "Beatriz Lima",
-    channel: "SMS",
-    content: "Resultado de exame disponível",
-    status: "Failed",
-    sentBy: "Sistema",
-    date: "2026-03-01",
-  },
-  {
-    id: 4,
-    patientId: 4,
-    patientName: "João Pedro Alves",
-    channel: "WhatsApp",
-    content: "Lembrete: consulta em 48h",
-    status: "Pending",
-    sentBy: "Sistema",
-    date: "2026-03-13",
-  },
-]
-
-// ─── MESSAGE TEMPLATES ────────────────────────────────────────────
-export const MESSAGE_TEMPLATES: MessageTemplate[] = [
-  { id: 1, name: "Lembrete de consulta (48h)", channel: "WhatsApp", content: "Olá {nome}, lembrete da sua consulta em {data} às {hora}." },
-  { id: 2, name: "Confirmação de agendamento", channel: "Email", content: "Olá {nome}, sua consulta foi confirmada para {data} às {hora}." },
-  { id: 3, name: "Resultado de exame disponível", channel: "SMS", content: "Olá {nome}, seu resultado de exame está disponível." },
-  { id: 4, name: "Cancelamento de consulta", channel: "WhatsApp", content: "Olá {nome}, sua consulta de {data} foi cancelada." },
-  { id: 5, name: "Boas-vindas ao paciente", channel: "Email", content: "Olá {nome}, seja bem-vindo(a) à Clínica Mediconnect!" },
-]
 
 // ─── MEDICAL RECORDS ──────────────────────────────────────────────
 export const MEDICAL_RECORDS = [

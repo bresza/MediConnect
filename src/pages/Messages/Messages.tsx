@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { getMessages, getMessageTemplates, sendMessage } from "../../services/domain"
+import { getMessages, sendMessage } from "../../services/domain"
 import { getPatients } from "../../services/patients"
 import type { Message, MessageTemplate, Patient } from "../../types"
 import { Topbar } from "../../components/layout/Topbar/Topbar"
@@ -10,10 +10,21 @@ import { Button } from "../../components/ui/Button/Button"
 import { Select } from "../../components/ui/Select/Select"
 import styles from "./Messages.module.css"
 
+// Presets de UI (não são dados da API — são atalhos de redação para a
+// secretaria preencher rapidamente a caixa de SMS). Como o canal real
+// disponível na Edge Function `send-sms` é apenas SMS, todos os presets
+// usam esse canal.
+const SMS_TEMPLATES: MessageTemplate[] = [
+  { id: 1, name: "Lembrete de consulta (48h)", channel: "SMS", content: "Olá {nome}, lembrete da sua consulta em {data} às {hora}." },
+  { id: 2, name: "Confirmação de agendamento", channel: "SMS", content: "Olá {nome}, sua consulta foi confirmada para {data} às {hora}." },
+  { id: 3, name: "Resultado de exame disponível", channel: "SMS", content: "Olá {nome}, seu resultado de exame está disponível." },
+  { id: 4, name: "Cancelamento de consulta", channel: "SMS", content: "Olá {nome}, sua consulta de {data} foi cancelada." },
+  { id: 5, name: "Boas-vindas ao paciente", channel: "SMS", content: "Olá {nome}, seja bem-vindo(a) à Clínica Mediconnect!" },
+]
+
 export function Messages() {
   const [showModal,   setShowModal]   = useState(false)
   const [messages,    setMessages]    = useState<Message[]>([])
-  const [templates,   setTemplates]   = useState<MessageTemplate[]>([])
   const [patients,    setPatients]    = useState<Patient[]>([])
   const [patientId,   setPatientId]   = useState("")
   const [templateId,  setTemplateId]  = useState("")
@@ -21,9 +32,10 @@ export function Messages() {
   const [error,       setError]       = useState<string | null>(null)
   const [isSending,   setIsSending]   = useState(false)
 
+  const templates = SMS_TEMPLATES
+
   useEffect(() => {
     getMessages().then(setMessages)
-    getMessageTemplates().then(setTemplates)
     getPatients().then(setPatients)
   }, [])
 
@@ -52,6 +64,8 @@ export function Messages() {
     setIsSending(true)
     setError(null)
     try {
+      // sendMessage recebe phoneNumber + content e monta o body da Edge
+      // Function exatamente como `{ message, phone_number, patient_id? }`.
       const sent = await sendMessage({
         patientId: patient.id,
         patientName: patient.name,
@@ -59,7 +73,6 @@ export function Messages() {
         channel: "SMS",
         content: content.trim(),
         status: "Pending",
-        sentBy: "API Twilio",
         date: new Date().toISOString().slice(0, 10),
       })
       setMessages((prev) => [sent, ...prev])
@@ -111,6 +124,17 @@ export function Messages() {
                 </tr>
               </thead>
               <tbody>
+                {messages.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={5}
+                      className={`${styles.td} ${styles.tdLast}`}
+                      style={{ textAlign: "center", color: "var(--muted-foreground)" }}
+                    >
+                      Nenhuma mensagem enviada nesta sessão.
+                    </td>
+                  </tr>
+                )}
                 {messages.map((m, i) => {
                   const isLast = i === messages.length - 1
                   return (

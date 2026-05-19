@@ -366,7 +366,14 @@ export function Registration({
   function validationForStep(targetStep = step): Partial<Record<keyof FormState, string>> {
     const e: Partial<Record<keyof FormState, string>> = {}
     if (targetStep === 1) {
-      if (!form.name.trim()) e.name   = "Nome completo é obrigatório"
+      const trimmedName = form.name.trim()
+      if (!trimmedName) {
+        e.name = "Nome completo é obrigatório"
+      } else {
+        // Nome completo = pelo menos duas palavras (nome + sobrenome).
+        const nameParts = trimmedName.split(/\s+/).filter(Boolean)
+        if (nameParts.length < 2) e.name = "Informe nome e sobrenome"
+      }
       if (!form.gender)      e.gender = "Sexo é obrigatório"
       if (!form.dob)         e.dob    = "Data de nascimento é obrigatória"
       else if (form.dob > TODAY) e.dob = "Data de nascimento deve estar no passado"
