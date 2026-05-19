@@ -286,16 +286,20 @@ export function Availability({ currentUser }: AvailabilityProps) {
               value={endTime}
               onChange={(event) => { setEndTime(event.target.value); clearFeedback() }}
             />
-            <Select
-              label="Intervalo"
-              value={slotMinutes}
-              onChange={(event) => { setSlotMinutes(event.target.value); clearFeedback() }}
-              options={SLOT_OPTIONS}
-            />
+            <div className={styles.fullRow}>
+              <Select
+                label="Intervalo"
+                value={slotMinutes}
+                onChange={(event) => { setSlotMinutes(event.target.value); clearFeedback() }}
+                options={SLOT_OPTIONS}
+              />
+            </div>
           </div>
-          <Button onClick={handleCreateAvailability} disabled={isSaving || !doctorId}>
-            {isSaving ? "Salvando..." : "Criar disponibilidade"}
-          </Button>
+          <div className={styles.formActions}>
+            <Button onClick={handleCreateAvailability} disabled={isSaving || !doctorId}>
+              {isSaving ? "Salvando..." : "Criar disponibilidade"}
+            </Button>
+          </div>
         </Card>
 
         <Card className={styles.listCard}>

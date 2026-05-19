@@ -1,13 +1,17 @@
+/* ── Toolbar (header card: seletor de medico + badge) ────────────── */
 .toolbar {
+  padding: 18px 20px;
   display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 16px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 14px 20px;
   margin-bottom: 16px;
 }
 
 .doctorField {
-  width: min(360px, 100%);
+  flex: 1 1 280px;
+  min-width: 0;
+  max-width: 420px;
 }
 
 .label {
@@ -32,54 +36,96 @@
 }
 
 .summary {
+  margin-left: auto;
   min-height: 38px;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 0 14px;
+  padding: 0 16px;
   border-radius: var(--radius-md);
   border: 1px solid color-mix(in srgb, var(--primary) 26%, transparent);
   background: color-mix(in srgb, var(--primary) 10%, transparent);
   color: var(--muted-foreground);
   font-size: 12px;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .summary span {
   color: var(--primary);
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 900;
+  line-height: 1;
 }
 
+/* ── Layout principal (form + lista) ───────────────────────────── */
 .grid {
   display: grid;
-  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
+  align-items: stretch;
+}
+
+@media (min-width: 960px) {
+  .grid {
+    grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+  }
 }
 
 .formCard,
 .listCard {
-  align-self: start;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+@media (min-width: 1024px) {
+  .formCard,
+  .listCard {
+    padding: 22px 24px;
+  }
 }
 
 .cardTitle {
-  margin: 0 0 14px;
+  margin: 0 0 16px;
   color: var(--foreground);
   font-size: 15px;
   font-weight: 800;
+  letter-spacing: -0.01em;
 }
 
+/* ── Form ──────────────────────────────────────────────────────── */
 .formGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin-bottom: 16px;
+  column-gap: 14px;
+  row-gap: 12px;
+  margin-bottom: 18px;
 }
 
+.fullRow {
+  grid-column: 1 / -1;
+}
+
+.formActions {
+  margin-top: auto;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.formActions button {
+  min-width: 180px;
+}
+
+/* ── Lista de horarios ─────────────────────────────────────────── */
 .rows {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .row {
@@ -87,14 +133,19 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px;
+  padding: 12px 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--background);
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.row:hover {
+  border-color: color-mix(in srgb, var(--primary) 35%, var(--border));
 }
 
 .rowInactive {
-  opacity: 0.72;
+  opacity: 0.7;
   background: var(--muted);
 }
 
@@ -102,7 +153,8 @@
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  flex: 1 1 auto;
 }
 
 .activeDot,
@@ -115,6 +167,7 @@
 
 .activeDot {
   background: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
 }
 
 .inactiveDot {
@@ -144,14 +197,23 @@
   flex-wrap: wrap;
 }
 
+/* ── Estado vazio / loading ───────────────────────────────────── */
 .empty {
   margin: 0;
-  padding: 24px;
+  padding: 40px 24px;
   color: var(--muted-foreground);
   font-size: 13px;
   text-align: center;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--muted) 40%, transparent);
 }
 
+/* ── Feedback (erro / sucesso) ────────────────────────────────── */
 .error,
 .success {
   margin: 0 0 16px;
@@ -173,23 +235,41 @@
   border: 1px solid color-mix(in srgb, var(--primary) 25%, transparent);
 }
 
-@media (max-width: 860px) {
+/* ── Responsivo (tablet/mobile) ───────────────────────────────── */
+@media (max-width: 959px) {
+  .formCard,
+  .listCard {
+    height: auto;
+  }
+}
+
+@media (max-width: 640px) {
   .toolbar {
-    align-items: stretch;
+    padding: 14px 16px;
     flex-direction: column;
+    align-items: stretch;
   }
 
-  .doctorField,
+  .doctorField {
+    max-width: none;
+  }
+
   .summary {
-    width: 100%;
-  }
-
-  .grid {
-    grid-template-columns: 1fr;
+    margin-left: 0;
+    justify-content: center;
   }
 
   .formGrid {
     grid-template-columns: 1fr;
+  }
+
+  .formActions {
+    justify-content: stretch;
+  }
+
+  .formActions button {
+    width: 100%;
+    min-width: 0;
   }
 
   .row {
