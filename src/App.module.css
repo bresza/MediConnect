@@ -1,6 +1,8 @@
 .layout {
   display: flex;
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
   background-color: var(--background);
 }
 
@@ -12,7 +14,15 @@
 }
 @media (min-width: 1024px) { .backdrop { display: none; } }
 
-.main { flex: 1; min-width: 0; overflow-y: auto; display: flex; flex-direction: column; }
+.main {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+}
 
 /* ── Mobile topbar ────────────────────────────────────────────── */
 .mobileTopbar {
