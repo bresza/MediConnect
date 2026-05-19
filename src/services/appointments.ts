@@ -94,6 +94,12 @@ function localTime(value: Date): string {
   return `${pad(value.getHours())}:${pad(value.getMinutes())}`
 }
 
+function localDateTimeIso(date: string, time: string): string {
+  const [year, month, day] = date.split("-").map(Number)
+  const [hours, minutes] = time.slice(0, 5).split(":").map(Number)
+  return new Date(year, month - 1, day, hours, minutes, 0).toISOString()
+}
+
 function normalizeWeekday(value: number | string): number {
   if (typeof value === "number") return value
   const numeric = Number(value)
@@ -214,7 +220,7 @@ function appointmentToApi(
 ): Record<string, unknown> {
   const scheduledAt =
     a.date && a.time
-      ? `${a.date}T${a.time}:00`
+      ? localDateTimeIso(a.date, a.time)
       : a.date
 
   const payload: Record<string, unknown> = {

@@ -164,6 +164,7 @@ function parseErrorMessage(raw: string): string {
   if (!raw) return ""
   try {
     const parsed = JSON.parse(raw)
+    if (typeof parsed === "string") return parseErrorMessage(parsed)
     return (
       parsed?.detail ??
       parsed?.message ??

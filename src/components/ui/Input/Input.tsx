@@ -31,8 +31,7 @@ interface InputProps {
 export function Input({
   label, id, name, type = "text", placeholder, value, onChange, onBlur,
   required, disabled, error, hint, className = "", children,
-  defaultValue, autoComplete, min, max, readOnly,
-  inputMode, maxLength, pattern,
+  defaultValue, autoComplete, min, max, maxLength, inputMode, pattern, readOnly,
 }: InputProps) {
   const inputId = id ?? name
   return (
@@ -47,8 +46,8 @@ export function Input({
           id={inputId} name={name} type={type} placeholder={placeholder}
           value={value} defaultValue={defaultValue} onChange={onChange} onBlur={onBlur}
           required={required} disabled={disabled} readOnly={readOnly}
-          autoComplete={autoComplete} min={min} max={max}
-          inputMode={inputMode} maxLength={maxLength} pattern={pattern}
+          autoComplete={autoComplete} min={min} max={max} maxLength={maxLength}
+          inputMode={inputMode} pattern={pattern}
           className={`${styles.input} ${error ? styles.inputError : ""} ${disabled ? styles.inputDisabled : ""}`}
         />
       )}

@@ -13,6 +13,7 @@ import { RefreshButton } from "../../components/ui/RefreshButton/RefreshButton"
 import {
   crmDigits, crmUf as parseCrmUf,
   formatCpfBR, formatCrm, formatPhoneBR, onlyDigits,
+  hasAtLeastTwoNames, isValidCpf, isValidEmail,
   sortByName, toTitleCase,
 } from "../../utils"
 import type { StaffMember, StaffRole, StaffStatus } from "../../types"
@@ -195,10 +196,15 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: Tea
   function validate(): boolean {
     const e: Partial<Record<keyof StaffForm, string>> = {}
     if (!form.name.trim())  e.name  = "Nome obrigatório"
+    else if (!hasAtLeastTwoNames(form.name)) e.name = "Informe pelo menos dois nomes"
     if (!form.email.trim()) e.email = "E-mail obrigatório"
+    else if (!isValidEmail(form.email)) e.email = "E-mail inválido"
     if (!form.phone.trim()) e.phone = "Telefone obrigatório"
+    else if (onlyDigits(form.phone).length !== 11) e.phone = "Telefone deve estar no formato (00)-00000-0000"
     // CPF é obrigatório na criação porque o endpoint de usuário exige validação.
     if (!editingMember && !form.cpf.trim()) e.cpf = "CPF obrigatório"
+    else if (!editingMember && onlyDigits(form.cpf).length !== 11) e.cpf = "CPF deve ter 11 dígitos"
+    else if (!editingMember && !isValidCpf(form.cpf)) e.cpf = "CPF inválido"
     if (activeTab === "doctor") {
       if (!form.crmNum.trim())    e.crmNum    = "CRM obrigatório"
       if (!form.crmUf.trim())     e.crmUf     = "UF obrigatória"

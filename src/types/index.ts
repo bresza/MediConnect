@@ -41,7 +41,7 @@ export interface AuditEntry {
 export interface Patient {
   id: string; name: string; socialName?: string; cpf: string; rg?: string
   userId?: string
-  documents?: PatientDocument[]; gender: Gender; dob: string; ethnicity?: Ethnicity
+  documents?: PatientDocument[]; gender?: Gender; dob: string; ethnicity?: Ethnicity
   race?: string; birthplace?: string; nationality?: string; occupation?: string
   maritalStatus?: MaritalStatus; motherName?: string; motherOccupation?: string
   fatherName?: string; fatherOccupation?: string; guardianName?: string; guardianCpf?: string

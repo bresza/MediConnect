@@ -1,6 +1,7 @@
 .formCard {
-  padding: 20px;
-  max-width: 1100px;
+  padding: 24px;
+  max-width: none;
+  min-width: 0;
   width: 100%;
   margin: 0 auto;
   box-sizing: border-box;
@@ -98,17 +99,13 @@
 /* ── Form grids ───────────────────────────────────────────────── */
 .grid2 {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
   gap: 14px;
-}
-
-@media (min-width: 640px) {
-  .grid2 { grid-template-columns: repeat(2, 1fr); }
 }
 
 .grid3 {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
   gap: 14px;
 }
 
@@ -122,36 +119,24 @@
 
 .grid4 {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
   gap: 14px;
-}
-
-@media (min-width: 1024px) {
-  .grid4 { grid-template-columns: repeat(4, 1fr); }
 }
 
 .gridAddress {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
   gap: 14px;
-}
-
-@media (min-width: 640px) {
-  .gridAddress { grid-template-columns: 1fr 2fr 80px; }
 }
 
 .gridAddressBottom {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
   gap: 14px;
   margin-top: 14px;
 }
 
-@media (min-width: 1024px) {
-  .gridAddressBottom { grid-template-columns: 1fr 1fr 1fr 100px; }
-}
-
-.colSpan2 { grid-column: span 2; }
+.colSpan2 { grid-column: 1 / -1; }
 
 @media (max-width: 639px) {
   .formCard {
@@ -204,7 +189,7 @@
 }
 
 @media (min-width: 640px) {
-  .docBoxGrid { grid-template-columns: repeat(3, 1fr); }
+  .docBoxGrid { grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); }
 }
 
 .lgpdBox {
@@ -260,6 +245,8 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
   padding-top: 20px;
   border-top: 1px solid var(--border);
   margin-top: 4px;

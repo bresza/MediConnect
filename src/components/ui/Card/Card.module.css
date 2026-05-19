@@ -4,6 +4,9 @@
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-sm);
   color: var(--card-foreground);
+  max-width: 100%;
+  min-width: 0;
+  width: 100%;
 }
 
 .clickable { cursor: pointer; transition: box-shadow 150ms ease, border-color 150ms ease; }

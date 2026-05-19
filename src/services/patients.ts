@@ -91,7 +91,7 @@ function apiToPatient(api: ApiPatient): Patient {
     email:                  api.email,
     phone:                  api.phone_mobile ?? "",
     dob:                    api.birth_date ?? "",
-    gender:                 (api.gender as Gender) ?? "Other",
+    gender:                 api.gender as Gender | undefined,
     status:                 (api.status as PatientStatus) ?? "Active",
     socialName:             api.social_name,
     rg:                     api.rg,

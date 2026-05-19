@@ -6,8 +6,8 @@ import { Input } from "../../components/ui/Input/Input"
 import { Button } from "../../components/ui/Button/Button"
 import { getProfileSettings, updateProfileSettings } from "../../services/settings"
 import type { ProfileSettings } from "../../services/settings"
-import { formatPhoneBR, onlyDigits } from "../../utils"
 import type { User } from "../../types"
+import { formatPhoneBR, hasAtLeastTwoNames, onlyDigits } from "../../utils"
 import styles from "./Settings.module.css"
 
 interface SettingsProps {
@@ -54,6 +54,7 @@ export function Settings({ currentUser }: SettingsProps) {
 
   async function handleSave() {
     if (!form.fullName.trim()) { setError("Nome obrigatório"); return }
+    if (!hasAtLeastTwoNames(form.fullName)) { setError("Informe pelo menos dois nomes"); return }
     setIsSaving(true)
     setError(null)
     setMessage(null)
