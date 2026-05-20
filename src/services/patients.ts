@@ -859,14 +859,19 @@ async function deletePatientRecord(id: string, logErrors = true): Promise<void> 
   })
 }
 
-export async function deletePatient(id: string): Promise<void> {
-  const patient = await findPatientById(id).catch(() => null)
-  const userId = patient?.user_id ?? ""
+async function finalizeDeletedPatient(id: string, userId: string): Promise<void> {
+  await deletePatientPhotoFromStorage(id).catch((err) => {
+    console.warn("[patients] remocao da foto do paciente falhou:", err)
+  })
 
   if (userId) {
     await deletePatientAuthUser(userId)
-    return
   }
+}
+
+export async function deletePatient(id: string): Promise<void> {
+  const patient = await findPatientById(id).catch(() => null)
+  const userId = patient?.user_id ?? ""
 
   try {
     await deletePatientDependencies(id)
@@ -877,6 +882,7 @@ export async function deletePatient(id: string): Promise<void> {
 
   try {
     await deletePatientRecord(id, false)
+    await finalizeDeletedPatient(id, userId)
     return
   } catch (err) {
     if (!isDeleteBlockedByDependency(err)) throw err
@@ -885,6 +891,7 @@ export async function deletePatient(id: string): Promise<void> {
   await deletePatientDependencies(id)
   try {
     await deletePatientRecord(id)
+    await finalizeDeletedPatient(id, userId)
     return
   } catch (err) {
     if (!isDeleteBlockedByDependency(err)) throw err
