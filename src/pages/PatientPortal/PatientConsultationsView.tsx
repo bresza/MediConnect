@@ -29,8 +29,8 @@ function isActiveStatus(status: string): boolean {
   return status !== "cancelled" && status !== "completed" && status !== "absent"
 }
 
-function canManage(appointment: Appointment): boolean {
-  return isActiveStatus(appointment.status) && appointmentTs(appointment) > Date.now()
+function canManage(appointment: Appointment, now: number): boolean {
+  return isActiveStatus(appointment.status) && appointmentTs(appointment) > now
 }
 
 function AppointmentCard({
@@ -38,15 +38,17 @@ function AppointmentCard({
   statusLabels,
   onReschedule,
   onCancel,
+  now,
   compact = false,
 }: {
   appointment: Appointment
   statusLabels: Record<string, string>
   onReschedule: (a: Appointment) => void
   onCancel: (a: Appointment) => void
+  now: number
   compact?: boolean
 }) {
-  const manageable = canManage(appointment)
+  const manageable = canManage(appointment, now)
 
   return (
     <article className={`${styles.apptCard} ${compact ? styles.apptCardCompact : ""}`}>
@@ -85,6 +87,7 @@ export function PatientConsultationsView({
   onCancel,
 }: PatientConsultationsViewProps) {
   const today = todayStr()
+  const now = new Date().getTime()
 
   const activeConsultations = useMemo(
     () => appointments.filter((a) =>
@@ -101,9 +104,9 @@ export function PatientConsultationsView({
 
   const upcomingAppointments = useMemo(
     () => activeConsultations
-      .filter((a) => appointmentTs(a) > Date.now() && a.date !== today)
+      .filter((a) => appointmentTs(a) > now && a.date !== today)
       .sort((a, b) => appointmentTs(a) - appointmentTs(b)),
-    [activeConsultations],
+    [activeConsultations, now, today],
   )
 
   const groupedUpcoming = useMemo(() => {
@@ -156,6 +159,7 @@ export function PatientConsultationsView({
                   statusLabels={statusLabels}
                   onReschedule={onReschedule}
                   onCancel={onCancel}
+                  now={now}
                 />
               ))}
             </div>
@@ -187,6 +191,7 @@ export function PatientConsultationsView({
                       statusLabels={statusLabels}
                       onReschedule={onReschedule}
                       onCancel={onCancel}
+                    now={now}
                       compact
                     />
                   ))}
