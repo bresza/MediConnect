@@ -676,10 +676,7 @@ async function withPatientLink(user: User, token: string): Promise<User> {
   if (user.role !== "patient") return user
   const patient = await fetchPatientLink(token, user.id, user.email, user.patientCpf, user.patientId)
   if (!patient) {
-    return {
-      ...user,
-      patientId: user.patientId ?? user.id,
-    }
+    return user.patientId === user.id ? { ...user, patientId: undefined } : user
   }
   return {
     ...user,

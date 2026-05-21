@@ -46,14 +46,23 @@ export function usePatientAIData(user: User | null, seedPatient?: Patient | null
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([])
   const [reports,       setReports]       = useState<Report[]>([])
   const [loading,       setLoading]       = useState(false)
+  const isPatientUser = user?.role === "patient"
 
   const identity = useMemo(
-    () => (user ? buildIdentity(user, patient ?? seedPatient ?? null) : null),
-    [user, patient, seedPatient],
+    () => (isPatientUser && user ? buildIdentity(user, seedPatient ?? null) : null),
+    [isPatientUser, user, seedPatient],
   )
 
   const reload = useCallback(async () => {
-    if (!user || !identity) return
+    if (!isPatientUser || !user || !identity) {
+      setPatient(null)
+      setAppointments([])
+      setPrescriptions([])
+      setReports([])
+      setLoading(false)
+      return
+    }
+
     setLoading(true)
     try {
       const linked = await getPatientByIdentity({
@@ -64,7 +73,7 @@ export function usePatientAIData(user: User | null, seedPatient?: Patient | null
         cpf:       seedPatient?.cpf ?? user.patientCpf,
       }).catch(() => seedPatient ?? null)
 
-      if (linked) setPatient(linked)
+      if (linked) setPatient((prev) => (prev && prev.id === linked.id ? prev : linked))
 
       const id = linked?.id ?? identity.patientId
       if (!id) {
@@ -93,7 +102,7 @@ export function usePatientAIData(user: User | null, seedPatient?: Patient | null
     } finally {
       setLoading(false)
     }
-  }, [user, identity, seedPatient])
+  }, [isPatientUser, user, identity, seedPatient])
 
   useEffect(() => { void reload() }, [reload])
 
