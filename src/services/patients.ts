@@ -504,8 +504,15 @@ function scorePatientMatch(api: ApiPatient, identity: PatientIdentity): number {
   return 0
 }
 
+interface GetPatientByIdentityOptions {
+  syncUserId?: boolean
+}
+
+const MIN_STRONG_PATIENT_MATCH_SCORE = 30
+
 async function syncResolvedPatientProfile(userId: string | undefined, patient: ApiPatient): Promise<void> {
   if (!userId) return
+  if (patient.user_id && patient.user_id !== userId) return
 
   await apiRequest(`/rest/v1/patients?id=eq.${encodeURIComponent(patient.id)}`, {
     method: "PATCH",
@@ -527,7 +534,10 @@ async function linkPatientToUser(patientId: string, userId: string): Promise<voi
   })
 }
 
-export async function getPatientByIdentity(identity: PatientIdentity): Promise<Patient | null> {
+export async function getPatientByIdentity(
+  identity: PatientIdentity,
+  options: GetPatientByIdentityOptions = {},
+): Promise<Patient | null> {
   const filters = patientIdentityFilters(identity)
   if (filters.length === 0) return null
 
@@ -549,13 +559,13 @@ export async function getPatientByIdentity(identity: PatientIdentity): Promise<P
   }
 
   const uniqueRows = Array.from(new Map(rows.map((row) => [row.id, row])).values())
-  const best = uniqueRows
+  const bestMatch = uniqueRows
     .map((row) => ({ row, score: scorePatientMatch(row, identity) }))
-    .sort((a, b) => b.score - a.score)[0]?.row
+    .sort((a, b) => b.score - a.score)[0]
 
-  if (!best) return null
-  await syncResolvedPatientProfile(identity.userId, best)
-  return attachPatientPhoto(apiToPatient(best))
+  if (!bestMatch || bestMatch.score < MIN_STRONG_PATIENT_MATCH_SCORE) return null
+  if (options.syncUserId) await syncResolvedPatientProfile(identity.userId, bestMatch.row)
+  return attachPatientPhoto(apiToPatient(bestMatch.row))
 }
 
 export async function getPatients(): Promise<Patient[]> {

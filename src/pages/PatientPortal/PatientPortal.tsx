@@ -12,8 +12,6 @@ import { getPatientAppointmentsByIdentity } from "../../services/appointments"
 
 import { getPatientByIdentity } from "../../services/patients"
 
-import { resolveRememberedPatientId } from "../../services/patientLinks"
-
 import { Topbar } from "../../components/layout/Topbar/Topbar"
 
 import { Card } from "../../components/ui/Card/Card"
@@ -329,18 +327,7 @@ export function PatientPortal({
 
 
   const portalPatient = resolvedPatient ?? patient
-
-  const rememberedPatientId = resolveRememberedPatientId({
-
-    name: portalPatient?.name ?? patient?.name ?? currentUser.name,
-
-    email: portalPatient?.email ?? patient?.email ?? currentUser.email,
-
-    cpf: portalPatient?.cpf ?? patient?.cpf ?? currentUser.patientCpf,
-
-  })
-
-  const patientId = rememberedPatientId ?? portalPatient?.id ?? currentUser.patientId ?? ""
+  const patientId = portalPatient?.id ?? currentUser.patientId ?? ""
 
   const patientIdentity = useMemo(() => ({
 
@@ -382,7 +369,7 @@ export function PatientPortal({
 
       cpf: patient?.cpf ?? currentUser.patientCpf,
 
-    })
+    }, { syncUserId: currentUser.role === "patient" })
 
       .then((linked) => { if (alive) setResolvedPatient(linked ?? patient) })
 

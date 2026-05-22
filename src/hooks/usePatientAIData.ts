@@ -5,7 +5,6 @@ import {
   getPatientReportsByIdentity,
 } from "../services/domain"
 import { getPatientByIdentity } from "../services/patients"
-import { resolveRememberedPatientId } from "../services/patientLinks"
 import type { Appointment, Patient, Prescription, Report, User } from "../types"
 
 export interface PatientIdentity {
@@ -18,11 +17,7 @@ export interface PatientIdentity {
 
 function buildIdentity(user: User, seed?: Patient | null): PatientIdentity {
   const portal = seed ?? null
-  const patientId = resolveRememberedPatientId({
-    name:  portal?.name ?? user.name,
-    email: portal?.email ?? user.email,
-    cpf:   portal?.cpf ?? user.patientCpf,
-  }) ?? portal?.id ?? user.patientId ?? ""
+  const patientId = portal?.id ?? user.patientId ?? ""
 
   return {
     patientId: patientId || undefined,
@@ -46,14 +41,22 @@ export function usePatientAIData(user: User | null, seedPatient?: Patient | null
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([])
   const [reports,       setReports]       = useState<Report[]>([])
   const [loading,       setLoading]       = useState(false)
+  const isPatientUser = user?.role === "patient"
 
   const identity = useMemo(
-    () => (user ? buildIdentity(user, patient ?? seedPatient ?? null) : null),
-    [user, patient, seedPatient],
+    () => (user && isPatientUser ? buildIdentity(user, patient ?? seedPatient ?? null) : null),
+    [user, isPatientUser, patient, seedPatient],
   )
 
   const reload = useCallback(async () => {
-    if (!user || !identity) return
+    if (!user || !isPatientUser || !identity) {
+      setPatient(null)
+      setAppointments([])
+      setPrescriptions([])
+      setReports([])
+      setLoading(false)
+      return
+    }
     setLoading(true)
     try {
       const linked = await getPatientByIdentity({
@@ -62,7 +65,7 @@ export function usePatientAIData(user: User | null, seedPatient?: Patient | null
         name:      seedPatient?.name ?? user.name,
         email:     seedPatient?.email ?? user.email,
         cpf:       seedPatient?.cpf ?? user.patientCpf,
-      }).catch(() => seedPatient ?? null)
+      }, { syncUserId: true }).catch(() => seedPatient ?? null)
 
       if (linked) setPatient(linked)
 
@@ -93,7 +96,7 @@ export function usePatientAIData(user: User | null, seedPatient?: Patient | null
     } finally {
       setLoading(false)
     }
-  }, [user, identity, seedPatient])
+  }, [user, isPatientUser, identity, seedPatient])
 
   useEffect(() => { void reload() }, [reload])
 
