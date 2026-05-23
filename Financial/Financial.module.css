@@ -1,0 +1,343 @@
+/* ── Period tabs ──────────────────────────────────────────────── */
+.periodTabs {
+  display: flex; gap: 4px;
+  margin-bottom: 16px;
+  overflow-x: auto; scrollbar-width: none;
+}
+.periodTabs::-webkit-scrollbar { display: none; }
+
+.periodTab {
+  padding: 7px 16px; border-radius: 20px;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--muted-foreground); font-size: 12px; font-weight: 500;
+  font-family: var(--font-sans); cursor: pointer; white-space: nowrap;
+  transition: all 150ms ease;
+}
+.periodTab:hover { background-color: var(--muted); color: var(--foreground); }
+.periodTabActive { background-color: var(--primary); border-color: var(--primary); color: var(--primary-foreground); }
+
+/* ── Stats grid ───────────────────────────────────────────────── */
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px; margin-bottom: 16px;
+}
+@media (min-width: 768px) { .statsGrid { grid-template-columns: repeat(4, 1fr); } }
+
+.statCard { padding: 16px 18px; }
+
+.statTop {
+  display: flex; justify-content: space-between;
+  align-items: flex-start; gap: 8px;
+}
+
+.statLabel {
+  font-size: 11px; font-weight: 600;
+  color: var(--muted-foreground);
+  text-transform: uppercase; letter-spacing: .06em;
+  line-height: 1;
+}
+
+.statValue {
+  font-size: 18px; font-weight: 700;
+  letter-spacing: -.02em; margin-top: 6px; line-height: 1;
+}
+@media (min-width: 640px) { .statValue { font-size: 20px; } }
+
+.statSub { font-size: 11px; color: var(--muted-foreground); margin-top: 6px; }
+
+.statIcon {
+  width: 36px; height: 36px; flex-shrink: 0;
+  border-radius: var(--radius-lg);
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* progress bar */
+.progressBar {
+  height: 3px; border-radius: 2px;
+  background-color: var(--border);
+  margin-top: 10px; overflow: hidden;
+}
+.progressFill {
+  height: 100%; border-radius: 2px;
+  background-color: #10b981;
+  transition: width 600ms ease;
+}
+:global(.dark) .progressFill { background-color: #34d399; }
+
+.valDefault { color: var(--foreground); }
+.valGreen   { color: #059669; }
+.valAmber   { color: #d97706; }
+.valRed     { color: var(--destructive); }
+
+:global(.dark) .valGreen { color: #34d399; }
+:global(.dark) .valAmber { color: #fbbf24; }
+
+/* ── Chart ────────────────────────────────────────────────────── */
+.chartCard { margin-bottom: 16px; }
+
+.chartHeader {
+  display: flex; align-items: baseline; justify-content: space-between;
+  padding: 14px 18px; border-bottom: 1px solid var(--border);
+}
+.chartTitle { font-size: 13px; font-weight: 700; color: var(--foreground); }
+.chartSub   { font-size: 11px; color: var(--muted-foreground); }
+
+.chartWrap { padding: 16px 18px 12px; }
+
+.chartInner { display: flex; gap: 8px; }
+
+.yAxis {
+  display: flex; flex-direction: column;
+  justify-content: space-between;
+  padding-bottom: 20px;
+  width: 32px; flex-shrink: 0;
+}
+.yTick { font-size: 9px; color: var(--muted-foreground); text-align: right; line-height: 1; }
+
+.chartArea { flex: 1; position: relative; }
+
+.gridLines {
+  position: absolute; inset: 0 0 20px 0;
+  display: flex; flex-direction: column;
+  justify-content: space-between; pointer-events: none;
+}
+.gridLine {
+  width: 100%; height: 1px;
+  background-color: var(--border); opacity: 0.6;
+}
+
+.chartBars {
+  display: flex; align-items: flex-end;
+  gap: 6px; height: 120px; padding-bottom: 20px;
+  position: relative;
+}
+
+.chartCol {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; gap: 4px; height: 100%;
+}
+
+.barGroup {
+  flex: 1; width: 100%;
+  position: relative; display: flex; align-items: flex-end;
+}
+
+/* tooltip */
+.barTooltip {
+  position: absolute; bottom: calc(100% + 6px); left: 50%;
+  transform: translateX(-50%);
+  background-color: var(--foreground); color: var(--background);
+  border-radius: var(--radius-md);
+  padding: 7px 10px; font-size: 10px; line-height: 1.6;
+  white-space: nowrap; pointer-events: none;
+  opacity: 0; transition: opacity 150ms ease;
+  z-index: 10; box-shadow: var(--shadow-lg);
+}
+.barTooltip p { display: flex; align-items: center; gap: 5px; }
+.barGroup:hover .barTooltip { opacity: 1; }
+
+.dotGreen { width: 6px; height: 6px; border-radius: 50%; background: #10b981; flex-shrink: 0; }
+.dotAmber { width: 6px; height: 6px; border-radius: 50%; background: #f59e0b; flex-shrink: 0; }
+.dotRed   { width: 6px; height: 6px; border-radius: 50%; background: var(--destructive); flex-shrink: 0; }
+
+.chartStack {
+  width: 100%; display: flex;
+  flex-direction: column-reverse;
+  gap: 1px; border-radius: 4px 4px 0 0; overflow: hidden;
+}
+
+.bar { width: 100%; min-height: 2px; transition: height 400ms ease; }
+
+.barGreen { background-color: #10b981; }
+.barAmber { background-color: #f59e0b; }
+.barRed   { background-color: var(--destructive); }
+
+:global(.dark) .barGreen { background-color: #34d399; }
+:global(.dark) .barAmber { background-color: #fbbf24; }
+
+.xLabel { font-size: 10px; color: var(--muted-foreground); font-weight: 500; text-align: center; }
+
+.legend {
+  display: flex; align-items: center; gap: 14px;
+  font-size: 11px; color: var(--muted-foreground); font-weight: 500;
+  flex-wrap: wrap; margin-top: 10px;
+}
+.legend span { display: flex; align-items: center; gap: 5px; }
+.legendDot { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
+
+.chartEmpty { padding: 32px; text-align: center; color: var(--muted-foreground); font-size: 13px; }
+
+/* ── Filters ──────────────────────────────────────────────────── */
+.filters {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  align-items: center; margin-bottom: 14px;
+}
+.searchWrapper { position: relative; flex: 1; max-width: 280px; min-width: 160px; }
+.searchIcon {
+  position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+  color: var(--muted-foreground); pointer-events: none;
+}
+.searchInput {
+  width: 100%; padding: 8px 12px 8px 32px;
+  border-radius: var(--radius-lg); border: 1px solid var(--border);
+  background-color: var(--input); color: var(--foreground);
+  font-size: 13px; font-family: var(--font-sans); outline: none;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+.searchInput::placeholder { color: var(--muted-foreground); }
+.searchInput:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgb(124 144 130 / .18); }
+
+.filterBtn {
+  padding: 7px 13px; border-radius: var(--radius-lg);
+  border: 1px solid var(--border); background: transparent;
+  color: var(--muted-foreground); font-size: 12px; font-weight: 500;
+  font-family: var(--font-sans); cursor: pointer; white-space: nowrap;
+  transition: all 150ms ease;
+}
+.filterBtn:hover { background-color: var(--muted); color: var(--foreground); }
+.filterBtnActive { border-color: var(--primary); background-color: var(--primary); color: var(--primary-foreground); }
+
+.filterCount { font-size: 12px; color: var(--muted-foreground); margin-left: auto; }
+
+/* ── Table ────────────────────────────────────────────────────── */
+.tableScroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 720px; }
+.thead { background-color: var(--muted); }
+.th {
+  padding: 10px 14px; text-align: left;
+  font-size: 11px; font-weight: 700; color: var(--muted-foreground);
+  text-transform: uppercase; letter-spacing: .06em;
+  border-bottom: 1px solid var(--border); white-space: nowrap;
+}
+.td {
+  padding: 12px 14px; border-bottom: 1px solid var(--border);
+  vertical-align: middle; color: var(--muted-foreground);
+}
+.tdLast { border-bottom: none; }
+
+.tdExpand { padding: 0 4px 0 10px; width: 32px; }
+
+.tableRow { transition: background-color 120ms ease; }
+.tableRow:hover td { background-color: var(--muted); }
+
+/* expand button */
+.expandBtn {
+  display: flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: var(--radius-sm);
+  border: none; background: transparent;
+  color: var(--muted-foreground); cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+.expandBtn:hover { background-color: var(--accent); color: var(--foreground); }
+
+/* expanded detail row */
+.expandedRow td { padding: 0; }
+.expandedCell {
+  padding: 0 !important;
+  border-bottom: 1px solid var(--border);
+}
+.expandedContent {
+  padding: 14px 18px 14px 46px;
+  background-color: var(--sidebar-muted);
+  border-top: 1px solid var(--border);
+}
+.expandedGrid {
+  display: flex; gap: 32px; flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.expandedLabel { font-size: 10px; font-weight: 600; color: var(--muted-foreground); text-transform: uppercase; letter-spacing: .06em; }
+.expandedValue { font-size: 14px; font-weight: 700; color: var(--foreground); margin-top: 2px; }
+.expandedObs    { margin-top: 4px; }
+.expandedObsText { font-size: 12px; color: var(--muted-foreground); margin-top: 3px; line-height: 1.5; }
+
+/* cells */
+.patientCell { display: flex; align-items: center; gap: 9px; }
+.patientName { font-size: 13px; font-weight: 600; color: var(--foreground); white-space: nowrap; }
+.discountTag { font-size: 10px; color: var(--destructive); margin-top: 1px; font-weight: 500; }
+
+.valueCell { font-size: 13px; font-weight: 700; color: var(--foreground); display: block; }
+.originalValue { font-size: 11px; color: var(--muted-foreground); text-decoration: line-through; display: block; }
+
+.methodCell {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12px; color: var(--foreground);
+}
+.methodIcon {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  background-color: var(--muted-foreground);
+}
+.method_Pix      { background-color: #10b981; }
+.method_Card     { background-color: var(--primary); }
+.method_Cash     { background-color: #f59e0b; }
+.method_Insurance{ background-color: #0891b2; }
+.method_Transfer { background-color: #7c3aed; }
+
+.overdueDate { color: var(--destructive); font-weight: 600; }
+
+/* actions */
+.actions { display: flex; align-items: center; gap: 3px; }
+.actionBtn {
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: var(--radius-md);
+  border: none; background: transparent;
+  color: var(--muted-foreground); cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+.actionBtn:hover { background-color: var(--muted); color: var(--foreground); }
+.actionBtnGreen:hover { background-color: rgb(16 185 129 / .12); color: #059669; }
+.actionBtnDanger:hover { background-color: rgb(220 38 38 / .10); color: var(--destructive); }
+:global(.dark) .actionBtnGreen:hover { color: #34d399; }
+
+/* empty */
+.empty {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 12px; padding: 56px 24px;
+  color: var(--muted-foreground); font-size: 14px;
+}
+
+/* ── Modal form ───────────────────────────────────────────────── */
+.formGrid { display: flex; flex-direction: column; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 767px) { .grid2 { grid-template-columns: 1fr; } }
+.colSpan2 { grid-column: span 2; }
+@media (max-width: 767px) { .colSpan2 { grid-column: span 1; } }
+
+.obsTextarea {
+  width: 100%; padding: 9px 12px;
+  border-radius: var(--radius-lg); border: 1px solid var(--border);
+  background-color: var(--input); color: var(--foreground);
+  font-size: 13px; font-family: var(--font-sans);
+  outline: none; resize: vertical; line-height: 1.5;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+.obsTextarea::placeholder { color: var(--muted-foreground); }
+.obsTextarea:hover { background-color: var(--input-hover); }
+.obsTextarea:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgb(124 144 130 / .18); }
+:global(.dark) .obsTextarea { color-scheme: dark; }
+
+/* ── Chart empty state ───────────────────────────────────────── */
+.chartEmptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 32px 24px 28px;
+  color: var(--muted-foreground);
+}
+
+.chartEmptyTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+  margin: 0;
+}
+
+.chartEmptySub {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  margin: 0;
+  text-align: center;
+  max-width: 260px;
+  line-height: 1.5;
+}
