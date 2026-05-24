@@ -15,6 +15,7 @@
 // ─────────────────────────────────────────────────────────────────
 
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "./api"
+import { messageFromProblemDetails, parseProblemDetails, type ProblemDetails } from "./problemDetails"
 import { onlyDigits } from "../utils"
 
 const REQUEST_TIMEOUT_MS = 15000
@@ -213,68 +214,11 @@ export interface RegisterPatientWithPasswordRequest {
   birth_date?: string
 }
 
-/** Problem Details (RFC 7807) com extensoes do dominio. */
-interface ProblemDetails {
-  type?:     string
-  title?:    string
-  status?:   number
-  detail?:   string
-  instance?: string
-  code?:     string
-  errors?:   Record<string, string[] | string> | string[]
-  // Fallbacks defensivos para servidores que misturam formatos.
-  error?:    string
-  message?:  string
-}
-
-function safeJsonParseProblem(raw: string): ProblemDetails {
-  if (!raw) return {}
-  try {
-    return JSON.parse(raw) as ProblemDetails
-  } catch {
-    return {}
-  }
-}
-
-function summarizeProblemErrors(errors: ProblemDetails["errors"]): string {
-  if (!errors) return ""
-  if (Array.isArray(errors)) return errors.filter(Boolean).join(" ")
-  return Object.entries(errors)
-    .map(([field, val]) => {
-      const text = Array.isArray(val) ? val.join(", ") : val
-      return text ? `${field}: ${text}` : ""
-    })
-    .filter(Boolean)
-    .join(" | ")
-}
-
 function messageForProblem(status: number, p: ProblemDetails): string {
-  const code = (p.code ?? "").toUpperCase()
-  const raw = (p.detail ?? p.title ?? p.error ?? p.message ?? "").trim()
-  const validationSummary = summarizeProblemErrors(p.errors)
-
-  if (code === "INVALID_CPF" || /cpf.*inv[aá]lid|invalid.*cpf/i.test(raw)) {
-    return "CPF inválido. Confira os números e os dígitos verificadores."
-  }
-  if (code === "CPF_EXISTS") {
-    return "Este CPF já está cadastrado."
-  }
-  if (code === "EMAIL_EXISTS") {
-    return "Este e-mail já está em uso."
-  }
-  if (code === "RATE_LIMIT_EXCEEDED" || status === 429) {
-    return raw || "Muitas tentativas de cadastro a partir desta rede. Aguarde alguns minutos e tente novamente."
-  }
-  if (code === "VALIDATION_ERROR" || status === 400) {
-    return validationSummary || raw || "Dados inválidos. Verifique os campos e tente novamente."
-  }
-  if (status === 409) {
-    return raw || "Já existe um cadastro com estes dados."
-  }
-  if (status >= 500) {
-    return raw || "Erro interno do servidor. Tente novamente em instantes."
-  }
-  return raw || `Erro ao cadastrar (${status}).`
+  const mapped = messageFromProblemDetails(status, p)
+  if (mapped) return mapped
+  if (status === 409) return "Já existe um cadastro com estes dados."
+  return `Erro ao cadastrar (${status}).`
 }
 
 /**
@@ -339,7 +283,7 @@ export async function invokeRegisterPatientWithPassword(
     }
 
     const raw = await res.text().catch(() => "")
-    const parsed = safeJsonParseProblem(raw)
+    const parsed = parseProblemDetails(raw)
 
     if (!res.ok) {
       throw new RegisterPatientApiError(

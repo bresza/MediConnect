@@ -1,5 +1,5 @@
 import type { PageId, User } from "../../../types"
-import { ROLE_PAGES, ROLE_LABELS, ROLE_DESCRIPTION, ROLE_COLORS } from "../../../utils/permissions"
+import { ROLE_PAGES, ROLE_LABELS, ROLE_COLORS } from "../../../utils/permissions"
 import { getInitials } from "../../../utils"
 import styles from "./Sidebar.module.css"
 
@@ -103,11 +103,8 @@ export function Sidebar({ activePage, onNavigate, currentUser, onLogout, isOpen 
           background: roleColor, flexShrink: 0,
         }} />
         <div style={{ minWidth: 0 }}>
-          <p style={{ fontSize: 11, fontWeight: 700, color: roleColor, fontFamily: "var(--font-sans)", marginBottom: 1 }}>
+          <p style={{ fontSize: 11, fontWeight: 700, color: roleColor, fontFamily: "var(--font-sans)", margin: 0 }}>
             {ROLE_LABELS[currentUser.role]}
-          </p>
-          <p style={{ fontSize: 10, color: "var(--muted-foreground)", fontFamily: "var(--font-sans)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {ROLE_DESCRIPTION[currentUser.role]}
           </p>
         </div>
       </div>

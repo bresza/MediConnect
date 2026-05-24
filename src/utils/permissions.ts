@@ -91,15 +91,6 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   secretary: "Secretaria",
 }
 
-export const ROLE_DESCRIPTION: Record<UserRole, string> = {
-  patient:   "Consultas, exames e laudos vinculados",
-  doctor:    "Laudos, pacientes e agenda própria",
-  manager:   "Acesso completo ao sistema",
-  admin:     "Acesso completo ao sistema",
-  financial: "Financeiro, faturamento e pagamentos",
-  secretary: "Agendamentos e cadastro de pacientes",
-}
-
 export const ROLE_COLORS: Record<UserRole, string> = {
   patient:   "#14b8a6",
   doctor:    "#0ea5e9",
