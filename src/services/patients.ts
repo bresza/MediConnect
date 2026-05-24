@@ -859,15 +859,7 @@ async function deletePatientRecord(id: string, logErrors = true): Promise<void> 
   })
 }
 
-export async function deletePatient(id: string): Promise<void> {
-  const patient = await findPatientById(id).catch(() => null)
-  const userId = patient?.user_id ?? ""
-
-  if (userId) {
-    await deletePatientAuthUser(userId)
-    return
-  }
-
+async function deletePatientDatabaseRecords(id: string): Promise<void> {
   try {
     await deletePatientDependencies(id)
   } catch (err) {
@@ -891,4 +883,17 @@ export async function deletePatient(id: string): Promise<void> {
   }
 
   throw new Error("A API bloqueou a exclusão porque ainda existem vínculos com este paciente sem user_id.")
+}
+
+export async function deletePatient(id: string): Promise<void> {
+  const patient = await findPatientById(id).catch(() => null)
+  const userId = patient?.user_id ?? ""
+
+  await deletePatientDatabaseRecords(id)
+
+  if (userId) {
+    await deletePatientAuthUser(userId).catch((err) => {
+      console.warn("[patients] paciente removido, mas a exclusao do usuario do portal falhou:", err)
+    })
+  }
 }
