@@ -8,7 +8,6 @@ import { Card }    from "../../components/ui/Card/Card"
 import { Badge }   from "../../components/ui/Badge/Badge"
 import { Button }  from "../../components/ui/Button/Button"
 import { Avatar }  from "../../components/ui/Avatar/Avatar"
-import { Modal }   from "../../components/ui/Modal/Modal"
 import { Select }  from "../../components/ui/Select/Select"
 import { RefreshButton } from "../../components/ui/RefreshButton/RefreshButton"
 import { RichTextEditor } from "../../components/ui/RichTextEditor/RichTextEditor"
@@ -236,92 +235,68 @@ async function aiCompleteReport(
   }
 }
 
-// ─── Selector de templates ────────────────────────────────────────
+// ─── Selector de templates (painel lateral do editor) ─────────────
 interface TemplateSelectorProps {
   onSelect: (t: ReportTemplate) => void
-  onClose:  () => void
 }
 
-function TemplateSelector({ onSelect, onClose }: TemplateSelectorProps) {
+function TemplateSelector({ onSelect }: TemplateSelectorProps) {
   const [search,    setSearch]    = useState("")
   const [specialty, setSpecialty] = useState("")
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => { setTimeout(() => inputRef.current?.focus(), 50) }, [])
 
   const filtered = REPORT_TEMPLATES.filter((t) => {
     const q = search.toLowerCase()
     const ok = !q ||
       t.name.toLowerCase().includes(q) ||
+      t.exam.toLowerCase().includes(q) ||
       t.tags.some((g) => g.toLowerCase().includes(q)) ||
       t.cid10.toLowerCase().includes(q)
     return ok && (!specialty || t.specialty === specialty)
   })
 
-  const inputStyle: React.CSSProperties = {
-    width: "100%", padding: "9px 12px", borderRadius: 8, fontSize: 13,
-    border: "1px solid var(--border)", background: "var(--background)",
-    color: "var(--foreground)", outline: "none", boxSizing: "border-box",
-  }
-
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <div style={{ position: "relative", flex: 1, minWidth: 180 }}>
-          <svg style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--muted-foreground)", pointerEvents: "none" }}
-            width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-            <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" strokeLinecap="round" />
-          </svg>
-          <input ref={inputRef} value={search} onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar: patologia, CID, palavra-chave..."
-            style={{ ...inputStyle, paddingLeft: 32 }} />
-        </div>
-        <select value={specialty} onChange={(e) => setSpecialty(e.target.value)}
-          style={{ padding: "9px 12px", borderRadius: 8, fontSize: 13, border: "1px solid var(--border)", background: "var(--background)", color: "var(--foreground)", outline: "none", cursor: "pointer" }}>
-          <option value="">Todas as especialidades</option>
-          {TEMPLATE_SPECIALTIES.map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
-      </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <input
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Buscar patologia, CID ou exame..."
+        className={styles.panelInput}
+      />
+      <select
+        value={specialty}
+        onChange={(e) => setSpecialty(e.target.value)}
+        className={styles.panelInput}
+        style={{ cursor: "pointer" }}
+      >
+        <option value="">Todas as especialidades</option>
+        {TEMPLATE_SPECIALTIES.map((s) => <option key={s} value={s}>{s}</option>)}
+      </select>
 
-      <p style={{ fontSize: 12, color: "var(--muted-foreground)" }}>
-        {filtered.length} template{filtered.length !== 1 ? "s" : ""} encontrado{filtered.length !== 1 ? "s" : ""}
+      <p style={{ fontSize: 11, color: "var(--muted-foreground)", margin: 0 }}>
+        {filtered.length} template{filtered.length !== 1 ? "s" : ""}
       </p>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 400, overflowY: "auto" }}>
+      <div className={styles.templateList}>
         {filtered.length === 0 ? (
-          <div style={{ padding: 32, textAlign: "center", color: "var(--muted-foreground)", fontSize: 13 }}>
-            Nenhum template para "{search}"
+          <div style={{ padding: 20, textAlign: "center", color: "var(--muted-foreground)", fontSize: 12 }}>
+            Nenhum template encontrado
           </div>
         ) : filtered.map((t) => (
-          <button key={t.id} onClick={() => onSelect(t)}
-            style={{ textAlign: "left", padding: "12px 16px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--card)", cursor: "pointer", transition: "border-color 0.15s" }}
-            onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--primary)")}
-            onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border)")}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
-              <span style={{ fontSize: 14, fontWeight: 600, color: "var(--foreground)" }}>{t.name}</span>
-              {t.cid10 && (
-                <span style={{ fontSize: 11, fontWeight: 600, color: "#7c3aed", background: "#ede9fe", padding: "2px 8px", borderRadius: 20, whiteSpace: "nowrap", marginLeft: 8 }}>
-                  CID {t.cid10}
-                </span>
-              )}
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => onSelect(t)}
+            className={styles.templateCard}
+          >
+            <p className={styles.templateCardTitle}>{t.name}</p>
+            <div className={styles.templateCardMeta}>
+              <span className={styles.templateCardBadge}>{t.specialty}</span>
+              <span className={styles.templateCardBadge}>{t.exam}</span>
+              {t.cid10 && <span className={styles.templateCardCid}>CID {t.cid10}</span>}
             </div>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 4 }}>
-              <span style={{ fontSize: 11, color: "var(--muted-foreground)", background: "var(--muted)", padding: "2px 8px", borderRadius: 20 }}>
-                {t.specialty}
-              </span>
-              {t.tags.slice(0, 3).map((tag) => (
-                <span key={tag} style={{ fontSize: 11, color: "var(--muted-foreground)" }}>#{tag}</span>
-              ))}
-            </div>
-            <p style={{ fontSize: 12, color: "var(--muted-foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", margin: 0 }}>
-              {t.diagnosis}
-            </p>
+            <p className={styles.templateCardPreview}>{t.diagnosis}</p>
           </button>
         ))}
-      </div>
-
-      <div style={{ display: "flex", justifyContent: "flex-end" }}>
-        <Button variant="ghost" onClick={onClose}>Cancelar</Button>
       </div>
     </div>
   )
@@ -331,8 +306,8 @@ function TemplateSelector({ onSelect, onClose }: TemplateSelectorProps) {
 export function Reports({ currentUser, patients = [] }: ReportsProps) {
   const [reports,       setReports]       = useState<Report[]>([])
   const [isLoading,     setIsLoading]     = useState(true)
-  const [modalOpen,     setModalOpen]     = useState(false)
-  const [templateModal, setTemplateModal] = useState(false)
+  const [editorOpen,       setEditorOpen]       = useState(false)
+  const [editorContentKey, setEditorContentKey] = useState(0)
   const [editingReport, setEditingReport] = useState<Report | null>(null)
   const [form,        setForm]        = useState<ReportForm>(EMPTY_FORM)
   const [isSaving,    setIsSaving]    = useState(false)
@@ -377,6 +352,13 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
     setForm((p) => ({ ...p, [k]: v })); setError(null)
   }
 
+  function closeEditor() {
+    setEditorOpen(false)
+    setEditingReport(null)
+    setError(null)
+    setAiNotice(null)
+  }
+
   // ── Aplicar template ─────────────────────────────────────────────
   function applyTemplate(t: ReportTemplate) {
     const patient    = patients.find((p) => p.id === form.patientId)
@@ -397,8 +379,7 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
       contentHtml: fill(t.content),
       status:      "Draft",
     }))
-    setTemplateModal(false)
-    if (!modalOpen) setModalOpen(true)
+    setEditorContentKey((k) => k + 1)
   }
 
   // ── Completar com IA ─────────────────────────────────────────────
@@ -448,6 +429,7 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
         conclusion:  result.conclusion,
         contentHtml: result.contentHtml,
       }))
+      setEditorContentKey((k) => k + 1)
       const text = source === "ai"
         ? "Laudo gerado com IA. Revise antes de finalizar."
         : reason === "fallback"
@@ -479,9 +461,14 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
     }
   }
 
-  // ── Abrir modal vazio ────────────────────────────────────────────
+  // ── Abrir editor em tela cheia ───────────────────────────────────
   function openNew() {
-    setEditingReport(null); setForm(EMPTY_FORM); setError(null); setAiNotice(null); setModalOpen(true)
+    setEditingReport(null)
+    setForm(EMPTY_FORM)
+    setError(null)
+    setAiNotice(null)
+    setEditorContentKey((k) => k + 1)
+    setEditorOpen(true)
   }
 
   // ── Editar laudo ─────────────────────────────────────────────────
@@ -499,7 +486,10 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
       hideSignature: r.hideSignature ?? false,
       status:        r.status,
     })
-    setError(null); setAiNotice(null); setModalOpen(true)
+    setError(null)
+    setAiNotice(null)
+    setEditorContentKey((k) => k + 1)
+    setEditorOpen(true)
   }
 
   async function handleQuickStatusUpdate(r: Report, nextStatus: ReportStatus) {
@@ -545,7 +535,7 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
         const created = await createReport(payload)
         setReports((prev) => [created, ...prev])
       }
-      setModalOpen(false)
+      closeEditor()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao salvar laudo")
     } finally { setIsSaving(false) }
@@ -561,6 +551,156 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
   const labelStyle: React.CSSProperties = {
     fontSize: 12, fontWeight: 500, color: "var(--foreground)",
     display: "block", marginBottom: 4,
+  }
+
+  if (editorOpen) {
+    return (
+      <div className={styles.editorPage}>
+        <Topbar
+          title={editingReport ? "Editar laudo" : "Novo laudo"}
+          subtitle={editingReport ? editingReport.patientName : "Preencha os dados ou escolha um template ao lado"}
+          action={
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <Button variant="ghost" onClick={closeEditor}>Voltar</Button>
+              <Button variant="outline" onClick={() => handleSave("Draft")} disabled={isSaving}>
+                Salvar rascunho
+              </Button>
+              <Button onClick={() => handleSave("Finalized")} disabled={isSaving}>
+                {isSaving ? "Salvando..." : "Finalizar"}
+              </Button>
+            </div>
+          }
+        />
+
+        <div className={styles.editorLayout}>
+          <Card className={styles.editorMain}>
+            <div className={styles.editorForm}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+                <div>
+                  <label style={labelStyle}>
+                    Paciente <span style={{ color: "var(--destructive)" }}>*</span>
+                  </label>
+                  {patients.length > 0 ? (
+                    <select
+                      value={form.patientId}
+                      onChange={(e) => {
+                        const p = patients.find((x) => x.id === e.target.value)
+                        setField("patientId", e.target.value)
+                        setField("patientName", p?.name ?? "")
+                      }}
+                      className={styles.metaInput}
+                    >
+                      <option value="">Selecionar paciente...</option>
+                      {patients.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                  ) : (
+                    <input
+                      value={form.patientName}
+                      onChange={(e) => { setField("patientName", e.target.value); setField("patientId", e.target.value) }}
+                      placeholder="Nome do paciente"
+                      className={styles.metaInput}
+                    />
+                  )}
+                </div>
+                <Select label="Tipo de laudo" value={form.type}
+                  onChange={(e: ChangeEvent<HTMLSelectElement>) => setField("type", e.target.value)}
+                  options={EXAM_TYPES} required />
+                <div>
+                  <label style={labelStyle}>CID-10</label>
+                  <input value={form.cid10} onChange={(e) => setField("cid10", e.target.value)}
+                    placeholder="Ex: I10, E11..."
+                    className={styles.metaInput} />
+                </div>
+              </div>
+
+              <div>
+                <label style={labelStyle}>Diagnóstico</label>
+                <textarea value={form.diagnosis} onChange={(e) => setField("diagnosis", e.target.value)}
+                  rows={3} placeholder="Diagnóstico clínico..." style={textareaStyle} />
+              </div>
+
+              <div>
+                <label style={labelStyle}>Conteúdo do laudo</label>
+                <div className={styles.editorContentEditor}>
+                  <RichTextEditor
+                    key={`${editingReport?.id ?? "new"}-${editorContentKey}`}
+                    value={form.contentHtml}
+                    onChange={(html) => setField("contentHtml", html)}
+                    placeholder="Escolha um template ao lado ou escreva o conteúdo completo do laudo..."
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={labelStyle}>Conclusão</label>
+                <textarea value={form.conclusion} onChange={(e) => setField("conclusion", e.target.value)}
+                  rows={3} placeholder="Conclusão do laudo..." style={textareaStyle} />
+              </div>
+
+              <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+                {([
+                  { key: "hideDate"      as const, label: "Ocultar data" },
+                  { key: "hideSignature" as const, label: "Ocultar assinatura" },
+                ]).map(({ key, label }) => (
+                  <label key={key} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer", color: "var(--foreground)" }}>
+                    <input type="checkbox" checked={form[key] as boolean}
+                      onChange={(e) => setField(key, e.target.checked)}
+                      style={{ accentColor: "var(--primary)" }} />
+                    {label}
+                  </label>
+                ))}
+              </div>
+
+              {aiNotice && (
+                <p className={`${styles.aiNotice} ${aiNotice.tone === "ai" ? styles.aiNoticeAi : styles.aiNoticeLocal}`}>
+                  {aiNotice.text}
+                </p>
+              )}
+
+              {error && (
+                <p style={{ fontSize: 12, color: "var(--destructive)", padding: "8px 12px", borderRadius: 8, background: "#fef2f2", border: "1px solid var(--destructive)", margin: 0 }}>
+                  {error}
+                </p>
+              )}
+            </div>
+          </Card>
+
+          <aside className={styles.sidePanel}>
+            <Card className={styles.panelCard}>
+              <div className={styles.panelTitle}>Templates prontos</div>
+              <TemplateSelector onSelect={applyTemplate} />
+            </Card>
+
+            <Card className={styles.panelCard}>
+              <div className={styles.panelTitle}>Assistente</div>
+              <div className={styles.panelActions}>
+                <Button
+                  variant="outline"
+                  onClick={handleAiComplete}
+                  disabled={isAiLoading}
+                  title={
+                    !form.patientName && !form.patientId
+                      ? "Selecione um paciente antes de gerar."
+                      : !form.type
+                        ? "Informe o tipo de laudo antes de gerar."
+                        : aiAvailable && !aiProxyDownRef.current
+                          ? "Gera diagnóstico, conclusão e conteúdo via IA."
+                          : "Gera o laudo localmente a partir do template e dos dados do paciente."
+                  }
+                >
+                  {isAiLoading ? "Gerando laudo..." : "Completar com IA"}
+                </Button>
+                <p style={{ fontSize: 11, color: "var(--muted-foreground)", margin: 0, lineHeight: 1.45 }}>
+                  {aiAvailable && !aiProxyDownRef.current
+                    ? "Preenche diagnóstico, conclusão e corpo do laudo com base nos dados informados."
+                    : "Sem IA externa configurada: monta o laudo localmente a partir do template e do paciente."}
+                </p>
+              </div>
+            </Card>
+          </aside>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -665,161 +805,6 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
           </div>
         )}
       </Card>
-
-      {/* Modal de templates */}
-      <Modal isOpen={templateModal} onClose={() => setTemplateModal(false)}
-        title="Templates de laudos"
-        subtitle="Selecione uma patologia para preencher o laudo automaticamente"
-        size="md"
-        topLayer>
-        <TemplateSelector onSelect={applyTemplate} onClose={() => setTemplateModal(false)} />
-      </Modal>
-
-      {/* Modal de criação/edição */}
-      <Modal
-        isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
-        title={editingReport ? "Editar laudo" : "Novo laudo"}
-        subtitle={editingReport ? `Editando: ${editingReport.patientName}` : "Preencha os dados ou use um template"}
-        size="md"
-        footer={
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <Button variant="ghost" onClick={() => setModalOpen(false)}>Cancelar</Button>
-            <div style={{ flex: 1 }} />
-            <Button variant="outline" onClick={() => setTemplateModal(true)}>📋 Template</Button>
-            <button
-              onClick={handleAiComplete}
-              disabled={isAiLoading}
-              title={
-                !form.patientName && !form.patientId
-                  ? "Selecione um paciente antes de gerar."
-                  : !form.type
-                    ? "Informe o tipo de laudo antes de gerar."
-                    : aiAvailable && !aiProxyDownRef.current
-                      ? "Gera diagnóstico, conclusão e conteúdo via IA."
-                      : "Gera o laudo localmente a partir do template e dos dados do paciente (sem chamada externa)."
-              }
-              style={{
-                padding: "8px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600,
-                background: "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "white",
-                border: "none", cursor: isAiLoading ? "not-allowed" : "pointer", opacity: isAiLoading ? 0.7 : 1,
-              }}>
-              {isAiLoading ? "⏳ Gerando laudo..." : "✨ Completar com IA"}
-            </button>
-            <Button variant="outline" onClick={() => handleSave("Draft")} disabled={isSaving}>
-              Salvar rascunho
-            </Button>
-            <Button onClick={() => handleSave("Finalized")} disabled={isSaving}>
-              {isSaving ? "Salvando..." : "Finalizar"}
-            </Button>
-          </div>
-        }
-      >
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-
-          {/* Paciente */}
-          <div>
-            <label style={labelStyle}>
-              Paciente <span style={{ color: "var(--destructive)" }}>*</span>
-            </label>
-            {patients.length > 0 ? (
-              <select value={form.patientId}
-                onChange={(e) => {
-                  const p = patients.find((x) => x.id === e.target.value)
-                  setField("patientId", e.target.value)
-                  setField("patientName", p?.name ?? "")
-                }}
-                style={{ width: "100%", padding: "9px 12px", borderRadius: 8, fontSize: 13, border: "1px solid var(--border)", background: "var(--background)", color: "var(--foreground)", outline: "none" }}>
-                <option value="">Selecionar paciente...</option>
-                {patients.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-            ) : (
-              <input value={form.patientName}
-                onChange={(e) => { setField("patientName", e.target.value); setField("patientId", e.target.value) }}
-                placeholder="Nome do paciente"
-                style={{ width: "100%", padding: "9px 12px", borderRadius: 8, fontSize: 13, border: "1px solid var(--border)", background: "var(--background)", color: "var(--foreground)", outline: "none", boxSizing: "border-box" }} />
-            )}
-          </div>
-
-          {/* Tipo e CID-10 */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
-            <Select label="Tipo de laudo" value={form.type}
-              onChange={(e: ChangeEvent<HTMLSelectElement>) => setField("type", e.target.value)}
-              options={EXAM_TYPES} required />
-            <div>
-              <label style={labelStyle}>CID-10</label>
-              <input value={form.cid10} onChange={(e) => setField("cid10", e.target.value)}
-                placeholder="Ex: I10, E11..."
-                style={{ width: "100%", padding: "9px 12px", borderRadius: 8, fontSize: 13, border: "1px solid var(--border)", background: "var(--background)", color: "var(--foreground)", outline: "none", boxSizing: "border-box" }} />
-            </div>
-          </div>
-
-          {/* Diagnóstico */}
-          <div>
-            <label style={labelStyle}>Diagnóstico</label>
-            <textarea value={form.diagnosis} onChange={(e) => setField("diagnosis", e.target.value)}
-              rows={3} placeholder="Diagnóstico clínico..." style={textareaStyle} />
-          </div>
-
-          {/* Conteúdo */}
-          <div>
-            <label style={labelStyle}>Conteúdo do laudo</label>
-            <RichTextEditor
-              key={editingReport?.id ?? "new"}
-              value={form.contentHtml}
-              onChange={(html) => setField("contentHtml", html)}
-              placeholder="Use um template acima ou escreva o conteúdo completo do laudo..."
-            />
-          </div>
-
-          {/* Conclusão */}
-          <div>
-            <label style={labelStyle}>Conclusão</label>
-            <textarea value={form.conclusion} onChange={(e) => setField("conclusion", e.target.value)}
-              rows={2} placeholder="Conclusão do laudo..." style={textareaStyle} />
-          </div>
-
-          {/* Opções */}
-          <div style={{ display: "flex", gap: 16 }}>
-            {([
-              { key: "hideDate"      as const, label: "Ocultar data" },
-              { key: "hideSignature" as const, label: "Ocultar assinatura" },
-            ]).map(({ key, label }) => (
-              <label key={key} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer", color: "var(--foreground)" }}>
-                <input type="checkbox" checked={form[key] as boolean}
-                  onChange={(e) => setField(key, e.target.checked)}
-                  style={{ accentColor: "var(--primary)" }} />
-                {label}
-              </label>
-            ))}
-          </div>
-
-          {aiNotice && (
-            <div
-              style={{
-                fontSize: 12,
-                padding: "8px 12px",
-                borderRadius: 8,
-                margin: 0,
-                display: "flex",
-                alignItems: "flex-start",
-                gap: 8,
-                color: aiNotice.tone === "ai" ? "#065f46" : "#92400e",
-                background: aiNotice.tone === "ai" ? "#ecfdf5" : "#fffbeb",
-                border: aiNotice.tone === "ai" ? "1px solid #10b981" : "1px solid #f59e0b",
-              }}>
-              <span aria-hidden style={{ flexShrink: 0 }}>{aiNotice.tone === "ai" ? "✓" : "ⓘ"}</span>
-              <span>{aiNotice.text}</span>
-            </div>
-          )}
-
-          {error && (
-            <p style={{ fontSize: 12, color: "var(--destructive)", padding: "8px 12px", borderRadius: 8, background: "#fef2f2", border: "1px solid var(--destructive)", margin: 0 }}>
-              {error}
-            </p>
-          )}
-        </div>
-      </Modal>
     </div>
   )
 }
