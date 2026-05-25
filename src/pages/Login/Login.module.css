@@ -106,6 +106,24 @@
   max-width: 420px;
 }
 
+.backLink {
+  display: inline-block;
+  margin-bottom: 1rem;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.backLink:hover {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
 .formHeader {
   margin-bottom: 32px;
   text-align: center;
