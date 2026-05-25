@@ -187,6 +187,40 @@ export interface BuildSystemPromptInput {
   apiContextSnapshot?: string
 }
 
+/** Perguntas sugeridas na tela do assistente, por perfil de usuario. */
+export const AI_STARTERS_BY_ROLE: Record<UserRole, string[]> = {
+  doctor: [
+    "Sugira diferenciais para cefaleia recorrente com fotofobia.",
+    "Como devo estruturar a anamnese de paciente diabético em primeira consulta?",
+    "Quais códigos CID-10 são mais usados para enxaqueca?",
+  ],
+  manager: [
+    "Quais KPIs são essenciais para acompanhar a operação da clínica?",
+    "Crie um checklist de boas práticas para a equipe de recepção.",
+    "Sugira um modelo de comunicação interna semanal para a equipe.",
+  ],
+  financial: [
+    "Quais são boas práticas para reduzir inadimplência em clínicas?",
+    "Sugira um modelo de mensagem de cobrança amigável.",
+    "Como organizar a conciliação bancária mensal?",
+  ],
+  secretary: [
+    "Crie um script para confirmação de consulta por WhatsApp.",
+    "Como organizar a agenda quando três pacientes pedem o mesmo horário?",
+    "Sugira um e-mail de pré-consulta com orientações gerais.",
+  ],
+  admin: [
+    "Quais permissões são recomendadas para o perfil secretaria?",
+    "Como configurar lembretes automáticos de consulta?",
+    "Sugira um plano de onboarding para um novo gestor da clínica.",
+  ],
+  patient: [
+    "O que devo levar para a minha próxima consulta?",
+    "Como faço para reagendar uma consulta?",
+    "Quais são os preparos gerais para um exame de sangue?",
+  ],
+}
+
 export function buildSystemPrompt({ role, userName, clinicName, apiContextSnapshot }: BuildSystemPromptInput): string {
   const intro = ROLE_PROMPTS[role] ?? ROLE_PROMPTS.secretary
   const parts = [

@@ -6,7 +6,7 @@ import {
   RegisterPatientApiError,
 } from "./registerPatient"
 import { messageFromProblemDetails, parseProblemDetails } from "./problemDetails"
-import { isValidCpf } from "../utils/cpf"
+import { isValidCpf } from "../utils"
 import type { User, UserRole } from "../types"
 
 function assertSupabaseConfigured(): void {

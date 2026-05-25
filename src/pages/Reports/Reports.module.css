@@ -79,7 +79,7 @@
 }
 
 @media (min-width: 1024px) {
-  .editorLayout { grid-template-columns: minmax(0, 1fr) minmax(240px, 320px); }
+  .editorLayout { grid-template-columns: minmax(0, 1fr) 260px; }
 }
 
 /* ── Editor toolbar ───────────────────────────────────────────── */
@@ -188,3 +188,112 @@
 
 .panelInput:focus { border-color: var(--primary); }
 .panelInput::placeholder { color: var(--muted-foreground); }
+
+/* ── Full-page editor ─────────────────────────────────────────── */
+.editorPage {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: calc(100vh - 120px);
+}
+
+.editorMain {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.editorForm {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+}
+
+.editorContentEditor :global(.bn-editor) {
+  min-height: 420px;
+}
+
+.templateList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: min(52vh, 480px);
+  overflow-y: auto;
+}
+
+.templateCard {
+  text-align: left;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.templateCard:hover {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 4%, var(--card));
+}
+
+.templateCardTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+  margin: 0 0 4px;
+}
+
+.templateCardMeta {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.templateCardBadge {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  background: var(--muted);
+  padding: 2px 8px;
+  border-radius: 20px;
+}
+
+.templateCardCid {
+  font-size: 10px;
+  font-weight: 600;
+  color: #7c3aed;
+  background: #ede9fe;
+  padding: 2px 8px;
+  border-radius: 20px;
+}
+
+.templateCardPreview {
+  font-size: 11px;
+  color: var(--muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin: 0;
+}
+
+.aiNotice {
+  font-size: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  margin: 0;
+  line-height: 1.45;
+}
+
+.aiNoticeAi {
+  color: #065f46;
+  background: #ecfdf5;
+  border: 1px solid #10b981;
+}
+
+.aiNoticeLocal {
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #f59e0b;
+}

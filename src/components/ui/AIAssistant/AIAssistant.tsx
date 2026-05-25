@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { ChatMessage } from "../../../services/ai"
 import {
+  AI_STARTERS_BY_ROLE,
   AIError, buildSystemPrompt, chatComplete, getAIMode, getAIModel, isAIConfigured,
 } from "../../../services/ai"
 import { useSpeechRecognition } from "../../../hooks/useSpeechRecognition"
@@ -14,43 +15,9 @@ interface AIAssistantProps {
   apiContextSnapshot?: string
 }
 
-// ── Sugestoes iniciais por perfil ─────────────────────────────────
-const STARTERS: Record<UserRole, string[]> = {
-  doctor: [
-    "Sugira diferenciais para cefaleia recorrente com fotofobia.",
-    "Como devo estruturar a anamnese de paciente diabetico em primeira consulta?",
-    "Quais codigos CID-10 mais usados para enxaqueca?",
-  ],
-  manager: [
-    "Quais KPIs sao essenciais para acompanhar a operacao da clinica?",
-    "Crie um checklist de boas praticas para a equipe de recepcao.",
-    "Sugira um modelo de comunicacao interna semanal para a equipe.",
-  ],
-  financial: [
-    "Quais sao boas praticas para reduzir inadimplencia em clinicas?",
-    "Sugira um modelo de mensagem de cobranca amigavel.",
-    "Como organizar a conciliacao bancaria mensal?",
-  ],
-  secretary: [
-    "Crie um script para confirmacao de consulta por WhatsApp.",
-    "Como organizar a agenda quando tres pacientes pedem o mesmo horario?",
-    "Sugira um e-mail de pre-consulta com orientacoes gerais.",
-  ],
-  admin: [
-    "Quais permissoes sao recomendadas para o perfil secretaria?",
-    "Como configurar lembretes automaticos de consulta?",
-    "Sugira um plano de onboarding para um novo gestor da clinica.",
-  ],
-  patient: [
-    "O que devo levar para a minha proxima consulta?",
-    "Como faco para reagendar uma consulta?",
-    "Quais sao os preparos gerais para um exame de sangue?",
-  ],
-}
-
 const ROLE_LABEL: Record<UserRole, string> = {
-  doctor:    "Modo medico",
-  manager:   "Modo gestao",
+  doctor:    "Modo médico",
+  manager:   "Modo gestão",
   financial: "Modo financeiro",
   secretary: "Modo secretaria",
   admin:     "Modo administrador",
@@ -161,7 +128,7 @@ export function AIAssistant({ currentUser, clinicName, apiContextSnapshot }: AIA
     [currentUser.role, currentUser.name, clinicName, apiContextSnapshot],
   )
 
-  const starters = STARTERS[role] ?? STARTERS.secretary
+  const starters = AI_STARTERS_BY_ROLE[role] ?? AI_STARTERS_BY_ROLE.secretary
 
   // Recarrega historico ao trocar de usuario ou provider (remove erros legados do proxy).
   useEffect(() => { setMessages(loadHistory(currentUser.id)) }, [currentUser.id, mode])
@@ -300,7 +267,7 @@ export function AIAssistant({ currentUser, clinicName, apiContextSnapshot }: AIA
               {messages.length === 0 ? (
                 <div className={styles.empty}>
                   <strong>Como posso ajudar?</strong>
-                  <span>Faca uma pergunta ou comece com uma das sugestoes abaixo.</span>
+                  <span>Faça uma pergunta ou comece com uma das sugestões abaixo.</span>
                   <div className={styles.suggestions}>
                     {starters.map((s) => (
                       <button
