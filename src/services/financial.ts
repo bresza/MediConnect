@@ -143,3 +143,24 @@ export async function updateFinancialRecord(
 export async function deleteFinancialRecord(id: string): Promise<void> {
   await apiRequest<void>(`/rest/v1/reports?id=eq.${id}`, { method: "DELETE" })
 }
+
+interface PatientLookup {
+  patientId?: string
+  userId?: string
+  name?: string
+  email?: string
+  cpf?: string
+}
+
+function recordMatchesPatient(record: FinancialRecord, identity: PatientLookup): boolean {
+  if (identity.patientId && record.patientId === identity.patientId) return true
+  if (identity.name && record.patientName.trim().toLowerCase() === identity.name.trim().toLowerCase()) return true
+  return false
+}
+
+export async function getPatientFinancialRecordsByIdentity(
+  identity: PatientLookup,
+): Promise<FinancialRecord[]> {
+  const records = await getFinancialRecords()
+  return records.filter((record) => recordMatchesPatient(record, identity))
+}

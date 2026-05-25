@@ -10,6 +10,12 @@ import { Availability }   from "./pages/Availability/Availability"
 import { Reports }        from "./pages/Reports/Reports"
 import { PatientProfile } from "./pages/PatientProfile/PatientProfile"
 import { PatientPortal }  from "./pages/PatientPortal/PatientPortal"
+import type { PortalSection } from "./pages/PatientPortal/patientPortalSections"
+import {
+  cancelPatientAppointment,
+  createPatientAppointment,
+  updatePatientAppointment,
+} from "./services/appointments"
 import { Messages }       from "./pages/Messages/Messages"
 import { Financial }      from "./pages/Financial/Financial"
 import { Settings }       from "./pages/Settings/Settings"
@@ -24,7 +30,7 @@ import { useFinancial }     from "./hooks/useFinancial"
 import { useStaff }         from "./hooks/useStaff"
 import { usePatientAIData } from "./hooks/usePatientAIData"
 import { useToast }         from "./hooks/useToast"
-import type { PageId, Patient } from "./types"
+import type { Appointment, PageId, Patient } from "./types"
 import styles from "./App.module.css"
 
 interface AppRouterProps { darkMode: boolean; onToggleDark: () => void }
@@ -64,6 +70,8 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
 
   const [activePage,       setActivePage]       = useState<PageId>(() => getDefaultPage(user?.role ?? "secretary"))
   const [sidebarOpen,      setSidebarOpen]      = useState(false)
+  const [patientPortalSection, setPatientPortalSection] = useState<PortalSection>("overview")
+  const [patientPortalCounts, setPatientPortalCounts] = useState<Partial<Record<PortalSection, number>>>({})
   const [editingPatient,   setEditingPatient]   = useState<Patient | null>(null)
   const [viewingPatient,   setViewingPatient]   = useState<Patient | null>(null)
 
@@ -141,6 +149,37 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
     staffError && `Equipe: ${staffError}`,
   ].filter(Boolean)
 
+  const patientIdentity = {
+    patientId: linkedPatientId || currentUser.patientId,
+    userId: currentUser.id,
+    email: currentUser.email,
+    cpf: currentUser.patientCpf,
+    name: currentUser.name,
+  }
+
+  async function handlePatientBookAppointment(appointment: Omit<Appointment, "id">) {
+    await createPatientAppointment(appointment, patientIdentity)
+    await reloadAppointments()
+    toast("Consulta agendada com sucesso.", "success")
+  }
+
+  async function handlePatientCancelAppointment(appointment: Appointment, reason: string) {
+    await cancelPatientAppointment(appointment, patientIdentity, reason)
+    await reloadAppointments()
+    toast("Consulta cancelada com sucesso.", "success")
+  }
+
+  async function handlePatientUpdateAppointment(appointment: Appointment) {
+    try {
+      await updatePatientAppointment(appointment, patientIdentity)
+      await reloadAppointments()
+      toast("Consulta atualizada com sucesso.", "success")
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Não foi possível atualizar a consulta.", "error")
+      throw err
+    }
+  }
+
   // ── Navegação ────────────────────────────────────────────────────
   function handleNavigate(page: PageId) {
     if (!canAccess(currentUser.role, page)) return
@@ -213,8 +252,12 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
             patient={portalPatient}
             appointments={visibleAppointments}
             prescriptions={visiblePrescriptions}
-            onBookAppointment={addAppointment}
-            onUpdateAppointment={updateAppointment}
+            activeSection={patientPortalSection}
+            onSectionChange={setPatientPortalSection}
+            onNavCountsChange={setPatientPortalCounts}
+            onBookAppointment={handlePatientBookAppointment}
+            onCancelAppointment={handlePatientCancelAppointment}
+            onUpdateAppointment={handlePatientUpdateAppointment}
           />
         )
 
@@ -363,6 +406,9 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
         onClose={() => setSidebarOpen(false)}
         darkMode={darkMode}
         onToggleDark={onToggleDark}
+        patientPortalSection={patientPortalSection}
+        onPatientPortalSectionChange={setPatientPortalSection}
+        patientPortalCounts={patientPortalCounts}
       />
       <main className={styles.main}>
         <div className={styles.mobileTopbar}>

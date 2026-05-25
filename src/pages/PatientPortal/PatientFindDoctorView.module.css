@@ -1,0 +1,462 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-height: 100%;
+}
+
+.pageEmbedded {
+  min-height: auto;
+}
+
+.embeddedSearch {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.standaloneHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.backBtn {
+  align-self: flex-start;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  cursor: pointer;
+}
+
+.standaloneHeader h1 {
+  margin: 0 0 4px;
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+.standaloneHeader p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+}
+
+.standaloneSearch {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  gap: 10px;
+}
+
+.searchInput,
+.specialtySelect {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 14px;
+  font-family: var(--font-sans);
+}
+
+.searchInput:focus,
+.specialtySelect:focus {
+  outline: none;
+  border-color: #14b8a6;
+}
+
+.alert {
+  margin: 12px 0 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, #ef4444 35%, var(--border));
+  background: color-mix(in srgb, #ef4444 8%, var(--background));
+  font-size: 13px;
+  line-height: 1.5;
+  font-family: var(--font-sans);
+}
+
+.resultsHead {
+  padding: 14px 0 8px;
+}
+
+.resultsHead p {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+}
+
+.results {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 8px;
+}
+
+.resultsEmpty {
+  padding: 48px 24px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  font-family: var(--font-sans);
+}
+
+.resultsEmpty strong {
+  font-size: 15px;
+  color: var(--foreground);
+}
+
+.resultsEmpty span {
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+
+.doctorCard {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.04);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.doctorCard:hover {
+  border-color: color-mix(in srgb, #14b8a6 40%, var(--border));
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.06);
+}
+
+.doctorCardMain {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.doctorCardInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.doctorCardInfo h2 {
+  margin: 0 0 4px;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  line-height: 1.3;
+}
+
+.doctorSpecialty {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #0d9488;
+  font-family: var(--font-sans);
+}
+
+.doctorCrm {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+}
+
+.doctorBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: var(--muted);
+  font-size: 12px;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+}
+
+.doctorCardAction {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.doctorCardAction button {
+  min-width: 140px;
+}
+
+.bookingBody {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.bookingDoctor {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, #14b8a6 8%, var(--background));
+  border: 1px solid color-mix(in srgb, #14b8a6 20%, var(--border));
+}
+
+.bookingDoctor strong {
+  display: block;
+  font-size: 15px;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  margin-bottom: 2px;
+}
+
+.bookingDoctor span {
+  display: block;
+  font-size: 13px;
+  color: #0d9488;
+  font-weight: 600;
+  font-family: var(--font-sans);
+}
+
+.bookingDoctor small {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+  line-height: 1.4;
+}
+
+.calendarSection h3,
+.slotsSection h3 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+.hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+}
+
+.waitlistOffer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--primary) 25%, var(--border));
+  background: color-mix(in srgb, var(--primary) 6%, var(--background));
+}
+
+.waitlistInfo {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+.waitlistSuccess {
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--foreground);
+  background: color-mix(in srgb, #16a34a 12%, var(--background));
+  border: 1px solid color-mix(in srgb, #16a34a 35%, var(--border));
+  font-family: var(--font-sans);
+}
+
+.dayStrip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+}
+
+.dayChip {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 56px;
+  padding: 10px 8px 8px;
+  border-radius: 12px;
+  border: 2px solid var(--border);
+  background: var(--background);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  transition: border-color 0.15s, background 0.15s;
+  position: relative;
+}
+
+.dayChip:hover:not(:disabled) {
+  border-color: #14b8a6;
+}
+
+.dayChipActive {
+  border-color: #14b8a6;
+  background: color-mix(in srgb, #14b8a6 14%, var(--background));
+}
+
+.dayChipDisabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.dayChipWeek {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.dayChipActive .dayChipWeek {
+  color: #0d9488;
+}
+
+.dayChipNum {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--foreground);
+  line-height: 1;
+}
+
+.dayChipActive .dayChipNum {
+  color: #0f766e;
+}
+
+.dayChipMonth {
+  font-size: 10px;
+  color: var(--muted-foreground);
+}
+
+.dayChipToday {
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #14b8a6;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.slotsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 8px;
+}
+
+.slotBtn {
+  padding: 10px 8px;
+  border-radius: 10px;
+  border: 2px solid var(--border);
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 14px;
+  font-weight: 700;
+  font-family: var(--font-sans);
+  cursor: pointer;
+}
+
+.slotBtnActive {
+  border-color: #14b8a6;
+  background: #14b8a6;
+  color: #fff;
+}
+
+.notesSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.notesSection label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+.notesSection textarea {
+  width: 100%;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 13px;
+  font-family: var(--font-sans);
+  resize: vertical;
+  min-height: 72px;
+}
+
+.drawerFooter {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.drawerSummary {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, #14b8a6 10%, var(--background));
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.confirmBtn {
+  width: 100%;
+  justify-content: center;
+}
+
+@media (min-width: 640px) {
+  .doctorCard {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .doctorCardAction {
+    border-top: none;
+    padding-top: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .embeddedSearch,
+  .standaloneSearch {
+    grid-template-columns: 1fr;
+  }
+}

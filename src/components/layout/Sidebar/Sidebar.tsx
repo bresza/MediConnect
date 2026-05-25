@@ -1,6 +1,8 @@
 import type { PageId, User } from "../../../types"
+import type { PortalSection } from "../../../pages/PatientPortal/patientPortalSections"
 import { ROLE_PAGES, ROLE_LABELS, ROLE_COLORS } from "../../../utils/permissions"
 import { getInitials } from "../../../utils"
+import { PatientPortalSidebarNav } from "./PatientPortalSidebarNav"
 import styles from "./Sidebar.module.css"
 
 interface NavItem { id: PageId; label: string; icon: string }
@@ -52,9 +54,25 @@ interface SidebarProps {
   onClose?:     () => void
   darkMode?:    boolean
   onToggleDark?: () => void
+  patientPortalSection?: PortalSection
+  onPatientPortalSectionChange?: (section: PortalSection) => void
+  patientPortalCounts?: Partial<Record<PortalSection, number>>
 }
 
-export function Sidebar({ activePage, onNavigate, currentUser, onLogout, isOpen = false, onClose, darkMode, onToggleDark }: SidebarProps) {
+export function Sidebar({
+  activePage,
+  onNavigate,
+  currentUser,
+  onLogout,
+  isOpen = false,
+  onClose,
+  darkMode,
+  onToggleDark,
+  patientPortalSection = "overview",
+  onPatientPortalSectionChange,
+  patientPortalCounts,
+}: SidebarProps) {
+  const isPatient = currentUser.role === "patient"
   const allowedPages = ROLE_PAGES[currentUser.role] ?? []
 
   const visibleGroups = ALL_NAV_GROUPS
@@ -111,24 +129,39 @@ export function Sidebar({ activePage, onNavigate, currentUser, onLogout, isOpen 
 
       {/* Navigation */}
       <nav className={styles.nav}>
-        {visibleGroups.map((group, gi) => (
-          <div key={gi}>
-            {group.section && <span className={styles.navSection}>{group.section}</span>}
-            <ul className={styles.navList}>
-              {group.items.map((item) => (
-                <li key={item.id}>
-                  <button
-                    onClick={() => onNavigate(item.id)}
-                    className={`${styles.navBtn} ${activePage === item.id ? styles.navBtnActive : ""}`}
-                  >
-                    <NavIcon path={item.icon} />
-                    {item.label}
-                  </button>
-                </li>
-              ))}
-            </ul>
+        {isPatient && onPatientPortalSectionChange ? (
+          <div>
+            <span className={styles.navSection}>Minha saúde</span>
+            <PatientPortalSidebarNav
+              active={patientPortalSection}
+              counts={patientPortalCounts}
+              onChange={(section) => {
+                onPatientPortalSectionChange(section)
+                onNavigate("patient-portal")
+                onClose?.()
+              }}
+            />
           </div>
-        ))}
+        ) : (
+          visibleGroups.map((group, gi) => (
+            <div key={gi}>
+              {group.section && <span className={styles.navSection}>{group.section}</span>}
+              <ul className={styles.navList}>
+                {group.items.map((item) => (
+                  <li key={item.id}>
+                    <button
+                      onClick={() => onNavigate(item.id)}
+                      className={`${styles.navBtn} ${activePage === item.id ? styles.navBtnActive : ""}`}
+                    >
+                      <NavIcon path={item.icon} />
+                      {item.label}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))
+        )}
       </nav>
 
       {/* Theme toggle */}

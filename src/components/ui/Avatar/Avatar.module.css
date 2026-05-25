@@ -9,6 +9,11 @@
   flex-shrink: 0;
 }
 
+.photo {
+  object-fit: cover;
+  background-color: var(--muted);
+}
+
 .sm { width: 28px; height: 28px; font-size: 10px; }
 .md { width: 36px; height: 36px; font-size: 12px; }
 .lg { width: 44px; height: 44px; font-size: 14px; }

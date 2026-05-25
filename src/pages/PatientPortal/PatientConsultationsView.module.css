@@ -1,18 +1,20 @@
 .wrap {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 0;
 }
 
-.toolbar {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
+.hero {
+  display: flex;
+  align-items: flex-start;
   gap: 14px;
-  align-items: center;
-  padding: 16px 18px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--card);
+  padding: 20px 20px 16px;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, #14b8a6 12%, var(--card)) 0%,
+    var(--card) 60%
+  );
+  border-bottom: 1px solid var(--border);
 }
 
 .backBtn {
@@ -20,6 +22,7 @@
   align-items: center;
   gap: 6px;
   padding: 8px 12px;
+  margin-top: 4px;
   border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--background);
@@ -28,6 +31,7 @@
   font-weight: 600;
   font-family: var(--font-sans);
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 .backBtn:hover {
@@ -35,179 +39,302 @@
   color: #14b8a6;
 }
 
-.toolbar h2 {
-  margin: 0 0 2px;
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--foreground);
-  font-family: var(--font-sans);
+.heroText {
+  flex: 1;
+  min-width: 0;
 }
 
-.toolbar p {
+.heroText h1 {
+  margin: 0 0 4px;
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  letter-spacing: -0.02em;
+}
+
+.heroText p {
   margin: 0;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted-foreground);
   font-family: var(--font-sans);
 }
 
-.layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
-  gap: 14px;
-  align-items: start;
+.bookBtn {
+  flex-shrink: 0;
+  margin-top: 4px;
 }
 
-.todayPanel,
-.sideAgenda {
-  border: 1px solid var(--border);
-  border-radius: 8px;
+.tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--border);
   background: var(--card);
-  overflow: hidden;
 }
 
-.sideAgenda {
-  position: sticky;
-  top: 12px;
-  max-height: calc(100vh - 180px);
-  overflow: auto;
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 18px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 14px;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
 }
 
-.panelHead {
+.tab:hover {
+  color: var(--foreground);
+}
+
+.tabActive {
+  color: #0d9488;
+  border-bottom-color: #14b8a6;
+}
+
+.tabCount {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted-foreground);
+}
+
+.tabActive .tabCount {
+  background: color-mix(in srgb, #14b8a6 18%, var(--background));
+  color: #0f766e;
+}
+
+.wrapEmbedded .tabs {
+  padding: 0;
+  background: transparent;
+  border-bottom-color: var(--border);
+}
+
+.wrapEmbedded .listPanel {
+  padding: 12px 0 8px;
+  background: transparent;
+  min-height: auto;
+}
+
+.listPanel {
+  padding: 16px 20px 24px;
+  background: var(--background);
+  min-height: 200px;
+}
+
+.appointmentList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.listRow {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--border);
+  gap: 12px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
 }
 
-.panelHead h3 {
-  margin: 0;
+.listRowMuted {
+  opacity: 0.88;
+  background: color-mix(in srgb, var(--muted) 35%, var(--card));
+}
+
+.listMain {
+  display: grid;
+  grid-template-columns: minmax(100px, auto) minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+
+.listWhen strong {
+  display: block;
   font-size: 14px;
-  font-weight: 700;
   color: var(--foreground);
   font-family: var(--font-sans);
 }
 
-.panelHead span {
+.listWhen span {
+  font-size: 14px;
+  font-weight: 700;
+  color: #14b8a6;
+  font-family: var(--font-sans);
+}
+
+.listInfo p {
+  margin: 0 0 2px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+.listInfo span {
   font-size: 12px;
   color: var(--muted-foreground);
   font-family: var(--font-sans);
 }
 
-.cardList,
-.agendaList {
+.empty {
+  padding: 48px 24px;
+  text-align: center;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 14px;
-}
-
-.agendaGroup {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.agendaDate {
-  margin: 4px 0 0;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--muted-foreground);
-  font-family: var(--font-sans);
-}
-
-.apptCard {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--background);
-}
-
-.apptCardCompact {
-  padding: 10px 12px;
-}
-
-.apptMain {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 12px;
   align-items: center;
+  gap: 10px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  background: var(--card);
 }
 
-.apptTime strong {
-  display: block;
-  font-size: 16px;
+.empty strong {
+  font-size: 15px;
   color: var(--foreground);
   font-family: var(--font-sans);
 }
 
-.apptTime span {
-  font-size: 11px;
+.empty span {
+  font-size: 13px;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+  max-width: 280px;
+  line-height: 1.5;
+}
+
+.emptyAction {
+  margin-top: 8px;
+}
+
+.drawerBody {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.drawerSummary {
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--background);
+}
+
+.drawerSummary p {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+.drawerSummary p:last-child {
+  margin-bottom: 0;
+}
+
+.drawerHint {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
   color: var(--muted-foreground);
   font-family: var(--font-sans);
 }
 
-.apptCardCompact .apptTime strong {
-  font-size: 14px;
-}
-
-.apptInfo p {
-  margin: 0 0 3px;
+.reasonLabel {
   font-size: 13px;
   font-weight: 600;
   color: var(--foreground);
   font-family: var(--font-sans);
 }
 
-.apptInfo span {
-  font-size: 12px;
-  color: var(--muted-foreground);
+.reasonInput {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 13px;
+  line-height: 1.5;
   font-family: var(--font-sans);
+  resize: vertical;
+  min-height: 120px;
 }
 
-.apptActions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+.reasonInput:focus {
+  outline: none;
+  border-color: #14b8a6;
+  box-shadow: 0 0 0 2px color-mix(in srgb, #14b8a6 22%, transparent);
 }
 
-.empty {
-  padding: 28px 16px;
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.empty strong {
+.drawerError {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, #ef4444 35%, var(--border));
+  background: color-mix(in srgb, #ef4444 10%, var(--background));
   font-size: 13px;
   color: var(--foreground);
   font-family: var(--font-sans);
 }
 
-.empty span {
-  font-size: 12px;
-  color: var(--muted-foreground);
-  font-family: var(--font-sans);
+.drawerFooterCol {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
 }
 
-@media (max-width: 900px) {
-  .toolbar {
-    grid-template-columns: 1fr;
+.drawerFooterRow {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  width: 100%;
+}
+
+.drawerFullBtn {
+  width: 100%;
+  justify-content: center;
+}
+
+@media (max-width: 720px) {
+  .hero {
+    flex-wrap: wrap;
   }
 
-  .layout {
-    grid-template-columns: 1fr;
+  .bookBtn {
+    width: 100%;
+    margin-top: 0;
   }
 
-  .sideAgenda {
-    position: static;
-    max-height: none;
+  .listRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .listMain {
+    grid-template-columns: 1fr;
+    gap: 8px;
   }
 }
