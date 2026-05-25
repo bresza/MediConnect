@@ -74,7 +74,7 @@ interface ApiProfile {
   patient_id?: string
 }
 
-interface PatientIdentity {
+export interface PatientIdentity {
   patientId?: string
   userId?: string
   name?: string
@@ -582,6 +582,21 @@ export async function getPatients(): Promise<Patient[]> {
     return patient
   })
   return attachPatientPhotos(patients)
+}
+
+export async function getPatientById(id: string): Promise<Patient | null> {
+  if (!id) return null
+  try {
+    const data = await apiRequest<ApiPatient[]>(
+      `/rest/v1/patients?id=eq.${encodeURIComponent(id)}&select=*&limit=1`,
+      { logErrors: false },
+    )
+    const row = data?.[0]
+    if (!row) return null
+    return attachPatientPhoto(apiToPatient(row))
+  } catch {
+    return null
+  }
 }
 
 export async function getPatientsForReports(): Promise<Patient[]> {

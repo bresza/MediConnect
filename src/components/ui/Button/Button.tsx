@@ -15,6 +15,7 @@ interface ButtonProps {
   loading?:   boolean
   fullWidth?: boolean
   title?:     string
+  className?: string
 }
 
 const VARIANT_STYLE: Record<ButtonVariant, string> = {
@@ -54,6 +55,7 @@ export function Button({
   loading   = false,
   fullWidth = false,
   title,
+  className,
 }: ButtonProps) {
   const isDisabled = disabled || loading
 
@@ -68,6 +70,7 @@ export function Button({
         VARIANT_STYLE[variant],
         SIZE_STYLE[size],
         fullWidth ? styles.fullWidth : "",
+        className ?? "",
       ].join(" ")}
     >
       {loading ? <Spinner /> : icon ? icon : null}

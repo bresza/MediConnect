@@ -439,6 +439,69 @@ export function suggestForGap(entries: WaitlistEntry[], input: SuggestForGapInpu
   return candidates[0] ?? null
 }
 
+export function findWaitingEntry(
+  entries: WaitlistEntry[],
+  patientId: string,
+  match?: { doctorId?: string; specialty?: string },
+): WaitlistEntry | null {
+  return entries.find((entry) => {
+    if (entry.status !== "waiting") return false
+    if (entry.patientId !== patientId) return false
+    if (match?.doctorId && entry.doctorId && entry.doctorId !== match.doctorId) return false
+    if (match?.specialty && entry.specialty && normalize(entry.specialty) !== normalize(match.specialty)) {
+      return false
+    }
+    return true
+  }) ?? null
+}
+
+export interface EnrollPatientInput {
+  patient: Pick<Patient, "id" | "name" | "socialName" | "dob" | "gender">
+  doctorId?: string
+  doctorName?: string
+  specialty?: string
+  clinicalNotes?: string
+  cid10?: string
+  addedBy?: string
+  addedByName?: string
+}
+
+export async function enrollPatientInWaitlist(
+  input: EnrollPatientInput,
+): Promise<{ entry: WaitlistEntry; created: boolean }> {
+  const waitlist = await getWaitlist()
+  const existing = findWaitingEntry(waitlist, input.patient.id, {
+    doctorId: input.doctorId,
+    specialty: input.specialty,
+  })
+  if (existing) {
+    return { entry: existing, created: false }
+  }
+
+  const inferred = inferPriority({
+    patient: input.patient,
+    cid10: input.cid10,
+    notes: input.clinicalNotes,
+  })
+
+  const entry = await createWaitlistEntry({
+    patientId: input.patient.id,
+    patientName: input.patient.socialName || input.patient.name,
+    specialty: input.specialty,
+    doctorId: input.doctorId,
+    doctorName: input.doctorName,
+    cid10: input.cid10,
+    clinicalNotes: input.clinicalNotes,
+    flags: inferred.flags,
+    notes: "Inscrição automática via portal do paciente.",
+    addedBy: input.addedBy,
+    addedByName: input.addedByName ?? "Portal do paciente",
+    inferred,
+  })
+
+  return { entry, created: true }
+}
+
 export const WAITLIST_COLOR_LABEL: Record<WaitlistPriorityColor, string> = {
   red:    "Vermelho",
   yellow: "Amarelo",

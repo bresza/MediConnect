@@ -102,6 +102,7 @@ export interface FinancialRecord {
   id: string; patientId?: string; patientName: string; appointmentId?: string
   value: number; discount?: number; paymentMethod: PaymentMethod
   healthInsurance?: string; dueDate: string; status: PaymentStatus; observations?: string
+  boletoUrl?: string
 }
 
 // ─── MEDICAL RECORD ───────────────────────────────────────────────

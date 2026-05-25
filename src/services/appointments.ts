@@ -1,4 +1,6 @@
 import { ApiError, apiRequest, getApiUserId } from "./api"
+import { getPatientByIdentity, type PatientIdentity } from "./patients"
+import { fillGapFromWaitlist } from "./waitlistAutomation"
 import type {
   Appointment,
   AppointmentStatus,
@@ -644,4 +646,129 @@ export async function getPatientAppointmentsByIdentity(identity: PatientLookup):
   return rows
     .map((appointment) => apiToAppointment(appointment, doctorMap.get(appointment.doctor_id) ?? ""))
     .sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`))
+}
+
+function isFutureAppointmentDateTime(date: string, time: string): boolean {
+  const dt = new Date(`${date}T${time}:00`)
+  return !Number.isNaN(dt.getTime()) && dt > new Date()
+}
+
+function canPatientManageAppointment(appointment: Appointment): boolean {
+  const active = appointment.status !== "cancelled" &&
+    appointment.status !== "completed" &&
+    appointment.status !== "absent"
+  return active && isFutureAppointmentDateTime(appointment.date, appointment.time)
+}
+
+async function patchAppointmentFields(
+  appointmentId: string,
+  patientId: string,
+  body: Record<string, unknown>,
+): Promise<void> {
+  const filter = `id=eq.${encodeURIComponent(appointmentId)}&patient_id=eq.${encodeURIComponent(patientId)}`
+  await apiRequest(`/rest/v1/appointments?${filter}`, {
+    method: "PATCH",
+    headers: { Prefer: "return=minimal" },
+    body,
+    logErrors: false,
+  })
+}
+
+function buildCancellationNotes(
+  type: AppointmentType,
+  existingNotes: string | undefined,
+  reason: string,
+): string {
+  const reasonLine = `Motivo do cancelamento (paciente): ${reason.trim()}`
+  const merged = [existingNotes?.trim(), reasonLine].filter(Boolean).join("\n")
+  return encodeTypeInNotes(type, merged) ?? reasonLine
+}
+
+export async function createPatientAppointment(
+  data: Omit<Appointment, "id">,
+  identity: PatientIdentity,
+): Promise<Appointment> {
+  const linked = await getPatientByIdentity(identity)
+  if (!linked?.id) {
+    throw new Error(
+      "Não encontramos seu cadastro de paciente vinculado a esta conta. " +
+      "Peça à recepção para vincular seu acesso ao cadastro.",
+    )
+  }
+
+  return createAppointment({
+    ...data,
+    patientId: linked.id,
+    patientName: linked.socialName || linked.name,
+    status: data.status ?? "scheduled",
+  })
+}
+
+export async function cancelPatientAppointment(
+  appointment: Appointment,
+  identity: PatientIdentity,
+  cancellationReason: string,
+): Promise<Appointment> {
+  const linked = await getPatientByIdentity(identity)
+  if (!linked?.id) {
+    throw new Error(
+      "Não encontramos seu cadastro de paciente vinculado a esta conta. " +
+      "Peça à recepção para vincular seu acesso ao cadastro.",
+    )
+  }
+
+  if (appointment.patientId !== linked.id) {
+    throw new Error("Você só pode cancelar consultas do seu próprio cadastro.")
+  }
+
+  if (!canPatientManageAppointment(appointment)) {
+    throw new Error("Esta consulta não pode mais ser cancelada.")
+  }
+
+  const reason = cancellationReason.trim()
+  if (!reason) {
+    throw new Error("Informe o motivo do cancelamento.")
+  }
+
+  await patchAppointmentFields(appointment.id, linked.id, {
+    status: "cancelled",
+    notes: buildCancellationNotes(appointment.type, appointment.observations, reason),
+  })
+
+  try {
+    await fillGapFromWaitlist(appointment, "patient_cancellation")
+  } catch {
+    // Cancelamento do paciente não deve falhar se o encaixe automático der erro.
+  }
+
+  return { ...appointment, status: "cancelled" }
+}
+
+export async function updatePatientAppointment(
+  appointment: Appointment,
+  identity: PatientIdentity,
+): Promise<Appointment> {
+  const linked = await getPatientByIdentity(identity)
+  if (!linked?.id) {
+    throw new Error(
+      "Não encontramos seu cadastro de paciente vinculado a esta conta. " +
+      "Peça à recepção para vincular seu acesso ao cadastro.",
+    )
+  }
+
+  if (appointment.patientId !== linked.id) {
+    throw new Error("Você só pode alterar consultas do seu próprio cadastro.")
+  }
+
+  if (!canPatientManageAppointment(appointment)) {
+    throw new Error("Esta consulta não pode mais ser reagendada.")
+  }
+
+  await patchAppointmentFields(appointment.id, linked.id, {
+    scheduled_at: localDateTimeIso(appointment.date, appointment.time),
+    duration_minutes: appointment.duration,
+    status: appointment.status ?? "scheduled",
+  })
+
+  return appointment
 }

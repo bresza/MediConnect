@@ -1,0 +1,141 @@
+.wrap {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 20px;
+}
+
+.photoSection {
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--background);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+}
+
+.photoFrame {
+  position: relative;
+}
+
+.fileInput {
+  display: none;
+}
+
+.photoActions h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+.photoActions p {
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+}
+
+.formSection {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.selectWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.selectWrap label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+.selectWrap select {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 14px;
+  font-family: var(--font-sans);
+}
+
+.readonlyBlock {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.readonlyBlock div {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--background);
+}
+
+.readonlyBlock span {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+}
+
+.readonlyBlock strong {
+  font-size: 13px;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+.error,
+.success {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: var(--font-sans);
+}
+
+.error {
+  border: 1px solid color-mix(in srgb, #ef4444 35%, var(--border));
+  background: color-mix(in srgb, #ef4444 8%, var(--background));
+  color: var(--foreground);
+}
+
+.success {
+  border: 1px solid color-mix(in srgb, var(--primary) 35%, var(--border));
+  background: color-mix(in srgb, var(--primary) 8%, var(--background));
+  color: var(--foreground);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+@media (max-width: 900px) {
+  .wrap {
+    grid-template-columns: 1fr;
+  }
+
+  .formGrid,
+  .readonlyBlock {
+    grid-template-columns: 1fr;
+  }
+}
