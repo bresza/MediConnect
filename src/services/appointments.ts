@@ -665,13 +665,24 @@ async function patchAppointmentFields(
   patientId: string,
   body: Record<string, unknown>,
 ): Promise<void> {
-  const filter = `id=eq.${encodeURIComponent(appointmentId)}&patient_id=eq.${encodeURIComponent(patientId)}`
-  await apiRequest(`/rest/v1/appointments?${filter}`, {
-    method: "PATCH",
-    headers: { Prefer: "return=minimal" },
-    body,
-    logErrors: false,
-  })
+  const filter = [
+    `id=eq.${encodeURIComponent(appointmentId)}`,
+    `patient_id=eq.${encodeURIComponent(patientId)}`,
+    "status=not.in.(cancelled,completed,absent)",
+    `scheduled_at=gt.${encodeURIComponent(new Date().toISOString())}`,
+  ].join("&")
+  const updated = await apiRequest<Array<Pick<ApiAppointment, "id">>>(
+    `/rest/v1/appointments?${filter}&select=id`,
+    {
+      method: "PATCH",
+      headers: { Prefer: "return=representation" },
+      body,
+      logErrors: false,
+    },
+  )
+  if (!Array.isArray(updated) || updated.length !== 1) {
+    throw new Error("Não foi possível confirmar a alteração da consulta. Recarregue a agenda e tente novamente.")
+  }
 }
 
 function buildCancellationNotes(
