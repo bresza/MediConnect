@@ -1,3 +1,5 @@
+import { messageFromProblemDetails, parseProblemDetails } from "./problemDetails"
+
 // Le e normaliza as credenciais do Supabase. Sem esse passo, qualquer build
 // que tenha sido gerado sem VITE_SUPABASE_URL acaba chamando `undefined/auth/...`,
 // o que vira um 404 no proprio dominio do Vercel e quebra o login silenciosamente.
@@ -160,23 +162,12 @@ function friendlyMessage(status: number, raw: string): string {
   }
 }
 
-function parseErrorMessage(raw: string): string {
+function parseErrorMessage(raw: string, status = 0): string {
   if (!raw) return ""
-  try {
-    const parsed = JSON.parse(raw)
-    if (typeof parsed === "string") return parseErrorMessage(parsed)
-    return (
-      parsed?.detail ??
-      parsed?.message ??
-      parsed?.error_description ??
-      parsed?.msg ??
-      parsed?.title ??
-      parsed?.error ??
-      raw
-    )
-  } catch {
-    return raw
-  }
+  const problem = parseProblemDetails(raw)
+  const fromProblem = messageFromProblemDetails(status, problem)
+  if (fromProblem) return fromProblem
+  return problem.detail ?? problem.message ?? problem.title ?? problem.error ?? raw
 }
 
 async function performFetch(path: string, options: RequestOptions): Promise<Response> {
@@ -186,6 +177,7 @@ async function performFetch(path: string, options: RequestOptions): Promise<Resp
   const { body, ...rest } = options
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    "Accept":       "application/json, application/problem+json",
     "apikey":       SUPABASE_ANON_KEY,
     ...(rest.headers as Record<string, string> ?? {}),
   }
@@ -255,7 +247,7 @@ export async function apiRequest<T>(
     ) {
       _onUnauthorized()
     }
-    const errorMsg = parseErrorMessage(raw) || res.statusText
+    const errorMsg = parseErrorMessage(raw, res.status) || res.statusText
     if (logErrors) {
       console.error("[apiRequest]", {
         status: res.status,

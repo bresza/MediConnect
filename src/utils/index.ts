@@ -12,6 +12,14 @@ export {
   formatPhoneBR as formatPhone,
   formatZipCodeBR as formatZipCode,
 } from "./masks"
+export {
+  canPatientManageAppointment,
+  getPatientDisplayStatus,
+  isAppointmentFuture,
+  patientAppointmentStatusLabel,
+  showInPatientScheduledTab,
+  todayDateStr,
+} from "./patientAppointments"
 
 // ─── Time helpers ─────────────────────────────────────────────────
 export function timeToMinutes(time: string): number {

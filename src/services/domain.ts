@@ -161,6 +161,32 @@ interface ApiProfile {
   disabled?: boolean; created_at?: string
 }
 
+/** Tabela operacional `public.secretaries` (user_id = auth.users.id). */
+interface ApiSecretary {
+  id?: string
+  user_id?: string
+  full_name: string
+  email?: string
+  phone?: string
+  cpf?: string
+  department?: string
+  active?: boolean
+  created_at?: string
+}
+
+/** Tabela operacional `public.managers`. */
+interface ApiManager {
+  id?: string
+  user_id?: string
+  full_name: string
+  email?: string
+  phone?: string
+  cpf?: string
+  department?: string
+  active?: boolean
+  created_at?: string
+}
+
 function staffPhoneFromApi(api: { phone?: string | null; phone_mobile?: string | null }): string {
   const mobile = api.phone_mobile?.trim()
   const main = api.phone?.trim()
@@ -189,30 +215,6 @@ function compactPayload(payload: Record<string, unknown>): Record<string, unknow
       value !== null &&
       value !== "",
     ),
-  )
-}
-
-/**
- * Reconhece respostas tipo "ja existe" emitidas por diferentes camadas
- * (PostgREST, Edge Functions custom, gateway). Cobre status 409 e 400
- * com mensagens em pt-BR e en-US.
- */
-function isDoctorAlreadyExistsError(err: ApiError): boolean {
-  if (err.status === 409) return true
-  if (err.status !== 400) return false
-  const message = (err.message ?? "").toLowerCase()
-  return (
-    message.includes("already exists") ||
-    message.includes("already registered") ||
-    message.includes("duplicate") ||
-    message.includes("conflict") ||
-    message.includes("ja cadastrado") ||
-    message.includes("já cadastrado") ||
-    message.includes("ja existe") ||
-    message.includes("já existe") ||
-    message.includes("ja foi cadastrado") ||
-    message.includes("já foi cadastrado") ||
-    message.includes("23505")
   )
 }
 
@@ -285,6 +287,42 @@ function apiProfileToStaff(api: ApiProfile, role: StaffRole): StaffMember {
     cpf:       cpfDigits ? cpfDigits : undefined,
     status:    (api.disabled ? "Inactive" : "Active") as StaffStatus,
     createdAt: api.created_at ?? new Date().toISOString().slice(0, 10),
+  }
+}
+
+function operationalUserId(api: { id?: string; user_id?: string }): string {
+  return api.user_id ?? api.id ?? ""
+}
+
+function apiSecretaryToStaff(api: ApiSecretary): StaffMember {
+  const id = operationalUserId(api)
+  const cpfDigits = api.cpf?.replace(/\D/g, "") ?? ""
+  return {
+    id,
+    name:       api.full_name,
+    role:       "secretary",
+    email:      api.email ?? "",
+    phone:      staffPhoneFromApi(api),
+    cpf:        cpfDigits || undefined,
+    department: api.department?.trim() || undefined,
+    status:     (api.active !== false ? "Active" : "Inactive") as StaffStatus,
+    createdAt:  api.created_at ?? new Date().toISOString().slice(0, 10),
+  }
+}
+
+function apiManagerToStaff(api: ApiManager): StaffMember {
+  const id = operationalUserId(api)
+  const cpfDigits = api.cpf?.replace(/\D/g, "") ?? ""
+  return {
+    id,
+    name:       api.full_name,
+    role:       "manager",
+    email:      api.email ?? "",
+    phone:      staffPhoneFromApi(api),
+    cpf:        cpfDigits || undefined,
+    department: api.department?.trim() || undefined,
+    status:     (api.active !== false ? "Active" : "Inactive") as StaffStatus,
+    createdAt:  api.created_at ?? new Date().toISOString().slice(0, 10),
   }
 }
 
@@ -361,13 +399,61 @@ async function loadProfilesForStaff(): Promise<ApiProfile[]> {
   return []
 }
 
+async function loadSecretariesForStaff(): Promise<ApiSecretary[]> {
+  const paths = [
+    "/rest/v1/secretaries?select=*&order=full_name.asc",
+    "/rest/v1/secretaries?select=*",
+    "/rest/v1/secretaries?select=user_id,full_name,email,cpf,phone,department,active,created_at&order=full_name.asc",
+    "/rest/v1/secretaries?select=user_id,full_name,email,cpf,phone,department,active,created_at",
+  ]
+  let lastErr: unknown
+  for (const path of paths) {
+    try {
+      return await apiRequest<ApiSecretary[]>(path, { logErrors: false })
+    } catch (err) {
+      lastErr = err
+      if (isRetryableStaffListError(err)) continue
+      if (err instanceof ApiError && err.status === 404) return []
+      throw err
+    }
+  }
+  console.warn("[getStaff] nao foi possivel carregar secretaries:", lastErr)
+  return []
+}
+
+async function loadManagersForStaff(): Promise<ApiManager[]> {
+  const paths = [
+    "/rest/v1/managers?select=*&order=full_name.asc",
+    "/rest/v1/managers?select=*",
+    "/rest/v1/managers?select=user_id,full_name,email,cpf,phone,department,active,created_at&order=full_name.asc",
+    "/rest/v1/managers?select=user_id,full_name,email,cpf,phone,department,active,created_at",
+  ]
+  let lastErr: unknown
+  for (const path of paths) {
+    try {
+      return await apiRequest<ApiManager[]>(path, { logErrors: false })
+    } catch (err) {
+      lastErr = err
+      if (isRetryableStaffListError(err)) continue
+      if (err instanceof ApiError && err.status === 404) return []
+      throw err
+    }
+  }
+  console.warn("[getStaff] nao foi possivel carregar managers:", lastErr)
+  return []
+}
+
 export async function getStaff(): Promise<StaffMember[]> {
-  const [doctors, profiles, userRoles] = await Promise.all([
+  const [doctors, secretaries, managers, profiles, userRoles] = await Promise.all([
     loadDoctorsForStaff(),
+    loadSecretariesForStaff(),
+    loadManagersForStaff(),
     loadProfilesForStaff(),
     apiRequest<ApiUserRole[]>("/rest/v1/user_roles?select=user_id,role", { logErrors: false }).catch(() => []),
   ])
-  const doctorStaff  = (doctors  ?? []).map(apiDoctorToStaff)
+  const doctorStaff     = (doctors ?? []).map(apiDoctorToStaff)
+  const secretaryStaff  = (secretaries ?? []).map(apiSecretaryToStaff).filter((m) => m.id)
+  const managerStaff    = (managers ?? []).map(apiManagerToStaff).filter((m) => m.id)
   const roleByUserId = new Map(
     (userRoles ?? [])
       .map((item) => [item.user_id, roleToStaffRole(item.role)] as const)
@@ -388,196 +474,173 @@ export async function getStaff(): Promise<StaffMember[]> {
     return true
   })
 
-  // Doctors carrega CRM/especialidade; quando existir profile com o mesmo email/nome,
-  // mantemos o registro medico mais completo e ocultamos o duplicado de profiles.
-  return [...addUnique(doctorStaff), ...addUnique(profileStaff)]
-    .sort((a, b) => a.name.localeCompare(b.name))
+  return [
+    ...addUnique(doctorStaff),
+    ...addUnique(secretaryStaff),
+    ...addUnique(managerStaff),
+    ...addUnique(profileStaff),
+  ].sort((a, b) => a.name.localeCompare(b.name))
 }
 
 export interface DoctorExtra {
   cpf: string; crmNum: string; crmUf: string; specialty: string
 }
 
-// ─── Payload exato conforme spec da API fornecida pelo usuário ────
-// {
-//   email: string          — obrigatório
-//   password: string       — obrigatório (endpoint with-password)
-//   full_name: string      — obrigatório
-//   phone?: string         — opcional
-//   role: Role             — obrigatório: admin|gestor|medico|secretaria|paciente
-//   cpf?: string           — obrigatório se create_patient_record=true
-//   create_patient_record?: boolean
-//   phone_mobile?: string  — obrigatório se create_patient_record=true
-// }
-export async function createStaffMember(
-  data:         Omit<StaffMember, "id" | "createdAt">,
-  password:     string,
+const STAFF_ROLE_API: Record<StaffRole, string> = {
+  doctor: "medico",
+  manager: "gestor",
+  secretary: "secretaria",
+}
+
+function assertStaffCreateFields(
+  data: Omit<StaffMember, "id" | "createdAt">,
+  password: string,
   doctorExtra?: DoctorExtra,
-): Promise<StaffMember> {
-  const roleMap: Record<StaffRole, string> = {
-    doctor: "medico", manager: "gestor", secretary: "secretaria",
+): string {
+  const cpf = (doctorExtra?.cpf || data.cpf || "").replace(/\D/g, "")
+  if (!data.email.trim()) throw new Error("E-mail obrigatório")
+  if (!password.trim()) throw new Error("Senha obrigatória")
+  if (password.trim().length < 6) throw new Error("A senha deve ter pelo menos 6 caracteres")
+  if (!data.name.trim()) throw new Error("Nome obrigatório")
+  if (!data.phone?.trim()) throw new Error("Telefone obrigatório")
+  if (!cpf || cpf.length !== 11) throw new Error("CPF obrigatório (11 dígitos)")
+  if (data.role === "secretary" || data.role === "manager") {
+    if (!data.department?.trim()) throw new Error("Departamento obrigatório")
   }
-
-  // Payload exato conforme curl da API fornecido
-  const payload = {
-    email:     data.email.trim(),
-    password:  password.trim(),
-    full_name: data.name.trim(),
-    phone:     data.phone?.trim() || undefined,
-    phone_mobile: data.phone?.trim() || undefined,
-    role:      roleMap[data.role] ?? "secretaria",
-    cpf:       (doctorExtra?.cpf || data.cpf || "").replace(/\D/g, "") || undefined,
-    create_patient_record: false,
-    crm:       data.role === "doctor" ? doctorExtra?.crmNum?.trim() : undefined,
-    crm_uf:    data.role === "doctor" ? doctorExtra?.crmUf?.trim().toUpperCase() : undefined,
-    specialty: data.role === "doctor" ? doctorExtra?.specialty?.trim() : undefined,
+  if (data.role === "doctor") {
+    if (!doctorExtra) throw new Error("Dados do médico incompletos")
+    if (!doctorExtra.crmNum.trim()) throw new Error("CRM obrigatório")
+    if (!doctorExtra.crmUf.trim()) throw new Error("UF do CRM obrigatória")
+    if (!doctorExtra.specialty.trim()) throw new Error("Especialidade obrigatória")
   }
+  return cpf
+}
 
-  if (!payload.email)     throw new Error("E-mail obrigatório")
-  if (!payload.password)  throw new Error("Senha obrigatória")
-  if (payload.password.length < 6) throw new Error("A senha deve ter pelo menos 6 caracteres")
-  if (!payload.full_name) throw new Error("Nome obrigatório")
-  if (!payload.phone)     throw new Error("Telefone obrigatório")
-  if (!payload.cpf)       throw new Error("CPF obrigatório")
-  if (payload.role === "medico") {
-    if (!payload.crm)       throw new Error("CRM obrigatório")
-    if (!payload.crm_uf)    throw new Error("UF do CRM obrigatória")
-    if (!payload.specialty) throw new Error("Especialidade obrigatória")
+function staffCreationPermissionError(err: ApiError): Error {
+  if (err.status === 401) {
+    return new Error("Sessão expirada. Saia, entre novamente e tente outra vez.")
   }
+  if (err.status === 403) {
+    return new Error(
+      "Sem permissão para criar usuários. Apenas administrador, gestor e secretária podem cadastrar a equipe.",
+    )
+  }
+  return err
+}
 
-  // Passo 1: criar usuário auth com senha/role pela Edge Function da API.
-  // O caminho oficial e /functions/v1/create-user-with-password.
-  // O caminho curto (/create-user-with-password) e mantido apenas como
-  // fallback defensivo para projetos antigos.
-  let res: CreateUserWithPasswordResponse
+async function postCreateUserWithPassword(
+  body: Record<string, unknown>,
+): Promise<CreateUserWithPasswordResponse> {
   try {
-    res = await apiRequest<CreateUserWithPasswordResponse>("/functions/v1/create-user-with-password", {
+    return await apiRequest<CreateUserWithPasswordResponse>(
+      "/functions/v1/create-user-with-password",
+      { method: "POST", body: compactPayload(body), logErrors: false },
+    )
+  } catch (err) {
+    if (err instanceof ApiError) {
+      if (err.status === 404) {
+        return apiRequest<CreateUserWithPasswordResponse>("/create-user-with-password", {
+          method: "POST",
+          body: compactPayload(body),
+        })
+      }
+      throw staffCreationPermissionError(err)
+    }
+    throw err
+  }
+}
+
+async function postCreateDoctor(
+  body: Record<string, unknown>,
+): Promise<CreateUserWithPasswordResponse> {
+  try {
+    return await apiRequest<CreateUserWithPasswordResponse>("/functions/v1/create-doctor", {
       method: "POST",
-      body: compactPayload(payload),
+      body: compactPayload(body),
       logErrors: false,
     })
   } catch (err) {
     if (err instanceof ApiError) {
       if (err.status === 404) {
-        res = await apiRequest<CreateUserWithPasswordResponse>("/create-user-with-password", {
+        return apiRequest<CreateUserWithPasswordResponse>("/create-doctor", {
           method: "POST",
-          body: compactPayload(payload),
+          body: compactPayload(body),
         })
-      } else if (err.status === 401 || err.status === 403) {
-        throw new Error(
-          "Sua sessão expirou ou você não tem permissão para criar usuários. " +
-          "Faça login novamente como gestor e tente outra vez.",
-        )
-      } else {
-        throw err
       }
-    } else {
-      throw err
+      throw staffCreationPermissionError(err)
     }
+    throw err
   }
+}
 
-  if (!res?.user?.id && !res?.user_id) {
-    throw new Error(res?.message || "Erro ao criar usuário na API")
-  }
+function createdStaffUserId(res: CreateUserWithPasswordResponse): string {
+  const id = res?.user?.id ?? res?.user_id ?? ""
+  if (!id) throw new Error(res?.message || "Erro ao criar usuário na API")
+  return id
+}
 
-  const userId = res?.user?.id ?? res?.user_id ?? ""
+/**
+ * Cadastro de equipe conforme mapa da API RiseUP:
+ * - médico → create-doctor (auth + profiles + user_roles + doctors)
+ * - gestor/secretária/admin → create-user-with-password (+ managers/secretaries)
+ */
+export async function createStaffMember(
+  data:         Omit<StaffMember, "id" | "createdAt">,
+  password:     string,
+  doctorExtra?: DoctorExtra,
+): Promise<StaffMember> {
+  const cpf = assertStaffCreateFields(data, password, doctorExtra)
 
-  // Passo 2: se médico, criar registro na tabela doctors. Algumas APIs
-  // ja criam o doctor no passo 1 (create-user-with-password). Nesse caso
-  // o POST de create-doctor responde 400/409 ("already exists") e nao
-  // devemos tratar como falha — apenas sincronizamos os campos via PATCH.
-  if (data.role === "doctor" && doctorExtra) {
+  if (data.role === "doctor") {
+    const extra = doctorExtra!
     const doctorPayload = compactPayload({
-      email:        data.email,
-      full_name:    data.name,
-      cpf:          doctorExtra.cpf.replace(/\D/g, ""),
-      crm:          doctorExtra.crmNum,
-      crm_uf:       doctorExtra.crmUf.toUpperCase(),
-      specialty:    doctorExtra.specialty,
-      phone:        data.phone || undefined,
-      phone_mobile: data.phone || undefined,
-      phone2:       data.phone2 || undefined,
-      rg:           data.rg || undefined,
-      active:       data.status !== "Inactive",
+      email:         data.email.trim(),
+      password:      password.trim(),
+      full_name:     data.name.trim(),
+      cpf,
+      crm:           extra.crmNum.trim(),
+      crm_uf:        extra.crmUf.trim().toUpperCase(),
+      specialty:     extra.specialty.trim(),
+      phone:         data.phone || undefined,
+      phone_mobile:  data.phone || undefined,
+      phone2:        data.phone2 || undefined,
+      rg:            data.rg || undefined,
+      active:        data.status !== "Inactive",
       temp_password: data.tempPassword || password.trim(),
       ...addressToDoctorApi(data.address),
     })
-
-    let needsSync = false
-    try {
-      await apiRequest("/functions/v1/create-doctor", {
-        method: "POST",
-        body: doctorPayload,
-        logErrors: false,
-      })
-    } catch (err) {
-      if (err instanceof ApiError) {
-        if (err.status === 404) {
-          try {
-            await apiRequest("/create-doctor", {
-              method: "POST",
-              body: doctorPayload,
-              logErrors: false,
-            })
-          } catch (fallbackErr) {
-            if (fallbackErr instanceof ApiError && isDoctorAlreadyExistsError(fallbackErr)) {
-              needsSync = true
-            } else {
-              console.warn("[create-doctor] criacao do registro de medico falhou:", fallbackErr)
-              needsSync = true
-            }
-          }
-        } else if (isDoctorAlreadyExistsError(err)) {
-          // Doctor ja foi criado pelo passo 1 — apenas sincroniza os campos.
-          needsSync = true
-        } else {
-          // Outros erros (5xx etc) tambem caem em sync defensivo para nao
-          // bloquear o gestor — o auth user ja foi criado com sucesso.
-          console.warn("[create-doctor] falha nao bloqueante:", err)
-          needsSync = true
-        }
-      } else {
-        console.warn("[create-doctor] erro inesperado:", err)
-        needsSync = true
-      }
-    }
-
-    if (needsSync && userId) {
-      const patchBody = compactPayload({
-        full_name: data.name,
-        email:     data.email,
-        phone:     data.phone || undefined,
-        phone_mobile: data.phone || undefined,
-        cpf:       doctorExtra.cpf.replace(/\D/g, "") || undefined,
-        crm:       doctorExtra.crmNum,
-        crm_uf:    doctorExtra.crmUf.toUpperCase(),
-        specialty: doctorExtra.specialty,
-        active:    data.status !== "Inactive",
-      })
-      try {
-        await apiRequest(`/rest/v1/doctors?id=eq.${encodeURIComponent(userId)}`, {
-          method: "PATCH",
-          headers: { Prefer: "return=minimal" },
-          body: patchBody,
-          logErrors: false,
-        })
-      } catch (patchErr) {
-        // Se o PATCH tambem falhar (RLS, schema mismatch) apenas registramos
-        // — o cadastro principal ja foi feito e o gestor pode editar depois.
-        console.warn("[doctors] sincronizacao pos-criacao falhou:", patchErr)
-      }
+    const res = await postCreateDoctor(doctorPayload)
+    const userId = createdStaffUserId(res)
+    return {
+      ...data,
+      id:        userId,
+      cpf,
+      crm:       `${extra.crmNum}-${extra.crmUf.toUpperCase()}`,
+      specialty: extra.specialty,
+      createdAt: new Date().toISOString().slice(0, 10),
     }
   }
+
+  const payload = compactPayload({
+    email:      data.email.trim(),
+    password:   password.trim(),
+    full_name:  data.name.trim(),
+    cpf,
+    phone:      data.phone?.trim() || undefined,
+    role:       STAFF_ROLE_API[data.role] ?? "secretaria",
+    department:
+      data.role === "secretary" || data.role === "manager"
+        ? data.department?.trim()
+        : undefined,
+  })
+
+  const res = await postCreateUserWithPassword(payload)
+  const userId = createdStaffUserId(res)
 
   return {
     ...data,
     id:        userId,
-    crm:       data.role === "doctor" && doctorExtra
-      ? `${doctorExtra.crmNum}-${doctorExtra.crmUf}`
-      : data.crm,
-    specialty: data.role === "doctor" && doctorExtra
-      ? doctorExtra.specialty
-      : data.specialty,
+    cpf,
     createdAt: new Date().toISOString().slice(0, 10),
   }
 }
@@ -586,26 +649,77 @@ export async function updateStaffMember(member: StaffMember): Promise<StaffMembe
   await apiRequest(`/rest/v1/profiles?id=eq.${member.id}`, {
     method: "PATCH",
     headers: { Prefer: "return=minimal" },
-    body: { full_name: member.name, phone: member.phone },
+    body: compactPayload({
+      full_name: member.name,
+      phone:     member.phone,
+      cpf:       member.cpf?.replace(/\D/g, "") || undefined,
+    }),
+    logErrors: false,
+  }).catch((err) => {
+    console.warn("[profiles] sincronizacao de equipe falhou:", err)
   })
+
+  const operationalBody = compactPayload({
+    full_name:  member.name,
+    email:      member.email,
+    phone:      member.phone,
+    cpf:        member.cpf?.replace(/\D/g, "") || undefined,
+    active:     member.status !== "Inactive",
+    department: member.department?.trim() || undefined,
+  })
+
   if (member.role === "doctor") {
     const [crm = "", crmUf = ""] = (member.crm ?? "").split("-")
     try {
-      await apiRequest(`/rest/v1/doctors?id=eq.${member.id}`, {
+      await apiRequest(`/rest/v1/doctors?user_id=eq.${encodeURIComponent(member.id)}`, {
         method: "PATCH",
         headers: { Prefer: "return=minimal" },
         body: {
-          full_name: member.name,
-          email: member.email,
-          phone: member.phone,
+          ...operationalBody,
           crm: crm || undefined,
           crm_uf: crmUf || undefined,
           specialty: member.specialty,
-          active: member.status !== "Inactive",
         },
+        logErrors: false,
+      })
+    } catch {
+      try {
+        await apiRequest(`/rest/v1/doctors?id=eq.${encodeURIComponent(member.id)}`, {
+          method: "PATCH",
+          headers: { Prefer: "return=minimal" },
+          body: {
+            ...operationalBody,
+            crm: crm || undefined,
+            crm_uf: crmUf || undefined,
+            specialty: member.specialty,
+          },
+          logErrors: false,
+        })
+      } catch (err) {
+        console.warn("[doctors] sincronizacao de medico falhou:", err)
+      }
+    }
+  } else if (member.role === "secretary") {
+    try {
+      await apiRequest(`/rest/v1/secretaries?user_id=eq.${encodeURIComponent(member.id)}`, {
+        method: "PATCH",
+        headers: { Prefer: "return=minimal" },
+        body: operationalBody,
+        logErrors: false,
       })
     } catch (err) {
-      console.warn("[doctors] sincronizacao de medico falhou:", err)
+      console.warn("[secretaries] sincronizacao falhou:", err)
+    }
+  } else if (member.role === "manager") {
+    try {
+      await apiRequest(`/rest/v1/managers?user_id=eq.${encodeURIComponent(member.id)}`, {
+        method: "PATCH",
+        headers: { Prefer: "return=minimal" },
+        body: operationalBody,
+        logErrors: false,
+      })
+    } catch (err) {
+      console.warn("[managers] sincronizacao falhou:", err)
     }
   }
   return member

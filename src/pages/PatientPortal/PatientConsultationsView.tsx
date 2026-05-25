@@ -1,6 +1,11 @@
 import { useMemo } from "react"
 import { Badge } from "../../components/ui/Badge/Badge"
 import { Button } from "../../components/ui/Button/Button"
+import {
+  canPatientManageAppointment,
+  getPatientDisplayStatus,
+  showInPatientScheduledTab,
+} from "../../utils/patientAppointments"
 import { formatAppointmentType, formatDate } from "../../utils"
 import type { Appointment } from "../../types"
 import styles from "./PatientConsultationsView.module.css"
@@ -25,28 +30,19 @@ function appointmentTs(appointment: Appointment): number {
   return new Date(`${appointment.date}T${appointment.time}:00`).getTime()
 }
 
-function isActiveStatus(status: string): boolean {
-  return status !== "cancelled" && status !== "completed" && status !== "absent"
-}
-
-function canManage(appointment: Appointment): boolean {
-  return isActiveStatus(appointment.status) && appointmentTs(appointment) > Date.now()
-}
-
 function AppointmentCard({
   appointment,
-  statusLabels,
   onReschedule,
   onCancel,
   compact = false,
 }: {
   appointment: Appointment
-  statusLabels: Record<string, string>
   onReschedule: (a: Appointment) => void
   onCancel: (a: Appointment) => void
   compact?: boolean
 }) {
-  const manageable = canManage(appointment)
+  const displayStatus = getPatientDisplayStatus(appointment)
+  const manageable = canPatientManageAppointment(appointment)
 
   return (
     <article className={`${styles.apptCard} ${compact ? styles.apptCardCompact : ""}`}>
@@ -59,7 +55,7 @@ function AppointmentCard({
           <p>{formatAppointmentType(appointment.type)}</p>
           <span>Dr(a). {appointment.doctorName}</span>
         </div>
-        <Badge>{statusLabels[appointment.status] ?? appointment.status}</Badge>
+        <Badge>{displayStatus}</Badge>
       </div>
       {manageable && (
         <div className={styles.apptActions}>
@@ -78,7 +74,7 @@ function AppointmentCard({
 export function PatientConsultationsView({
   appointments,
   loading,
-  statusLabels,
+  statusLabels: _statusLabels, // mantido na API do componente (labels por status)
   onBack,
   onBook,
   onReschedule,
@@ -88,7 +84,7 @@ export function PatientConsultationsView({
 
   const activeConsultations = useMemo(
     () => appointments.filter((a) =>
-      (a.type === "consultation" || a.type === "return") && isActiveStatus(a.status)),
+      (a.type === "consultation" || a.type === "return") && showInPatientScheduledTab(a)),
     [appointments],
   )
 
@@ -103,6 +99,13 @@ export function PatientConsultationsView({
     () => activeConsultations
       .filter((a) => appointmentTs(a) > Date.now() && a.date !== today)
       .sort((a, b) => appointmentTs(a) - appointmentTs(b)),
+    [activeConsultations],
+  )
+
+  const pastAbsent = useMemo(
+    () => activeConsultations
+      .filter((a) => getPatientDisplayStatus(a) === "absent")
+      .sort((a, b) => appointmentTs(b) - appointmentTs(a)),
     [activeConsultations],
   )
 
@@ -153,7 +156,6 @@ export function PatientConsultationsView({
                 <AppointmentCard
                   key={appt.id}
                   appointment={appt}
-                  statusLabels={statusLabels}
                   onReschedule={onReschedule}
                   onCancel={onCancel}
                 />
@@ -170,7 +172,7 @@ export function PatientConsultationsView({
 
           {loading ? (
             <p className={styles.empty}>Carregando...</p>
-          ) : upcomingAppointments.length === 0 ? (
+          ) : upcomingAppointments.length === 0 && pastAbsent.length === 0 ? (
             <div className={styles.empty}>
               <strong>Sem consultas futuras</strong>
               <span>Agende quando precisar.</span>
@@ -184,7 +186,6 @@ export function PatientConsultationsView({
                     <AppointmentCard
                       key={appt.id}
                       appointment={appt}
-                      statusLabels={statusLabels}
                       onReschedule={onReschedule}
                       onCancel={onCancel}
                       compact
@@ -192,6 +193,20 @@ export function PatientConsultationsView({
                   ))}
                 </div>
               ))}
+              {pastAbsent.length > 0 && (
+                <div className={styles.agendaGroup}>
+                  <p className={styles.agendaDate}>Não compareceu</p>
+                  {pastAbsent.map((appt) => (
+                    <AppointmentCard
+                      key={appt.id}
+                      appointment={appt}
+                      onReschedule={onReschedule}
+                      onCancel={onCancel}
+                      compact
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </aside>

@@ -625,42 +625,10 @@ export async function createPatientWithPassword(
   data: Omit<Patient, "id">,
   password: string,
 ): Promise<Patient> {
-  const base = patientToApi(data)
-  const payload = {
-    ...base,
-    password: password.trim(),
-    role: "paciente",
-    create_patient_record: true,
-    phone: base.phone_mobile,
-    phone_mobile: base.phone_mobile,
-    redirect_url: window.location.origin,
-  }
-
-  if (!base.email) throw new Error("E-mail obrigatório para criar acesso do paciente.")
-  if (!payload.password) throw new Error("Senha obrigatória para criar acesso do paciente.")
-  if (payload.password.length < 6) throw new Error("A senha deve ter pelo menos 6 caracteres.")
-
-  const response = await createPatientUser(payload)
-  const userId = createdUserId(response)
-  await ensurePatientRole(userId)
-  await ensurePatientProfile(userId, data)
-
-  const rawById = await findPatientById(response.patient_id)
-  if (rawById) {
-    await linkPatientToUser(rawById.id, userId)
-    return updatePatient({ ...apiToPatient(rawById), ...data, id: rawById.id, userId })
-  }
-
-  let raw = await findPatientByCpf(base.cpf)
-  if (!raw) {
-    const created = await createPatientDirect(data)
-    await linkPatientToUser(created.id, userId)
-    raw = await findPatientById(created.id)
-    if (!raw) return { ...created, userId }
-  }
-  if (!raw) throw new Error(response.message || "Usuário criado, mas o paciente não foi retornado pela API.")
-  await linkPatientToUser(raw.id, userId)
-  return updatePatient({ ...apiToPatient(raw), ...data, id: raw.id, userId })
+  if (!password.trim()) throw new Error("Senha obrigatória para criar acesso do paciente.")
+  if (password.trim().length < 6) throw new Error("A senha deve ter pelo menos 6 caracteres.")
+  const created = await createPatient(data)
+  return createPatientPortalAccess(created, password)
 }
 
 export async function createPatientPortalAccess(
@@ -668,18 +636,22 @@ export async function createPatientPortalAccess(
   password: string,
 ): Promise<Patient> {
   const base = patientToApi(patient)
-  const payload = {
-    ...base,
-    patient_id: patient.id,
-    password: password.trim(),
-    role: "paciente",
-    create_patient_record: false,
-    phone: base.phone_mobile,
-    phone_mobile: base.phone_mobile,
-    redirect_url: window.location.origin,
+  const cpf = onlyDigits(patient.cpf)
+  if (!cpf || cpf.length !== 11) {
+    throw new Error("CPF do paciente é obrigatório (11 dígitos) para criar o acesso ao portal.")
   }
 
-  if (!base.email) throw new Error("E-mail obrigatório para criar acesso do paciente.")
+  const payload = {
+    email:      String(base.email ?? "").trim().toLowerCase(),
+    password:   password.trim(),
+    full_name:  String(base.full_name ?? patient.name).trim(),
+    cpf,
+    phone:      base.phone_mobile,
+    role:       "paciente",
+    patient_id: patient.id,
+  }
+
+  if (!payload.email) throw new Error("E-mail obrigatório para criar acesso do paciente.")
   if (!payload.password) throw new Error("Senha obrigatória para criar acesso do paciente.")
   if (payload.password.length < 6) throw new Error("A senha deve ter pelo menos 6 caracteres.")
 

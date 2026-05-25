@@ -5,6 +5,8 @@ import {
   isRegisterPatientConflict,
   RegisterPatientApiError,
 } from "./registerPatient"
+import { messageFromProblemDetails, parseProblemDetails } from "./problemDetails"
+import { isValidCpf } from "../utils/cpf"
 import type { User, UserRole } from "../types"
 
 function assertSupabaseConfigured(): void {
@@ -171,6 +173,7 @@ export async function createPatientAccount(payload: PatientSignupPayload): Promi
   if (!email) throw new Error("Informe seu e-mail.")
   if (password && password.length < 6) throw new Error("A senha deve ter pelo menos 6 caracteres.")
   if (cpf.length !== 11) throw new Error("Informe um CPF válido com 11 dígitos.")
+  if (!isValidCpf(cpf)) throw new Error("CPF inválido. Confira os números e os dígitos verificadores.")
   if (!phone) throw new Error("Informe seu telefone.")
 
   if (password.length >= 6) {
@@ -272,19 +275,12 @@ async function createPatientAccountWithPassword(input: ClaimPatientInput): Promi
 // quando register-patient nao esta disponivel no projeto.
 async function createPatientViaGenericEndpoint(input: ClaimPatientInput): Promise<PatientSignupResponse> {
   const payload = {
-    email: input.email,
-    password: input.password,
+    email:     input.email,
+    password:  input.password,
     full_name: input.name,
-    phone: input.phone || undefined,
-    phone_mobile: input.phone || undefined,
-    cpf: input.cpf || undefined,
-    birth_date: input.dob || undefined,
-    dob:        input.dob || undefined,
-    role: "paciente",
-    create_patient_record: true,
-    redirect_url: window.location.origin,
-    email_confirm: true,
-    auto_confirm: true,
+    phone:     input.phone || undefined,
+    cpf:       input.cpf,
+    role:      "paciente",
   }
 
   async function post(path: string): Promise<Response> {
@@ -292,6 +288,7 @@ async function createPatientViaGenericEndpoint(input: ClaimPatientInput): Promis
       method: "POST",
       headers: {
         "Content-Type":  "application/json",
+        "Accept":        "application/json, application/problem+json",
         "apikey":        SUPABASE_ANON_KEY,
         "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
       },
@@ -304,19 +301,24 @@ async function createPatientViaGenericEndpoint(input: ClaimPatientInput): Promis
 
   if (!res.ok) {
     const raw = await res.text().catch(() => "")
+    const problem = parseProblemDetails(raw)
     const parsed = safeJsonParse(raw)
 
-    if (isExistingAuthUserError(parsed)) {
+    if (isExistingAuthUserError(parsed) || isExistingAuthUserError(problem)) {
       throw new Error(
         "Este e-mail já possui acesso ao portal. Use a opção \"Esqueci minha senha\" para redefinir o acesso.",
       )
     }
 
-    if (isExistingPatientError(parsed)) {
+    if (isExistingPatientError(parsed) || isExistingPatientError(problem)) {
       return claimExistingPatientAccount(input)
     }
 
-    const message = readableError(parsed) ?? raw ?? "Não foi possível criar sua conta. Verifique os dados e tente novamente."
+    const message =
+      messageFromProblemDetails(res.status, problem) ||
+      readableError(parsed) ||
+      raw ||
+      "Não foi possível criar sua conta. Verifique os dados e tente novamente."
     throw new Error(message)
   }
 
@@ -345,6 +347,8 @@ interface ParsedError {
   error_description?: string
   msg?: string
   title?: string
+  type?: string
+  errors?: Record<string, string[] | string> | string[]
 }
 
 function safeJsonParse(raw: string): ParsedError {
@@ -365,6 +369,7 @@ function readableError(parsed: ParsedError): string | undefined {
 function isExistingPatientError(parsed: ParsedError): boolean {
   const code = (parsed.code ?? "").toUpperCase()
   if (["CPF_EXISTS", "EMAIL_EXISTS", "PATIENT_EXISTS", "PATIENT_ALREADY_EXISTS"].includes(code)) return true
+  if ((parsed.type ?? "").includes("conflict")) return true
 
   const text = `${parsed.error ?? ""} ${parsed.message ?? ""} ${parsed.detail ?? ""}`.toLowerCase()
   return /cpf.*j[aá].*cadastrad|e-?mail.*j[aá].*cadastrad|paciente.*j[aá].*cadastrad|patient.*already/i.test(text)
@@ -384,23 +389,15 @@ interface ClaimPatientInput {
   dob?: string
 }
 
-// Cria apenas a conta de autenticacao (auth.users + profile) para um paciente
-// ja existente no cadastro. O backend vincula automaticamente o user ao paciente
-// pelo CPF/e-mail informados quando create_patient_record=false.
+// Cria credencial para paciente ja cadastrado (vinculo por CPF/e-mail no backend).
 async function claimExistingPatientAccount(input: ClaimPatientInput): Promise<PatientSignupResponse> {
   const payload = {
-    email: input.email,
-    password: input.password,
+    email:     input.email,
+    password:  input.password,
     full_name: input.name,
-    phone: input.phone || undefined,
-    phone_mobile: input.phone || undefined,
-    cpf: input.cpf || undefined,
-    birth_date: input.dob || undefined,
-    role: "paciente",
-    create_patient_record: false,
-    redirect_url: window.location.origin,
-    email_confirm: true,
-    auto_confirm: true,
+    phone:     input.phone || undefined,
+    cpf:       input.cpf,
+    role:      "paciente",
   }
 
   async function post(path: string): Promise<Response> {
@@ -408,6 +405,7 @@ async function claimExistingPatientAccount(input: ClaimPatientInput): Promise<Pa
       method: "POST",
       headers: {
         "Content-Type":  "application/json",
+        "Accept":        "application/json, application/problem+json",
         "apikey":        SUPABASE_ANON_KEY,
         "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
       },
@@ -420,15 +418,20 @@ async function claimExistingPatientAccount(input: ClaimPatientInput): Promise<Pa
 
   if (!res.ok) {
     const raw = await res.text().catch(() => "")
+    const problem = parseProblemDetails(raw)
     const parsed = safeJsonParse(raw)
 
-    if (isExistingAuthUserError(parsed)) {
+    if (isExistingAuthUserError(parsed) || isExistingAuthUserError(problem)) {
       throw new Error(
         "Este e-mail já possui acesso ao portal. Use a opção \"Esqueci minha senha\" para redefinir o acesso.",
       )
     }
 
-    const message = readableError(parsed) ?? raw ?? "Não foi possível criar o acesso para este paciente."
+    const message =
+      messageFromProblemDetails(res.status, problem) ||
+      readableError(parsed) ||
+      raw ||
+      "Não foi possível criar o acesso para este paciente."
     throw new Error(message)
   }
 

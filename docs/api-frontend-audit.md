@@ -1,16 +1,19 @@
 # Auditoria Front-end x API - MediConnect
 
-Data: 2026-04-29
+Data: 2026-05-20
 
 ## Status
 
 | Area | Endpoint/API | Status no front | Observacao |
 | --- | --- | --- | --- |
 | Autenticacao | `/auth/v1/token`, `/functions/v1/user-info` | Integrado | Login usa Supabase Auth e busca perfil/roles. |
-| Usuarios | `/functions/v1/create-user-with-password` | Integrado | Criacao de medico, secretaria e gestor pela tela Equipe. |
+| Usuarios | `/functions/v1/create-user-with-password` | Integrado | Gestor, secretaria e admin (CPF + department obrigatorios; erros RFC 7807). |
+| Usuarios | `/functions/v1/create-doctor` | Integrado | Medico pela tela Equipe (fluxo atomico auth+profiles+roles+doctors). |
+| Usuarios | `/rest/v1/secretaries`, `/rest/v1/managers` | Integrado | Listagem e PATCH na edicao de equipe. |
 | Usuarios | `/delete-user` | Integrado com fallback | Exclusao tenta hard delete documentado; fallback REST apenas se endpoint nao existir no ambiente. |
-| Pacientes | `/functions/v1/create-patient`, `/rest/v1/patients` | Integrado | Criacao validada e edicao com payload reduzido aos campos aceitos. |
-| Medicos | `/rest/v1/doctors`, `/functions/v1/create-doctor` | Integrado | Listagem, criacao complementar e sincronizacao basica. |
+| Pacientes | `/functions/v1/create-patient`, `/register-patient-with-password` | Integrado | Staff: create-patient + create-user-with-password; auto-cadastro: register-patient-with-password. |
+| Pacientes | `/rest/v1/patients` | Integrado | Criacao/edicao com CPF obrigatorio e validacao no front. |
+| Medicos | `/rest/v1/doctors`, `/functions/v1/create-doctor` | Integrado | Listagem e cadastro via create-doctor (nao mais create-user-with-password). |
 | Agendamentos | `/rest/v1/appointments` | Integrado | Listagem, criacao e atualizacao. |
 | Agendamentos | `/functions/v1/get-available-slots` | Integrado | Modal de agendamento consulta slots reais por medico/data. |
 | Disponibilidade | `/rest/v1/doctor_availability` | Parcial | API existe, mas ainda falta tela administrativa para CRUD de disponibilidade. |
