@@ -395,6 +395,63 @@
   transform: translateY(-1px);
 }
 
+.agentBanner {
+  margin: 0 14px 8px;
+  padding: 8px 12px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted-foreground);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--primary) 20%, transparent);
+}
+
+.confirmCard {
+  margin: 0 14px 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--card);
+}
+
+.confirmTitle {
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.confirmText {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  margin-bottom: 10px;
+}
+
+.confirmActions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.confirmCancel,
+.confirmOk {
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  background: var(--background);
+}
+
+.confirmOk {
+  background: linear-gradient(135deg, #10b981 0%, #0ea5e9 100%);
+  color: #fff;
+  border: none;
+}
+
+.headerBtnActive {
+  background: color-mix(in srgb, var(--primary) 15%, transparent);
+}
+
 @media (max-width: 640px) {
   .panel {
     right: 8px;

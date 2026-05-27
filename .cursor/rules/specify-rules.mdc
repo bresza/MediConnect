@@ -1,0 +1,15 @@
+---
+alwaysApply: true
+---
+
+<!-- SPECKIT START -->
+**Constitution**: [.specify/memory/constitution.md](.specify/memory/constitution.md) v1.0.0 — TypeScript estrito, Supabase RLS, UX PT-BR, performance percebida, erros de API claros.
+
+For additional context about technologies, project structure, and shell commands, read the current plan:
+
+**Active feature**: `001-app-performance` — [specs/001-app-performance/plan.md](specs/001-app-performance/plan.md)
+
+**Stack**: Vite, React 18, TypeScript, Supabase REST (`src/services/api.ts`), TanStack Query (planned), lazy routes in `src/pages/lazyPages.tsx`.
+
+**Performance focus**: tiered data loading in `AppRouter`, query deduplication, paginated/virtualized lists, Vite manualChunks, loading contract (300 ms), baseline in `specs/001-app-performance/quickstart.md`.
+<!-- SPECKIT END -->

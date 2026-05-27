@@ -5,3 +5,9 @@
 
 [functions.ai-chat]
 verify_jwt = false
+
+[functions.process-whatsapp-inbound]
+verify_jwt = false
+
+[functions.run-appointment-reminders]
+verify_jwt = false

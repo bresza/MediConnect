@@ -6,12 +6,22 @@ import { Input } from "../../components/ui/Input/Input"
 import { Select } from "../../components/ui/Select/Select"
 import {
   createDoctorAvailability,
+  createDoctorException,
   deleteDoctorAvailability,
+  DOCTOR_EXCEPTION_KIND_LABELS,
+  formatDoctorExceptionSchedule,
   getAvailabilityDoctors,
   getDoctorAvailability,
+  getDoctorExceptions,
   updateDoctorAvailability,
 } from "../../services/availability"
-import type { AvailabilityDoctor, DoctorAvailability } from "../../services/availability"
+import type {
+  AvailabilityDoctor,
+  DoctorAvailability,
+  DoctorException,
+  DoctorExceptionKind,
+  CreateDoctorAvailabilityInput,
+} from "../../services/availability"
 import type { User } from "../../types"
 import styles from "./Availability.module.css"
 
@@ -40,6 +50,17 @@ const SLOT_OPTIONS = [
 const APPOINTMENT_TYPES = [
   { value: "presencial", label: "Presencial" },
   { value: "telemedicina", label: "Telemedicina" },
+]
+
+const EXCEPTION_KIND_FILTER_OPTIONS = [
+  { value: "", label: "Todos os tipos" },
+  { value: "bloqueio", label: DOCTOR_EXCEPTION_KIND_LABELS.bloqueio },
+  { value: "disponibilidade_extra", label: DOCTOR_EXCEPTION_KIND_LABELS.disponibilidade_extra },
+]
+
+const EXCEPTION_KIND_OPTIONS = [
+  { value: "bloqueio", label: DOCTOR_EXCEPTION_KIND_LABELS.bloqueio },
+  { value: "disponibilidade_extra", label: DOCTOR_EXCEPTION_KIND_LABELS.disponibilidade_extra },
 ]
 
 function normalize(value?: string): string {
@@ -72,13 +93,34 @@ function formatTime(value: string): string {
   return value.slice(0, 5)
 }
 
+function formatExceptionDate(value: string): string {
+  const parsed = new Date(`${value}T12:00:00`)
+  if (Number.isNaN(parsed.getTime())) return value
+  return parsed.toLocaleDateString("pt-BR", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  })
+}
+
+function sortExceptions(rows: DoctorException[]): DoctorException[] {
+  return [...rows].sort((a, b) =>
+    b.date.localeCompare(a.date) ||
+    (a.startTime ?? "").localeCompare(b.startTime ?? ""),
+  )
+}
+
 export function Availability({ currentUser }: AvailabilityProps) {
   const isDoctor = currentUser.role === "doctor"
   const [doctors, setDoctors] = useState<AvailabilityDoctor[]>([])
   const [doctorId, setDoctorId] = useState("")
   const [availability, setAvailability] = useState<DoctorAvailability[]>([])
+  const [exceptions, setExceptions] = useState<DoctorException[]>([])
+  const [exceptionKindFilter, setExceptionKindFilter] = useState("")
   const [isLoadingDoctors, setIsLoadingDoctors] = useState(true)
   const [isLoadingAvailability, setIsLoadingAvailability] = useState(false)
+  const [isLoadingExceptions, setIsLoadingExceptions] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
@@ -87,7 +129,13 @@ export function Availability({ currentUser }: AvailabilityProps) {
   const [startTime, setStartTime] = useState("08:00")
   const [endTime, setEndTime] = useState("12:00")
   const [slotMinutes, setSlotMinutes] = useState("30")
-  const [appointmentType, setAppointmentType] = useState("presencial")
+  const [appointmentType, setAppointmentType] = useState<CreateDoctorAvailabilityInput["appointmentType"]>("presencial")
+  const [exceptionDate, setExceptionDate] = useState("")
+  const [exceptionKind, setExceptionKind] = useState<DoctorExceptionKind>("bloqueio")
+  const [exceptionAllDay, setExceptionAllDay] = useState(true)
+  const [exceptionStartTime, setExceptionStartTime] = useState("08:00")
+  const [exceptionEndTime, setExceptionEndTime] = useState("18:00")
+  const [exceptionReason, setExceptionReason] = useState("")
 
   const selectedDoctor = useMemo(
     () => doctors.find((doctor) => doctor.id === doctorId) ?? null,
@@ -149,6 +197,32 @@ export function Availability({ currentUser }: AvailabilityProps) {
     void loadAvailability()
   }, [loadAvailability])
 
+  const loadExceptions = useCallback(async () => {
+    if (!doctorId) {
+      setExceptions([])
+      return
+    }
+
+    setIsLoadingExceptions(true)
+    try {
+      const rows = await getDoctorExceptions({
+        doctorId,
+        ...(exceptionKindFilter
+          ? { kind: exceptionKindFilter as DoctorExceptionKind }
+          : {}),
+      })
+      setExceptions(sortExceptions(rows))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao carregar exceções de agenda")
+    } finally {
+      setIsLoadingExceptions(false)
+    }
+  }, [doctorId, exceptionKindFilter])
+
+  useEffect(() => {
+    void loadExceptions()
+  }, [loadExceptions])
+
   function clearFeedback() {
     setError(null)
     setMessage(null)
@@ -198,9 +272,10 @@ export function Availability({ currentUser }: AvailabilityProps) {
 
   async function handleToggleAvailability(row: DoctorAvailability) {
     clearFeedback()
-    const updated = { ...row, active: !row.active }
+    const nextActive = !row.active
+    const updated = { ...row, active: nextActive }
     try {
-      await updateDoctorAvailability(updated)
+      await updateDoctorAvailability(row.id, { active: nextActive })
       setAvailability((prev) => prev.map((item) => item.id === row.id ? updated : item))
       setMessage(updated.active ? "Disponibilidade ativada." : "Disponibilidade desativada.")
     } catch (err) {
@@ -220,7 +295,43 @@ export function Availability({ currentUser }: AvailabilityProps) {
     }
   }
 
+  async function handleCreateException() {
+    if (!doctorId) {
+      setError("Selecione um médico para criar exceção.")
+      return
+    }
+    if (!exceptionDate) {
+      setError("Informe a data da exceção.")
+      return
+    }
+    if (!exceptionAllDay && exceptionStartTime >= exceptionEndTime) {
+      setError("Horário inicial da exceção deve ser menor que o final.")
+      return
+    }
+
+    setIsSaving(true)
+    clearFeedback()
+    try {
+      const created = await createDoctorException({
+        doctorId,
+        date: exceptionDate,
+        kind: exceptionKind,
+        startTime: exceptionAllDay ? null : exceptionStartTime,
+        endTime: exceptionAllDay ? null : exceptionEndTime,
+        reason: exceptionReason || null,
+      })
+      setExceptions((prev) => sortExceptions([created, ...prev]))
+      setMessage("Exceção de agenda criada.")
+      setExceptionReason("")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao criar exceção")
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
   const isBusy = isLoadingDoctors || isLoadingAvailability
+  const isExceptionsBusy = isLoadingDoctors || isLoadingExceptions
 
   return (
     <div>
@@ -271,7 +382,10 @@ export function Availability({ currentUser }: AvailabilityProps) {
             <Select
               label="Tipo"
               value={appointmentType}
-              onChange={(event) => { setAppointmentType(event.target.value); clearFeedback() }}
+              onChange={(event) => {
+                setAppointmentType(event.target.value as CreateDoctorAvailabilityInput["appointmentType"])
+                clearFeedback()
+              }}
               options={APPOINTMENT_TYPES}
             />
             <Input
@@ -337,6 +451,104 @@ export function Availability({ currentUser }: AvailabilityProps) {
           )}
         </Card>
       </div>
+
+      <Card className={styles.exceptionsCard}>
+        <div className={styles.exceptionsHeader}>
+          <h3 className={styles.cardTitle}>Exceções de agenda</h3>
+          <Select
+            label="Tipo"
+            value={exceptionKindFilter}
+            onChange={(event) => {
+              setExceptionKindFilter(event.target.value)
+              clearFeedback()
+            }}
+            options={EXCEPTION_KIND_FILTER_OPTIONS}
+            disabled={!doctorId || isLoadingDoctors}
+          />
+        </div>
+        <p className={styles.exceptionsHint}>
+          Bloqueios (férias, feriados) e disponibilidades extras em datas específicas.
+        </p>
+        <div className={styles.exceptionsForm}>
+          <Input
+            label="Data"
+            type="date"
+            value={exceptionDate}
+            onChange={(event) => setExceptionDate(event.target.value)}
+          />
+          <Select
+            label="Tipo"
+            value={exceptionKind}
+            onChange={(event) => setExceptionKind(event.target.value as DoctorExceptionKind)}
+            options={EXCEPTION_KIND_OPTIONS}
+          />
+          <Select
+            label="Período"
+            value={exceptionAllDay ? "all_day" : "partial"}
+            onChange={(event) => setExceptionAllDay(event.target.value === "all_day")}
+            options={[
+              { value: "all_day", label: "Dia inteiro" },
+              { value: "partial", label: "Horário específico" },
+            ]}
+          />
+          {!exceptionAllDay && (
+            <>
+              <Input
+                label="Início"
+                type="time"
+                value={exceptionStartTime}
+                onChange={(event) => setExceptionStartTime(event.target.value)}
+              />
+              <Input
+                label="Fim"
+                type="time"
+                value={exceptionEndTime}
+                onChange={(event) => setExceptionEndTime(event.target.value)}
+              />
+            </>
+          )}
+          <div className={styles.exceptionReasonField}>
+            <Input
+              label="Motivo (opcional)"
+              value={exceptionReason}
+              onChange={(event) => setExceptionReason(event.target.value)}
+              placeholder="Ex.: Feriado - Natal"
+            />
+          </div>
+          <div className={styles.exceptionActions}>
+            <Button onClick={handleCreateException} disabled={!doctorId || isSaving}>
+              {isSaving ? "Salvando..." : "Criar exceção"}
+            </Button>
+          </div>
+        </div>
+        {isExceptionsBusy ? (
+          <p className={styles.empty}>Carregando...</p>
+        ) : !doctorId ? (
+          <p className={styles.empty}>Selecione um médico para ver as exceções.</p>
+        ) : exceptions.length === 0 ? (
+          <p className={styles.empty}>Nenhuma exceção cadastrada.</p>
+        ) : (
+          <div className={styles.rows}>
+            {exceptions.map((row) => (
+              <div
+                key={row.id}
+                className={`${styles.row} ${row.kind === "bloqueio" ? styles.rowBlock : styles.rowExtra}`}
+              >
+                <div className={styles.rowMain}>
+                  <span className={row.kind === "bloqueio" ? styles.blockDot : styles.extraDot} />
+                  <div>
+                    <p className={styles.rowTitle}>{formatExceptionDate(row.date)}</p>
+                    <p className={styles.rowSub}>
+                      {DOCTOR_EXCEPTION_KIND_LABELS[row.kind]} · {formatDoctorExceptionSchedule(row)}
+                      {row.reason ? ` · ${row.reason}` : ""}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
     </div>
   )
 }

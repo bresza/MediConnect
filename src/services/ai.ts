@@ -131,8 +131,9 @@ export function getAIModel(): string {
 
 // ── System prompts por perfil ─────────────────────────────────────
 const BASE_PROMPT = [
-  "Voce e o assistente virtual do MediConnect, um sistema de gestao para clinicas.",
+  "Voce e o assistente virtual INTELIGENTE do MediConnect, um sistema de gestao para clinicas.",
   "Responda sempre em portugues do Brasil, de forma direta, objetiva e gentil.",
+  "Voce pode EXECUTAR tarefas no sistema quando estiver em modo agente (agendar, laudos, mensagens, navegacao).",
   "Nao invente dados clinicos, financeiros ou pessoais que nao tenham sido informados na conversa.",
   "Quando o usuario pedir algo fora do escopo do MediConnect, oriente-o brevemente e volte ao foco.",
   "Nao faca diagnosticos definitivos nem prescreva medicamentos por conta propria.",
@@ -222,6 +223,27 @@ export class AIError extends Error {
     this.name  = "AIError"
     this.cause = cause
   }
+}
+
+/** Traduz erros comuns das APIs para orientacao em portugues. */
+function humanizeAIProviderError(message: string, provider: "gemini" | "groq" | "openai"): string {
+  const m = message.toLowerCase()
+  if (/leaked|reported as leaked|compromised/.test(m)) {
+    return (
+      "A chave da API foi bloqueada pelo Google por vazamento (ex.: commit no GitHub, print ou chat publico). " +
+      "Crie uma chave NOVA em https://aistudio.google.com/apikey , atualize VITE_GEMINI_API_KEY no arquivo .env " +
+      "e reinicie o npm run dev. Revogue a chave antiga no Google Cloud."
+    )
+  }
+  if (/invalid.*api.*key|api key not valid|incorrect api key/.test(m)) {
+    return provider === "gemini"
+      ? "Chave do Gemini invalida. Confira VITE_GEMINI_API_KEY no .env."
+      : "Chave de API invalida. Confira o .env."
+  }
+  if (/quota|rate limit|resource exhausted/.test(m)) {
+    return "Cota ou limite de requisicoes atingido. Aguarde alguns minutos ou use outro modelo no .env."
+  }
+  return message
 }
 
 // ── Groq (https://api.groq.com — compativel OpenAI, free tier sem cartao) ──
@@ -481,11 +503,11 @@ async function chatCompleteGemini(
     }
 
     if (!res.ok) {
-      const message = parsed?.error?.message
+      const raw = parsed?.error?.message
         ?? (res.status === 400 ? "Requisicao invalida para a API do Gemini."
-          : res.status === 401 || res.status === 403 ? "Chave do Gemini invalida ou sem permissao (VITE_GEMINI_API_KEY)."
+          : res.status === 401 || res.status === 403 ? "Chave do Gemini invalida ou sem permissao."
           : `Erro ${res.status} ao consultar o Gemini.`)
-      throw new AIError(message)
+      throw new AIError(humanizeAIProviderError(raw, "gemini"))
     }
 
     if (parsed?.promptFeedback?.blockReason) {
@@ -507,8 +529,11 @@ async function chatCompleteGemini(
     )
   }
   throw new AIError(
-    lastMessage ||
-      `Nenhum modelo Gemini respondeu. Defina VITE_GEMINI_MODEL no .env com um modelo valido (ex.: gemini-1.5-flash-latest). Ultimo status: ${lastStatus}.`,
+    humanizeAIProviderError(
+      lastMessage ||
+        `Nenhum modelo Gemini respondeu. Defina VITE_GEMINI_MODEL no .env (ex.: gemini-2.0-flash). Ultimo status: ${lastStatus}.`,
+      "gemini",
+    ),
   )
 }
 

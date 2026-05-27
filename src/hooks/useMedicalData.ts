@@ -1,10 +1,12 @@
-import { useState, useEffect, useCallback } from "react"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import type { MedicalRecord, Prescription } from "../types"
+import { useAuth } from "../contexts/authStore"
 import {
   createMedicalRecord,
   createPrescription,
   getPrescriptions,
 } from "../services/domain"
+import { medicalKeys, reportKeys } from "./query/queryKeys"
 
 export interface UseMedicalDataReturn {
   prescriptions:     Prescription[]
@@ -15,41 +17,40 @@ export interface UseMedicalDataReturn {
   reload:            () => Promise<void>
 }
 
-export function useMedicalData(): UseMedicalDataReturn {
-  const [prescriptions, setPrescriptions] = useState<Prescription[]>([])
-  const [isLoading,     setIsLoading]     = useState(true)
-  const [error,         setError]         = useState<string | null>(null)
+export function useMedicalData(options?: { enabled?: boolean }): UseMedicalDataReturn {
+  const enabled = options?.enabled ?? true
+  const { clinicId } = useAuth()
+  const queryClient = useQueryClient()
 
-  const load = useCallback(async () => {
-    setIsLoading(true)
-    setError(null)
-    try {
-      setPrescriptions(await getPrescriptions())
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao carregar dados médicos")
-    } finally {
-      setIsLoading(false)
-    }
-  }, [])
+  const query = useQuery({
+    queryKey: medicalKeys.prescriptions(clinicId),
+    queryFn: getPrescriptions,
+    enabled,
+    staleTime: 60_000,
+  })
 
-  useEffect(() => { load() }, [load])
+  const invalidate = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: medicalKeys.all(clinicId) }),
+      queryClient.invalidateQueries({ queryKey: reportKeys.all(clinicId) }),
+    ])
 
-  const addPrescription = useCallback(async (p: Omit<Prescription, "id">) => {
-    const created = await createPrescription(p)
-    setPrescriptions((prev) => [...prev, created])
-    return created
-  }, [])
+  const addPrescriptionMutation = useMutation({
+    mutationFn: createPrescription,
+    onSuccess: async () => { await invalidate() },
+  })
 
-  const addMedicalRecord = useCallback(async (r: Omit<MedicalRecord, "id">) => {
-    return createMedicalRecord(r)
-  }, [])
+  const addMedicalRecordMutation = useMutation({
+    mutationFn: createMedicalRecord,
+    onSuccess: async () => { await invalidate() },
+  })
 
   return {
-    prescriptions,
-    isLoading,
-    error,
-    addPrescription,
-    addMedicalRecord,
-    reload: load,
+    prescriptions: query.data ?? [],
+    isLoading: enabled && query.isLoading,
+    error: query.error instanceof Error ? query.error.message : null,
+    addPrescription: (p) => addPrescriptionMutation.mutateAsync(p),
+    addMedicalRecord: (r) => addMedicalRecordMutation.mutateAsync(r),
+    reload: async () => { await query.refetch() },
   }
 }

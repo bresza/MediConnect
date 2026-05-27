@@ -56,7 +56,7 @@ export interface Patient {
 }
 
 // ─── APPOINTMENT ──────────────────────────────────────────────────
-export type AppointmentStatus = "scheduled" | "confirmed" | "completed" | "cancelled" | "absent" | "blocked" | "pending"
+export type AppointmentStatus = "scheduled" | "requested" | "confirmed" | "completed" | "cancelled" | "absent" | "blocked" | "pending"
 export type AppointmentType   = "consultation" | "exam" | "return" | "procedure"
 
 export interface Appointment {
@@ -79,8 +79,9 @@ export interface Report {
   diagnosis?: string     // diagnóstico
   conclusion?: string    // conclusão
   contentHtml?: string   // conteúdo HTML
-  requestedBy?: string   // UUID do solicitante
+  requestedBy?: string   // Médico solicitante (schema: string)
   orderNumber?: string   // REP-2025-XXXXX
+  dueAt?: string         // = due_at na API (date-time)
   cid10?: string         // = cid_code na API
   date: string; status: ReportStatus
   hideDate?: boolean; hideSignature?: boolean

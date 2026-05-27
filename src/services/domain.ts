@@ -1,21 +1,48 @@
 import { apiRequest, ApiError, getApiUserId } from "./api"
 import { formatSpecialtyLabel } from "../utils"
 import type {
+  CommunicationChannel,
   MedicalRecord, Prescription, Report, ReportStatus,
   Message, StaffMember, StaffRole, StaffStatus,
   MedicalRecordStatus, PrescriptionMedication, PrescriptionType,
 } from "../types"
+import { sendOutboundMessage } from "./messaging"
 
 // ─────────────────────────────────────────────────────────────────
-// REPORTS — campos exatos conforme Schema da API
+// REPORTS — campos exatos conforme Schema da API (OpenAPI Reports)
 // ─────────────────────────────────────────────────────────────────
+
+/** Enum `reports.status` documentado: draft | completed */
+export type ReportApiStatus = "draft" | "completed"
+
+export interface GetReportsParams {
+  patientId?: string
+  status?: ReportApiStatus
+  createdBy?: string
+}
+
+const REPORT_API_SELECT =
+  "id,order_number,patient_id,status,exam,requested_by,cid_code,diagnosis,conclusion,content_html,content_json,hide_date,hide_signature,due_at,created_by,updated_by,created_at,updated_at"
+
+function isReportApiCompleted(status?: string): boolean {
+  return status === "completed"
+}
+
+function buildReportsListPath(params?: GetReportsParams): string {
+  const search = new URLSearchParams()
+  search.set("select", REPORT_API_SELECT)
+  search.set("order", "created_at.desc")
+  if (params?.patientId) search.set("patient_id", `eq.${params.patientId}`)
+  if (params?.status) search.set("status", `eq.${params.status}`)
+  if (params?.createdBy) search.set("created_by", `eq.${params.createdBy}`)
+  return `/rest/v1/reports?${search.toString()}`
+}
+
 interface ApiReport {
   id:             string
   order_number?:  string
   patient_id:     string
-  // enum report_status na API atual: "draft" | "delivered".
-  // Aceitamos legados "completed", "finalized" e "sent" apenas na leitura.
-  status?:        string
+  status?:        ReportApiStatus
   exam?:          string
   requested_by?:  string
   cid_code?:      string
@@ -35,18 +62,13 @@ interface ApiReport {
   profiles?:      { full_name: string } | null
 }
 
-function statusToFrontend(s?: string): ReportStatus {
-  // "delivered" e o valor canonico do enum atual; demais nomes ficam como fallback de leitura.
-  if (s === "delivered") return "Finalized"
-  if (s === "completed") return "Finalized"
-  if (s === "finalized") return "Finalized"
-  if (s === "sent")      return "Sent"
+function reportStatusFromApi(s?: string): ReportStatus {
+  if (isReportApiCompleted(s)) return "Finalized"
   return "Draft"
 }
-function statusToApi(s: ReportStatus): string {
-  // Alinhado com prontuarios, receitas e financeiro (que ja gravam em reports usando "delivered").
-  if (s === "Finalized") return "delivered"
-  if (s === "Sent")      return "delivered"
+
+function reportStatusToApi(s: ReportStatus): ReportApiStatus {
+  if (s === "Finalized" || s === "Sent") return "completed"
   return "draft"
 }
 
@@ -65,10 +87,11 @@ function apiToReport(api: ApiReport): Report {
     contentHtml:   api.content_html         ?? "",
     cid10:         api.cid_code             ?? "",
     date:          api.created_at ? api.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
-    status:        statusToFrontend(api.status),
+    status:        reportStatusFromApi(api.status),
     hideDate:      api.hide_date            ?? false,
     hideSignature: api.hide_signature       ?? false,
     orderNumber:   api.order_number,
+    dueAt:         api.due_at,
     requestedBy:   api.requested_by,
   }
 }
@@ -80,7 +103,7 @@ function reportToApi(
   const uid = getApiUserId()
   return {
     patient_id:     r.patientId,
-    status:         statusToApi(r.status ?? "Draft"),
+    status:         reportStatusToApi(r.status ?? "Draft"),
     exam:           r.type   ?? r.exam ?? "Laudo Médico",
     requested_by:   uid ?? r.requestedBy ?? undefined,
     cid_code:       r.cid10  ?? "",
@@ -90,12 +113,13 @@ function reportToApi(
     content_json:   {},
     hide_date:      r.hideDate      ?? false,
     hide_signature: r.hideSignature ?? false,
+    due_at:         r.dueAt ?? undefined,
   };
 }
 
-export async function getReports(): Promise<Report[]> {
+export async function getReports(params?: GetReportsParams): Promise<Report[]> {
   const [reports, patients, doctors, profiles] = await Promise.all([
-    apiRequest<ApiReport[]>("/rest/v1/reports?select=*&order=created_at.desc"),
+    apiRequest<ApiReport[]>(buildReportsListPath(params)),
     apiRequest<ApiPatientName[]>("/rest/v1/patients?select=id,full_name"),
     apiRequest<ApiDoctorName[]>("/rest/v1/doctors?select=id,full_name"),
     apiRequest<ApiProfile[]>("/rest/v1/profiles?select=id,full_name"),
@@ -137,12 +161,18 @@ export async function createReport(
 }
 
 export async function updateReport(report: Report): Promise<Report> {
-  await apiRequest(`/rest/v1/reports?id=eq.${report.id}`, {
+  const updated = await apiRequest<ApiReport[]>(`/rest/v1/reports?id=eq.${encodeURIComponent(report.id)}`, {
     method: "PATCH",
-    headers: { Prefer: "return=minimal" },
+    headers: { Prefer: "return=representation" },
     body: reportToApi(report),
   })
-  return report
+  const raw = Array.isArray(updated) ? updated[0] : (updated as ApiReport)
+  if (!raw) return report
+  return {
+    ...apiToReport(raw),
+    patientName: report.patientName || "",
+    doctorName: report.doctorName || "",
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -193,10 +223,13 @@ function staffPhoneFromApi(api: { phone?: string | null; phone_mobile?: string |
   return main || mobile || ""
 }
 interface ApiUserRole {
-  user_id: string; role: string
+  user_id: string
+  role: "admin" | "gestor" | "medico" | "secretaria" | "paciente" | "user"
 }
 interface CreateUserWithPasswordResponse {
   success?: boolean
+  id?: string
+  doctor_id?: string
   user?: {
     id: string
     email: string
@@ -216,19 +249,6 @@ function compactPayload(payload: Record<string, unknown>): Record<string, unknow
       value !== "",
     ),
   )
-}
-
-function addressToDoctorApi(address?: StaffMember["address"]): Record<string, unknown> {
-  if (!address) return {}
-  return compactPayload({
-    cep: address.zipCode,
-    street: address.street,
-    number: address.number,
-    complement: address.complement,
-    neighborhood: address.neighborhood,
-    city: address.city,
-    state: address.state,
-  })
 }
 
 async function deleteAuthUserAt(
@@ -494,24 +514,24 @@ const STAFF_ROLE_API: Record<StaffRole, string> = {
 
 function assertStaffCreateFields(
   data: Omit<StaffMember, "id" | "createdAt">,
-  password: string,
   doctorExtra?: DoctorExtra,
 ): string {
   const cpf = (doctorExtra?.cpf || data.cpf || "").replace(/\D/g, "")
   if (!data.email.trim()) throw new Error("E-mail obrigatório")
-  if (!password.trim()) throw new Error("Senha obrigatória")
-  if (password.trim().length < 6) throw new Error("A senha deve ter pelo menos 6 caracteres")
   if (!data.name.trim()) throw new Error("Nome obrigatório")
-  if (!data.phone?.trim()) throw new Error("Telefone obrigatório")
   if (!cpf || cpf.length !== 11) throw new Error("CPF obrigatório (11 dígitos)")
   if (data.role === "secretary" || data.role === "manager") {
+    if (!data.phone?.trim()) throw new Error("Telefone obrigatório")
     if (!data.department?.trim()) throw new Error("Departamento obrigatório")
   }
   if (data.role === "doctor") {
     if (!doctorExtra) throw new Error("Dados do médico incompletos")
-    if (!doctorExtra.crmNum.trim()) throw new Error("CRM obrigatório")
-    if (!doctorExtra.crmUf.trim()) throw new Error("UF do CRM obrigatória")
-    if (!doctorExtra.specialty.trim()) throw new Error("Especialidade obrigatória")
+    const crm = doctorExtra.crmNum.trim()
+    const crmUf = doctorExtra.crmUf.trim().toUpperCase()
+    if (!crm) throw new Error("CRM obrigatório")
+    if (!/^\d{4,6}$/.test(crm)) throw new Error("CRM deve conter de 4 a 6 dígitos numéricos")
+    if (!crmUf) throw new Error("UF do CRM obrigatória")
+    if (!/^[A-Z]{2}$/.test(crmUf)) throw new Error("UF do CRM deve ter 2 letras maiúsculas (ex.: SP)")
   }
   return cpf
 }
@@ -574,7 +594,7 @@ async function postCreateDoctor(
 }
 
 function createdStaffUserId(res: CreateUserWithPasswordResponse): string {
-  const id = res?.user?.id ?? res?.user_id ?? ""
+  const id = res?.id ?? res?.user?.id ?? res?.user_id ?? ""
   if (!id) throw new Error(res?.message || "Erro ao criar usuário na API")
   return id
 }
@@ -586,28 +606,41 @@ function createdStaffUserId(res: CreateUserWithPasswordResponse): string {
  */
 export async function createStaffMember(
   data:         Omit<StaffMember, "id" | "createdAt">,
-  password:     string,
+  password?:    string,
   doctorExtra?: DoctorExtra,
 ): Promise<StaffMember> {
-  const cpf = assertStaffCreateFields(data, password, doctorExtra)
+  const normalizedPassword = (password ?? "").trim()
+  if (!normalizedPassword) {
+    throw new Error("Senha obrigatória para criar usuário.")
+  }
+  if (normalizedPassword.length < 6) {
+    throw new Error("A senha deve ter pelo menos 6 caracteres.")
+  }
+  const cpf = assertStaffCreateFields(data, doctorExtra)
 
   if (data.role === "doctor") {
     const extra = doctorExtra!
+    const address = data.address
+    const digitsOnly = (value?: string) => value?.replace(/\D/g, "") || undefined
     const doctorPayload = compactPayload({
       email:         data.email.trim(),
-      password:      password.trim(),
       full_name:     data.name.trim(),
       cpf,
       crm:           extra.crmNum.trim(),
       crm_uf:        extra.crmUf.trim().toUpperCase(),
-      specialty:     extra.specialty.trim(),
-      phone:         data.phone || undefined,
+      specialty:     extra.specialty.trim() || undefined,
       phone_mobile:  data.phone || undefined,
-      phone2:        data.phone2 || undefined,
-      rg:            data.rg || undefined,
+      phone2:        data.phone2?.trim() || undefined,
+      rg:            data.rg?.trim() || undefined,
       active:        data.status !== "Inactive",
-      temp_password: data.tempPassword || password.trim(),
-      ...addressToDoctorApi(data.address),
+      temp_password: data.tempPassword?.trim() || normalizedPassword,
+      cep:           digitsOnly(address?.zipCode),
+      street:        address?.street?.trim() || undefined,
+      number:        address?.number?.trim() || undefined,
+      complement:    address?.complement?.trim() || undefined,
+      neighborhood:  address?.neighborhood?.trim() || undefined,
+      city:          address?.city?.trim() || undefined,
+      state:         address?.state?.trim().toUpperCase() || undefined,
     })
     const res = await postCreateDoctor(doctorPayload)
     const userId = createdStaffUserId(res)
@@ -623,7 +656,7 @@ export async function createStaffMember(
 
   const payload = compactPayload({
     email:      data.email.trim(),
-    password:   password.trim(),
+    password:   normalizedPassword,
     full_name:  data.name.trim(),
     cpf,
     phone:      data.phone?.trim() || undefined,
@@ -752,16 +785,21 @@ async function deleteAuthUser(target: StaffDeleteTarget, relatedIds: string[]): 
 
   for (const id of ids) {
     try {
-      await deleteAuthUserAt("/functions/v1/delete-user", id)
+      await deleteAuthUserAt("/delete-user", id)
       removed = true
     } catch (err) {
       lastError = err
-      if (!(err instanceof ApiError) || (err.status !== 404 && err.status !== 500)) throw err
+      if (err instanceof ApiError && err.status === 404) {
+        await deleteAuthUserAt("/functions/v1/delete-user", id)
+        removed = true
+        continue
+      }
+      if (!(err instanceof ApiError) || err.status !== 500) throw err
     }
   }
 
   if (!removed && lastError) {
-    console.warn("[functions/v1/delete-user] falhou, usando fallback REST:", lastError)
+    console.warn("[delete-user] falhou, usando fallback REST:", lastError)
   }
   return removed
 }
@@ -902,7 +940,7 @@ function medicalRecordToReport(record: Omit<MedicalRecord, "id">): Record<string
   const content = medicalRecordContent(record)
   return compactPayload({
     patient_id: record.patientId,
-    status: record.status === "finalized" ? "delivered" : "draft",
+    status: record.status === "finalized" ? "completed" : "draft",
     exam: MEDICAL_RECORD_EXAM,
     requested_by: uid ?? record.doctorId,
     cid_code: record.cid10,
@@ -950,7 +988,7 @@ function reportToMedicalRecord(
     examRequests: json.exam_requests,
     returnDate: json.return_date,
     observations: json.observations,
-    status: json.status ?? (api.status === "delivered" ? "finalized" : "open"),
+    status: json.status ?? (isReportApiCompleted(api.status) ? "finalized" : "open"),
     createdAt: api.created_at ?? new Date().toISOString(),
     updatedAt: api.updated_at,
     updatedBy: json.updated_by ?? api.updated_by,
@@ -1051,7 +1089,7 @@ function prescriptionToReport(prescription: Omit<Prescription, "id">): Record<st
   const content = prescriptionContent(prescription)
   return compactPayload({
     patient_id: prescription.patientId,
-    status: prescription.status === "emitted" ? "delivered" : "draft",
+    status: prescription.status === "emitted" ? "completed" : "draft",
     exam: PRESCRIPTION_EXAM,
     requested_by: uid ?? prescription.doctorId,
     cid_code: prescription.cid10,
@@ -1086,7 +1124,7 @@ function reportToPrescription(api: ApiReport, patientName = "", doctorName = "")
     medications: json.medications ?? [],
     cid10: api.cid_code,
     observations: json.observations ?? api.conclusion,
-    status: json.status ?? (api.status === "delivered" ? "emitted" : "draft"),
+    status: json.status ?? (isReportApiCompleted(api.status) ? "emitted" : "draft"),
   }
 }
 
@@ -1124,95 +1162,49 @@ export async function createPrescription(data: Omit<Prescription, "id">): Promis
   return reportToPrescription(raw, data.patientName, data.doctorName)
 }
 
-// ─── MENSAGENS (SMS via Edge Function `send-sms`) ─────────────────
-// Nao existe endpoint de listagem de mensagens persistidas no projeto. O
-// histórico exibido na UI fica em memória da sessão atual ate que uma
-// tabela `messages` seja criada e exposta via PostgREST/Edge Function.
+// ─── MENSAGENS (SMS / WhatsApp via Edge Functions) ────────────────
+// Histórico em memória da sessão até existir tabela `messages` na API.
 export async function getMessages(): Promise<Message[]> { return [] }
 
-function toE164BR(phone: string): string {
-  const digits = phone.replace(/\D/g, "")
-  if (!digits) return ""
-  if (digits.startsWith("55")) return `+${digits}`
-  return `+55${digits}`
-}
-
-/**
- * Envia SMS via Edge Function `/functions/v1/send-sms` do Supabase.
- *
- * Contrato exato do endpoint:
- *   { message: string; phone_number: string; patient_id?: string }
- *
- * O retorno desta função reflete o que foi enviado (id local da sessão,
- * status "Delivered" quando o gateway aceitou a requisição). A confirmação
- * de entrega real depende de webhook do provedor (Twilio) e não está
- * implementada aqui.
- */
-interface SendSmsResponse {
-  success?: boolean
-  message_sid?: string
-  sid?: string
-  id?: string | number
-  status?: string
-  error?: string
-  message?: string
-}
-
-function normalizeMessageStatus(status?: string): Message["status"] {
-  const normalized = status?.trim().toLowerCase()
-  if (normalized === "delivered" || normalized === "sent" || normalized === "success") return "Delivered"
-  if (normalized === "failed" || normalized === "error") return "Failed"
+function deliveryToMessageStatus(status: "sent" | "pending" | "failed"): Message["status"] {
+  if (status === "sent") return "Delivered"
+  if (status === "failed") return "Failed"
   return "Pending"
 }
 
+function channelLabel(channel: "sms" | "whatsapp"): CommunicationChannel {
+  return channel === "whatsapp" ? "WhatsApp" : "SMS"
+}
+
+/**
+ * Envia mensagem ao paciente via `send-sms` ou `send-whatsapp`.
+ * Usa o JWT da sessão logada (não é necessário obter token manualmente).
+ */
 export async function sendMessage(
-  d: Omit<Message, "id"> & { phoneNumber: string },
+  d: Omit<Message, "id"> & {
+    phoneNumber: string
+    appointmentId?: string
+    fallbackSms?: boolean
+  },
 ): Promise<Message> {
-  const message = d.content.trim()
-  const phone_number = toE164BR(d.phoneNumber)
-  if (!message) throw new Error("Mensagem não pode ser vazia.")
-  if (!phone_number) throw new Error("Telefone inválido. Informe DDD + número.")
-
-  const body: {
-    message: string
-    phone_number: string
-    patient_id?: string
-    channel?: string
-    sent_by?: string
-  } = {
-    message,
-    phone_number,
-    channel: "SMS",
-    sent_by: getApiUserId() ?? undefined,
-  }
-  const patientId = d.patientId == null ? "" : String(d.patientId).trim()
-  if (patientId) body.patient_id = patientId
-
-  let response: SendSmsResponse | undefined
-  try {
-    response = await apiRequest<SendSmsResponse>("/functions/v1/send-sms", {
-      method: "POST",
-      body,
-      logErrors: false,
-    })
-  } catch (err) {
-    if (!(err instanceof ApiError) || err.status !== 404) throw err
-    response = await apiRequest<SendSmsResponse>("/send-sms", {
-      method: "POST",
-      body,
-    })
-  }
-
-  if (response?.success === false || response?.error) {
-    throw new Error(response.error ?? response.message ?? "Não foi possível enviar o SMS.")
-  }
+  const channel = d.channel === "WhatsApp" ? "WhatsApp" : "SMS"
+  const result = await sendOutboundMessage(
+    channel,
+    {
+      phoneNumber: d.phoneNumber,
+      message: d.content,
+      patientId: d.patientId == null ? undefined : String(d.patientId),
+      appointmentId: d.appointmentId,
+    },
+    { fallbackSms: d.fallbackSms },
+  )
 
   return {
     ...d,
-    id: Number(response?.id) || Date.now(),
-    channel: "SMS",
-    status: normalizeMessageStatus(response?.status),
-    sentBy: response?.message_sid ?? response?.sid ?? d.sentBy,
+    id: Date.now(),
+    channel: channelLabel(result.channel),
+    status: deliveryToMessageStatus(result.status),
+    sentBy: result.messageId ?? d.sentBy ?? getApiUserId() ?? undefined,
   }
 }
 
@@ -1239,7 +1231,9 @@ function recordMatchesPatient(
 }
 
 export async function getPatientReportsByIdentity(identity: PatientLookup): Promise<Report[]> {
-  const reports = await getReports()
+  const reports = await getReports(
+    identity.patientId ? { patientId: identity.patientId } : undefined,
+  )
   return reports.filter((report) => recordMatchesPatient(report, identity))
 }
 

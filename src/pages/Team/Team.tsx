@@ -42,8 +42,8 @@ interface StaffForm {
   crmUf:           string   // médico
   specialty:       string   // médico
   department:      string   // secretária/gestor
-  password:        string
-  confirmPassword: string
+  password:        string   // obrigatório no cadastro de qualquer papel
+  confirmPassword: string   // obrigatório no cadastro de qualquer papel
 }
 
 const EMPTY_FORM: StaffForm = {
@@ -254,7 +254,8 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: Tea
         const doctorExtra = activeTab === "doctor"
           ? { cpf: cpfDigits, crmNum: crmNumDigits, crmUf: form.crmUf, specialty: form.specialty }
           : undefined
-        await onAdd(base, form.password, doctorExtra)
+        const passwordForCreate = form.password
+        await onAdd(base, passwordForCreate, doctorExtra)
         toast(`${form.name} cadastrado! Já pode acessar o sistema com o e-mail e senha definidos.`, "success")
       }
       setModalOpen(false)
@@ -367,7 +368,13 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: Tea
       {/* Modal */}
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)}
         title={editingMember ? "Editar profissional" : `Cadastrar ${currentTab.singular}`}
-        subtitle={editingMember ? `Editando: ${editingMember.name}` : "Preencha os dados e defina a senha de acesso"}
+        subtitle={
+          editingMember
+            ? `Editando: ${editingMember.name}`
+            : activeTab === "doctor"
+              ? "Preencha os dados e defina a senha de acesso"
+              : "Preencha os dados e defina a senha de acesso"
+        }
         size="md"
         footer={
           <>
@@ -421,7 +428,7 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: Tea
             </Section>
           )}
 
-          {/* Acesso ao sistema — somente no cadastro */}
+          {/* Acesso ao sistema — obrigatório no cadastro */}
           {!editingMember && (
             <Section title="Acesso ao sistema">
               <p style={{ fontSize: 12, color: "var(--muted-foreground)", marginBottom: 12 }}>

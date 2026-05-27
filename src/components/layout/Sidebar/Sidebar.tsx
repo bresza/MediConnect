@@ -2,6 +2,7 @@ import type { PageId, User } from "../../../types"
 import type { PortalSection } from "../../../pages/PatientPortal/patientPortalSections"
 import { ROLE_PAGES, ROLE_LABELS, ROLE_COLORS } from "../../../utils/permissions"
 import { getInitials } from "../../../utils"
+import { prefetchPageChunk } from "../../../utils/routePrefetch"
 import { PatientPortalSidebarNav } from "./PatientPortalSidebarNav"
 import styles from "./Sidebar.module.css"
 
@@ -151,6 +152,8 @@ export function Sidebar({
                   <li key={item.id}>
                     <button
                       onClick={() => onNavigate(item.id)}
+                      onMouseEnter={() => prefetchPageChunk(item.id)}
+                      onFocus={() => prefetchPageChunk(item.id)}
                       className={`${styles.navBtn} ${activePage === item.id ? styles.navBtnActive : ""}`}
                     >
                       <NavIcon path={item.icon} />

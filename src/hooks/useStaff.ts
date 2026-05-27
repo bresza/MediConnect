@@ -1,7 +1,9 @@
-import { useState, useEffect, useCallback } from "react"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import type { StaffMember } from "../types"
+import { useAuth } from "../contexts/authStore"
 import { getStaff, createStaffMember, updateStaffMember, deleteStaffMember } from "../services/domain"
 import type { DoctorExtra } from "../services/domain"
+import { staffKeys } from "./query/queryKeys"
 
 export type { DoctorExtra }
 
@@ -9,50 +11,67 @@ export interface UseStaffReturn {
   staff:       StaffMember[]
   isLoading:   boolean
   error:       string | null
-  addStaff:    (member: Omit<StaffMember, "id" | "createdAt">, password: string, doctorExtra?: DoctorExtra) => Promise<void>
+  addStaff:    (member: Omit<StaffMember, "id" | "createdAt">, password?: string, doctorExtra?: DoctorExtra) => Promise<void>
   updateStaff: (member: StaffMember) => Promise<void>
   deleteStaff: (id: string) => Promise<void>
   reload:      () => Promise<void>
 }
 
-export function useStaff(): UseStaffReturn {
-  const [staff,     setStaff]     = useState<StaffMember[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error,     setError]     = useState<string | null>(null)
+export function useStaff(options?: { enabled?: boolean }): UseStaffReturn {
+  const enabled = options?.enabled ?? true
+  const { clinicId } = useAuth()
+  const queryClient = useQueryClient()
 
-  const load = useCallback(async () => {
-    setIsLoading(true); setError(null)
-    try { setStaff(await getStaff()) }
-    catch (err) { setError(err instanceof Error ? err.message : "Erro ao carregar equipe") }
-    finally { setIsLoading(false) }
-  }, [])
+  const query = useQuery({
+    queryKey: staffKeys.all(clinicId),
+    queryFn: getStaff,
+    enabled,
+    staleTime: 120_000,
+  })
 
-  useEffect(() => { load() }, [load])
+  const invalidate = () =>
+    queryClient.invalidateQueries({ queryKey: staffKeys.all(clinicId) })
 
-  const addStaff = useCallback(async (
-    member:      Omit<StaffMember, "id" | "createdAt">,
-    password:    string,
-    doctorExtra?: DoctorExtra,
-  ) => {
-    await createStaffMember(member, password, doctorExtra)
-    await load()
-  }, [load])
+  const addMutation = useMutation({
+    mutationFn: ({
+      member,
+      password,
+      doctorExtra,
+    }: {
+      member: Omit<StaffMember, "id" | "createdAt">
+      password?: string
+      doctorExtra?: DoctorExtra
+    }) => createStaffMember(member, password, doctorExtra),
+    onSuccess: async () => { await invalidate() },
+  })
 
-  const updateStaff = useCallback(async (updated: StaffMember) => {
-    const saved = await updateStaffMember(updated)
-    setStaff((prev) => prev.map((m) => (m.id === saved.id ? saved : m)))
-  }, [])
+  const updateMutation = useMutation({
+    mutationFn: updateStaffMember,
+    onSuccess: async () => { await invalidate() },
+  })
 
-  const deleteStaff = useCallback(async (id: string) => {
+  const deleteMutation = useMutation({
+    mutationFn: deleteStaffMember,
+    onSuccess: async () => { await invalidate() },
+  })
+
+  const staff = query.data ?? []
+
+  const deleteStaffFn = async (id: string) => {
     const member = staff.find((m) => m.id === id)
     if (!member) throw new Error("Profissional não encontrado.")
+    await deleteMutation.mutateAsync(member)
+  }
 
-    await deleteStaffMember(member)
-    setStaff((prev) => prev.filter((m) =>
-      m.id !== member.id &&
-      m.email.toLowerCase() !== member.email.toLowerCase(),
-    ))
-  }, [staff])
-
-  return { staff, isLoading, error, addStaff, updateStaff, deleteStaff, reload: load }
+  return {
+    staff,
+    isLoading: enabled && query.isLoading,
+    error: query.error instanceof Error ? query.error.message : null,
+    addStaff: async (member, password, doctorExtra) => {
+      await addMutation.mutateAsync({ member, password, doctorExtra })
+    },
+    updateStaff: async (updated) => { await updateMutation.mutateAsync(updated) },
+    deleteStaff: deleteStaffFn,
+    reload: async () => { await query.refetch() },
+  }
 }

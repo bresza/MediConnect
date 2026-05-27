@@ -1,5 +1,4 @@
 import React, { useState, useMemo } from "react"
-import { useFinancial } from "../../hooks/useFinancial"
 import { Topbar } from "../../components/layout/Topbar/Topbar"
 import { Card } from "../../components/ui/Card/Card"
 import { Badge } from "../../components/ui/Badge/Badge"
@@ -231,16 +230,21 @@ function StatCard({ label, value, sub, iconPath, iconBg, iconColor, valueCls, pr
 // ─── main component ───────────────────────────────────────────────
 interface FinancialProps {
   patients: Patient[]
+  records: FinancialRecord[]
+  onAddRecord: (r: Omit<FinancialRecord, "id">) => Promise<FinancialRecord>
+  onUpdateRecord: (r: FinancialRecord) => Promise<void>
+  onDeleteRecord: (id: string) => Promise<void>
+  onReload?: () => void | Promise<unknown>
 }
 
-export function Financial({ patients }: FinancialProps) {
-  const {
-    records,
-    addRecord:    _addRecord,
-    updateRecord: _updateRecord,
-    deleteRecord: _deleteRecord,
-    reload:       reloadFinancial,
-  } = useFinancial()
+export function Financial({
+  patients,
+  records,
+  onAddRecord,
+  onUpdateRecord,
+  onDeleteRecord,
+  onReload,
+}: FinancialProps) {
   const [search, setSearch]             = useState("")
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("all")
   const [period, setPeriod]             = useState<PeriodKey>("month")
@@ -317,9 +321,9 @@ export function Financial({ patients }: FinancialProps) {
     setIsSaving(true)
     try {
       if (editing) {
-        await _updateRecord({ ...base, id: editing.id })
+        await onUpdateRecord({ ...base, id: editing.id })
       } else {
-        await _addRecord(base)
+        await onAddRecord(base)
       }
       setModalOpen(false)
     } catch (err) {
@@ -332,8 +336,8 @@ export function Financial({ patients }: FinancialProps) {
     }
   }
 
-  async function handleDelete(id: string) { await _deleteRecord(id); setConfirmId(null) }
-  async function markAsPaid(id: string)   { const r = records.find(x => x.id === id); if (r) await _updateRecord({ ...r, status: "Paid" }) }
+  async function handleDelete(id: string) { await onDeleteRecord(id); setConfirmId(null) }
+  async function markAsPaid(id: string)   { const r = records.find(x => x.id === id); if (r) await onUpdateRecord({ ...r, status: "Paid" }) }
   function toggleExpand(id: string) { setExpandedId((p) => (p === id ? null : id)) }
 
   // ── render ──────────────────────────────────────────────────────
@@ -344,7 +348,7 @@ export function Financial({ patients }: FinancialProps) {
         subtitle="Receitas e cobranças da clínica"
         action={
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <RefreshButton onRefresh={reloadFinancial} />
+            {onReload && <RefreshButton onRefresh={onReload} />}
             <Button variant="ghost" icon={<DownloadIcon />} onClick={() => exportCSV(filtered)}>
               Exportar
             </Button>

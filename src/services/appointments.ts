@@ -1,6 +1,14 @@
 import { ApiError, apiRequest, getApiUserId } from "./api"
+import { exceptionBlockedMinuteRange, getDoctorExceptions } from "./availability"
+import { fetchDoctorNameMap, fetchPatientNameMap } from "./lookups"
 import { getPatientByIdentity, type PatientIdentity } from "./patients"
 import { fillGapFromWaitlist } from "./waitlistAutomation"
+import {
+  handleAppointmentUpdateNotifications,
+  notifyAppointmentBooked,
+  notifyAppointmentCancelled,
+  notifyAppointmentRescheduled,
+} from "./appointmentNotifications"
 import type {
   Appointment,
   AppointmentStatus,
@@ -23,11 +31,6 @@ interface ApiAppointment {
 interface ApiDoctor {
   id: string
   full_name: string
-  active?: boolean | null
-}
-interface ApiProfile {
-  id: string
-  full_name: string
 }
 interface ApiDoctorAvailability {
   doctor_id: string
@@ -37,12 +40,6 @@ interface ApiDoctorAvailability {
   slot_minutes?: number
   appointment_type?: string
   active?: boolean
-}
-interface ApiDoctorException {
-  doctor_id: string
-  date?: string
-  start_time?: string | null
-  end_time?: string | null
 }
 interface ApiAvailableSlot {
   time?: string
@@ -225,6 +222,34 @@ function appointmentToApi(
       ? localDateTimeIso(a.date, a.time)
       : a.date
 
+  if (isCreate) {
+    // Contrato da API (POST /appointments): somente campos documentados.
+    // Nao enviamos `appointment_type`/`notes` aqui para evitar 400 por campos extras.
+    const payload: Record<string, unknown> = {
+      patient_id: a.patientId,
+      doctor_id: a.doctorId,
+      scheduled_at: scheduledAt,
+      duration_minutes: a.duration,
+    }
+
+    if (
+      a.status === "requested" ||
+      a.status === "confirmed" ||
+      a.status === "completed" ||
+      a.status === "cancelled"
+    ) {
+      payload.status = a.status
+    }
+
+    const uid = getApiUserId()
+    if (!uid) {
+      throw new Error("Não foi possível identificar o usuário autenticado para criar o agendamento (campo obrigatório `created_by`).")
+    }
+    payload.created_by = uid
+
+    return payload
+  }
+
   const payload: Record<string, unknown> = {
     patient_id: a.patientId,
     doctor_id: a.doctorId,
@@ -242,58 +267,60 @@ function appointmentToApi(
     payload.status = a.status
   }
 
-  if (isCreate) {
-    const uid = getApiUserId()
-
-    if (uid) {
-      payload.created_by = uid
-    }
-  }
-
   return payload
 }
 
-export async function getAppointments(): Promise<Appointment[]> {
-  const [apts, patients, doctors, profiles] = await Promise.all([
-    apiRequest<ApiAppointment[]>(
-      "/rest/v1/appointments?select=*&order=scheduled_at.desc"
-    ),
-    apiRequest<{ id: string; full_name: string }[]>(
-      "/rest/v1/patients?select=id,full_name"
-    ),
-    apiRequest<ApiDoctor[]>(
-      "/rest/v1/doctors?select=id,full_name"
-    ),
-    apiRequest<ApiProfile[]>(
-      "/rest/v1/profiles?select=id,full_name"
-    ),
+export interface GetAppointmentsOptions {
+  doctorId?: string
+  patientId?: string
+  status?: "requested" | "confirmed" | "completed" | "cancelled"
+  from?: string
+  to?: string
+}
+
+export async function getAppointments(options: GetAppointmentsOptions = {}): Promise<Appointment[]> {
+  const params = new URLSearchParams()
+  if (options.doctorId) params.set("doctor_id", options.doctorId)
+  if (options.patientId) params.set("patient_id", options.patientId)
+  if (options.status) params.set("status", options.status)
+
+  const [apts, patientMap, doctorMap] = await Promise.all([
+    apiRequest<ApiAppointment[]>(`/rest/v1/appointments?${params.toString()}`),
+    fetchPatientNameMap(),
+    fetchDoctorNameMap(),
   ])
 
-  const patientMap = new Map(
-    (patients ?? []).map((p) => [
-      p.id,
-      p.full_name,
-    ])
-  )
-  const doctorMap = new Map(
-    [
-      ...(doctors ?? []).map((d) => [d.id, d.full_name] as const),
-      ...(profiles ?? []).map((p) => [p.id, p.full_name] as const),
-    ]
-  )
-
-  return (apts ?? []).map((a) =>
-    {
-      const appointment = apiToAppointment(
-        a,
-        doctorMap.get(a.doctor_id) ?? ""
-      )
-      return {
-        ...appointment,
-        patientName: patientMap.get(a.patient_id) ?? appointment.patientName,
-      }
+  const mapped = (apts ?? []).map((a) => {
+    const appointment = apiToAppointment(a, doctorMap.get(a.doctor_id) ?? "")
+    return {
+      ...appointment,
+      patientName: patientMap.get(a.patient_id) ?? appointment.patientName,
     }
-  )
+  })
+
+  // Compatibilidade temporaria: alguns fluxos ainda enviam range no client.
+  // Mantemos o filtro local para nao acoplar a listagem a parametros nao documentados.
+  return mapped
+    .filter((appointment) => !options.from || appointment.date >= options.from)
+    .filter((appointment) => !options.to || appointment.date <= options.to)
+    .sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`))
+}
+
+async function fetchAppointmentById(id: string): Promise<Appointment | null> {
+  if (!id) return null
+  try {
+    const rows = await apiRequest<ApiAppointment[]>(
+      `/rest/v1/appointments?id=eq.${encodeURIComponent(id)}&select=*&limit=1`,
+      { logErrors: false },
+    )
+    const raw = rows?.[0]
+    if (!raw) return null
+    const doctors = await getAppointmentDoctors()
+    const doctorMap = new Map(doctors.map((doctor) => [doctor.id, doctor.name]))
+    return apiToAppointment(raw, doctorMap.get(raw.doctor_id) ?? "")
+  } catch {
+    return null
+  }
 }
 
 export async function createAppointment(
@@ -314,18 +341,23 @@ export async function createAppointment(
     ? created[0]
     : (created as ApiAppointment)
 
-  return {
+  const appointment = {
     ...apiToAppointment(
       raw,
       data.doctorName
     ),
     patientName: data.patientName,
   }
+
+  notifyAppointmentBooked(appointment)
+  return appointment
 }
 
 export async function updateAppointment(
   appointment: Appointment
 ): Promise<Appointment> {
+  const previous = await fetchAppointmentById(appointment.id)
+
   await apiRequest(
     `/rest/v1/appointments?id=eq.${appointment.id}`,
     {
@@ -337,18 +369,25 @@ export async function updateAppointment(
     }
   )
 
+  handleAppointmentUpdateNotifications(previous, appointment)
   return appointment
 }
 
 export async function deleteAppointment(
   id: string
 ): Promise<void> {
+  const previous = await fetchAppointmentById(id)
+
   await apiRequest(
     `/rest/v1/appointments?id=eq.${id}`,
     {
       method: "DELETE",
     }
   )
+
+  if (previous && previous.status !== "cancelled") {
+    notifyAppointmentCancelled(previous, "Consulta removida da agenda.")
+  }
 }
 
 // Horario comercial padrao quando nao ha disponibilidade cadastrada nem
@@ -436,13 +475,20 @@ async function getAvailableSlotsFromAvailability(
   if (date < today) return []
 
   const day = new Date(`${date}T00:00:00`).getDay()
+  const availabilityParams = new URLSearchParams({
+    doctor_id: `eq.${doctorId}`,
+    weekday: `eq.${day}`,
+    appointment_type: `eq.${appointmentType}`,
+    active: "eq.true",
+    select: "*",
+    order: "start_time.asc",
+  })
+
   const [availability, exceptions, appointments] = await Promise.all([
     apiRequest<ApiDoctorAvailability[]>(
-      `/rest/v1/doctor_availability?doctor_id=eq.${encodeURIComponent(doctorId)}&select=*`,
+      `/rest/v1/doctor_availability?${availabilityParams.toString()}`,
     ),
-    apiRequest<ApiDoctorException[]>(
-      `/rest/v1/doctor_exceptions?doctor_id=eq.${encodeURIComponent(doctorId)}&date=eq.${encodeURIComponent(date)}&select=*`,
-    ).catch(() => []),
+    getDoctorExceptions({ doctorId, date, kind: "bloqueio" }).catch(() => []),
     apiRequest<ApiAppointment[]>(
       `/rest/v1/appointments?doctor_id=eq.${encodeURIComponent(doctorId)}&select=id,doctor_id,patient_id,scheduled_at,duration_minutes,status`,
     ),
@@ -459,10 +505,7 @@ async function getAvailableSlotsFromAvailability(
       }
     })
 
-  const blockedRanges = (exceptions ?? []).map((exception) => ({
-    start: exception.start_time ? timeToMinutes(exception.start_time) : 0,
-    end: exception.end_time ? timeToMinutes(exception.end_time) : 24 * 60,
-  }))
+  const blockedRanges = exceptions.map(exceptionBlockedMinuteRange)
 
   const now = new Date()
   const nowMinutes = timeToMinutes(localTime(now))
@@ -517,8 +560,21 @@ async function getAvailableSlotsFromApi(
   date: string,
   appointmentType: string,
 ): Promise<string[]> {
-  async function request(path: string) {
-    return apiRequest<ApiAvailableSlotsResponse>(path, {
+  async function requestPrimary() {
+    return apiRequest<ApiAvailableSlotsResponse>("/functions/v1/get-available-slots", {
+      method: "POST",
+      body: {
+        doctor_id: doctorId,
+        start_date: date,
+        end_date: date,
+        appointment_type: appointmentType,
+      },
+      logErrors: false,
+    })
+  }
+
+  async function requestFallback() {
+    return apiRequest<ApiAvailableSlotsResponse>("/get-available-slots", {
       method: "POST",
       body: {
         doctor_id: doctorId,
@@ -532,10 +588,10 @@ async function getAvailableSlotsFromApi(
 
   let data: ApiAvailableSlotsResponse | undefined
   try {
-    data = await request("/functions/v1/get-available-slots")
+    data = await requestPrimary()
   } catch (err) {
     if (!(err instanceof ApiError) || err.status !== 404) throw err
-    data = await request("/get-available-slots")
+    data = await requestFallback()
   }
 
   const today = localDate(new Date())
@@ -550,37 +606,11 @@ async function getAvailableSlotsFromApi(
 }
 
 export async function getAppointmentDoctors(): Promise<AppointmentDoctor[]> {
-  // Nao filtramos por `active=eq.true` no PostgREST porque a coluna `active`
-  // pode nao existir em alguns projetos (causa 400). Filtramos client-side
-  // tratando ausencia / null como ativo (so excluimos active === false).
   const doctors = await apiRequest<ApiDoctor[]>(
-    "/rest/v1/doctors?select=id,full_name,active&order=full_name.asc",
-    { logErrors: false },
-  ).catch(async (err) => {
-    // Caso `active` (ou `full_name`) realmente nao existam, refazemos com
-    // variantes mais conservadoras. As tentativas tambem nao logam para
-    // evitar ruido enquanto o schema do projeto ainda esta sendo migrado.
-    if (err instanceof ApiError && (err.status === 400 || err.status === 406)) {
-      try {
-        return await apiRequest<ApiDoctor[]>(
-          "/rest/v1/doctors?select=id,full_name&order=full_name.asc",
-          { logErrors: false },
-        )
-      } catch (err2) {
-        if (err2 instanceof ApiError && (err2.status === 400 || err2.status === 406)) {
-          return apiRequest<ApiDoctor[]>(
-            "/rest/v1/doctors?select=*",
-            { logErrors: false },
-          )
-        }
-        throw err2
-      }
-    }
-    throw err
-  })
+    "/rest/v1/doctors?select=id,full_name&active=eq.true&order=full_name.asc",
+  )
 
   return (doctors ?? [])
-    .filter((doctor) => doctor.active !== false)
     .map((doctor) => ({
       id: doctor.id,
       name: doctor.full_name,
@@ -741,7 +771,9 @@ export async function cancelPatientAppointment(
     // Cancelamento do paciente não deve falhar se o encaixe automático der erro.
   }
 
-  return { ...appointment, status: "cancelled" }
+  const cancelled = { ...appointment, status: "cancelled" as const }
+  notifyAppointmentCancelled(cancelled, reason)
+  return cancelled
 }
 
 export async function updatePatientAppointment(
@@ -764,11 +796,14 @@ export async function updatePatientAppointment(
     throw new Error("Esta consulta não pode mais ser reagendada.")
   }
 
+  const previous = await fetchAppointmentById(appointment.id)
+
   await patchAppointmentFields(appointment.id, linked.id, {
     scheduled_at: localDateTimeIso(appointment.date, appointment.time),
     duration_minutes: appointment.duration,
     status: appointment.status ?? "scheduled",
   })
 
+  notifyAppointmentRescheduled(appointment, previous)
   return appointment
 }

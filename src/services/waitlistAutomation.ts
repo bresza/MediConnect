@@ -1,6 +1,6 @@
 import type { Appointment, WaitlistEntry } from "../types"
 import { createAppointment } from "./appointments"
-import { sendMessage } from "./domain"
+import { sendOutboundMessage } from "./messaging"
 import { getPatientById } from "./patients"
 import {
   enrollPatientInWaitlist,
@@ -21,68 +21,24 @@ export interface WaitlistFillResult {
   message?: string
 }
 
-function formatSlotLabel(date: string, time: string): string {
-  const dt = new Date(`${date}T${time}:00`)
-  if (Number.isNaN(dt.getTime())) return `${date} às ${time}`
-  const datePart = dt.toLocaleDateString("pt-BR", {
-    weekday: "long",
-    day: "2-digit",
-    month: "long",
-  })
-  return `${datePart} às ${time}`
-}
-
-function buildPromotionSms(
-  patientName: string,
-  doctorName: string,
-  date: string,
-  time: string,
-  trigger: GapFillTrigger,
-): string {
-  const slot = formatSlotLabel(date, time)
-  const firstName = patientName.trim().split(/\s+/)[0] || patientName
-  const reason = trigger === "no_show"
-    ? "liberação de horário na agenda"
-    : "desistência de outro paciente"
-  return `Olá ${firstName}, sua consulta com ${doctorName} foi agendada para ${slot} após ${reason} na fila prioritária. Veja detalhes no portal. Para remarcar, fale conosco.`
-}
-
-async function sendPatientSms(
+async function sendPatientNotification(
   patientId: string,
-  patientName: string,
   content: string,
-  sentBy: string,
 ): Promise<boolean> {
   try {
     const patient = await getPatientById(patientId)
     const phone = patient?.phone?.trim()
-    if (!phone) return false
-    await sendMessage({
-      patientId,
-      patientName,
-      content,
-      status: "Pending",
-      date: new Date().toISOString().slice(0, 10),
-      channel: "SMS",
-      sentBy,
-      phoneNumber: phone,
-    })
+    if (!phone || patient?.optIn === false) return false
+    const preferred = patient?.preferredChannel === "SMS" ? "SMS" : "WhatsApp"
+    await sendOutboundMessage(
+      preferred,
+      { phoneNumber: phone, message: content, patientId },
+      { fallbackSms: preferred === "WhatsApp" },
+    )
     return true
   } catch {
     return false
   }
-}
-
-async function notifyPromotedPatient(
-  patientId: string,
-  patientName: string,
-  doctorName: string,
-  date: string,
-  time: string,
-  trigger: GapFillTrigger,
-): Promise<boolean> {
-  const sms = buildPromotionSms(patientName, doctorName, date, time, trigger)
-  return sendPatientSms(patientId, patientName, sms, "Sistema — fila de espera")
 }
 
 export async function notifyWaitlistEnrollment(
@@ -95,8 +51,8 @@ export async function notifyWaitlistEnrollment(
   const firstName = patientName.trim().split(/\s+/)[0] || patientName
   const target = specialty ? `${doctorName} (${specialty})` : doctorName
   const priorityLabel = WAITLIST_COLOR_LABEL[priorityColor]
-  const sms = `Olá ${firstName}, você entrou na fila de espera para consulta com ${target}. Prioridade: ${priorityLabel}. Avisaremos por SMS quando surgir vaga.`
-  await sendPatientSms(patientId, patientName, sms, "Sistema — fila de espera")
+  const sms = `Olá ${firstName}, você entrou na fila de espera para consulta com ${target}. Prioridade: ${priorityLabel}. Avisaremos por WhatsApp ou SMS quando surgir vaga.`
+  await sendPatientNotification(patientId, sms)
 }
 
 /** Inscreve o paciente na fila e envia confirmação por SMS quando houver telefone. */
@@ -180,16 +136,7 @@ export async function fillGapFromWaitlist(
       notes: [candidate.notes, observations].filter(Boolean).join("\n"),
     })
 
-    const notified = await notifyPromotedPatient(
-      candidate.patientId,
-      candidate.patientName,
-      freed.doctorName,
-      freed.date,
-      freed.time,
-      trigger,
-    )
-
-    return { filled: true, appointment, entry: candidate, notified }
+    return { filled: true, appointment, entry: candidate, notified: true }
   } catch (err) {
     return {
       filled: false,

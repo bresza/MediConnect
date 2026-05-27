@@ -47,17 +47,25 @@ async function toUploadBlob(source: File | string): Promise<{ blob: Blob; mime: 
   return { blob: source, mime: source.type || "image/jpeg" }
 }
 
-async function storageUpload(objectPath: string, blob: Blob, mime: string): Promise<void> {
-  const headers = storageHeaders({
-    "Content-Type": mime,
-    "x-upsert":     "true",
-  })
-
+async function storageUpload(objectPath: string, blob: Blob): Promise<void> {
   const url = `${SUPABASE_URL}/storage/v1/object/${BUCKET}/${objectPath}`
-  let response = await fetch(url, { method: "PUT", headers, body: blob })
+  const multipartHeaders = storageHeaders({ "x-upsert": "true" })
+  const formData = new FormData()
+  const filename = objectPath.split("/").pop() || "avatar.jpg"
+  formData.append("file", blob, filename)
 
-  if (!response.ok && (response.status === 404 || response.status === 405)) {
-    response = await fetch(url, { method: "POST", headers, body: blob })
+  let response = await fetch(url, { method: "POST", headers: multipartHeaders, body: formData })
+
+  // Compatibilidade: alguns projetos Storage aceitam apenas payload binario bruto.
+  if (!response.ok && (response.status === 400 || response.status === 404 || response.status === 405 || response.status === 415 || response.status === 422)) {
+    const binaryHeaders = storageHeaders({
+      "Content-Type": blob.type || "image/jpeg",
+      "x-upsert": "true",
+    })
+    response = await fetch(url, { method: "PUT", headers: binaryHeaders, body: blob })
+    if (!response.ok && (response.status === 404 || response.status === 405)) {
+      response = await fetch(url, { method: "POST", headers: binaryHeaders, body: blob })
+    }
   }
 
   if (!response.ok) {
@@ -138,7 +146,7 @@ export async function uploadPatientPhoto(
 
   const ext = extensionFromMime(mime)
   const objectPath = patientPhotoObjectPath(patientId, ext)
-  await storageUpload(objectPath, blob, mime)
+  await storageUpload(objectPath, blob)
   return getPatientPhotoPublicUrl(objectPath)
 }
 

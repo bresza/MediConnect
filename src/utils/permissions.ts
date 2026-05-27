@@ -50,11 +50,10 @@ export const ROLE_PAGES: Record<UserRole, PageId[]> = {
     "team",
   ],
 
-  // Financeiro — financeiro, relatórios e dados dos pacientes
+  // Financeiro — módulo financeiro e cadastro (sem laudos/prontuário)
   financial: [
     "dashboard",
     "financial",
-    "reports",
     "patients",
     "patient-profile",
   ],
@@ -78,8 +77,23 @@ export const ROLE_ACTIONS: Record<UserRole, string[]> = {
   doctor:    ["view_reports", "create_reports", "update_reports", "view_own_appointments", "manage_own_availability", "update_patients", "send_messages"],
   manager:   ["view_reports", "create_reports", "update_reports", "delete_reports", "view_all_appointments", "create_appointments", "delete_appointments", "manage_availability", "manage_patients", "update_patients", "delete_patients", "manage_team", "view_financial", "manage_financial", "send_messages"],
   admin:     ["view_reports", "create_reports", "update_reports", "delete_reports", "view_all_appointments", "create_appointments", "delete_appointments", "manage_availability", "manage_patients", "update_patients", "delete_patients", "manage_team", "view_financial", "manage_financial", "send_messages"],
-  financial: ["view_financial", "manage_financial", "view_reports"],
+  financial: ["view_financial", "manage_financial"],
   secretary: ["view_appointments", "create_appointments", "update_appointments", "cancel_appointments", "register_patients", "update_patients", "send_messages"],
+}
+
+/** Laudos, receitas, prontuário e demais dados clínicos sensíveis. */
+export function canViewClinicalData(role: UserRole): boolean {
+  return role === "doctor" || role === "manager" || role === "admin"
+}
+
+/** Fluxo de atendimento com prontuário (modal na agenda). */
+export function canManageMedicalRecords(role: UserRole): boolean {
+  return role === "doctor"
+}
+
+/** Gestão de usuários e configurações do sistema. */
+export function canManageOrganization(role: UserRole): boolean {
+  return role === "manager" || role === "admin"
 }
 
 export const ROLE_LABELS: Record<UserRole, string> = {

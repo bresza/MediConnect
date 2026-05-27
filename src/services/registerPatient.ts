@@ -9,9 +9,8 @@
 //     Contrato de erro: RFC 7807 (application/problem+json) com
 //     extensao { code } para os casos do dominio.
 //
-// Em ambas, o gateway exige `apikey` (anon). `Authorization: Bearer
-// <ANON_KEY>` e enviado por compatibilidade com versoes do gateway
-// que recusam preflight sem ele.
+// Em ambas, o gateway exige `apikey` (anon). As funcoes sao publicas
+// (`verify_jwt` desativado), sem necessidade de JWT de sessao.
 // ─────────────────────────────────────────────────────────────────
 
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "./api"
@@ -107,6 +106,10 @@ function messageForStatusAndCode(status: number, parsed: ParsedEdgeError): strin
   return raw || `Erro ao cadastrar (${status}).`
 }
 
+function isValidEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+}
+
 async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const controller = new AbortController()
   const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
@@ -132,6 +135,20 @@ export async function invokeRegisterPatient(
   const full_name = input.full_name.trim()
   const phone_mobile = onlyDigits(input.phone_mobile)
   const cpf = onlyDigits(input.cpf)
+
+  if (!email || !isValidEmail(email)) {
+    throw new RegisterPatientApiError("E-mail inválido.", 400, "VALIDATION_ERROR")
+  }
+  if (full_name.length < 3) {
+    throw new RegisterPatientApiError("Nome completo deve ter ao menos 3 caracteres.", 400, "VALIDATION_ERROR")
+  }
+  if (!/^\d{10,11}$/.test(phone_mobile)) {
+    throw new RegisterPatientApiError("Telefone deve conter 10 ou 11 dígitos numéricos.", 400, "VALIDATION_ERROR")
+  }
+  if (!/^\d{11}$/.test(cpf)) {
+    throw new RegisterPatientApiError("CPF deve conter 11 dígitos numéricos.", 400, "VALIDATION_ERROR")
+  }
+
   const body: Record<string, string> = {
     email,
     full_name,
@@ -149,6 +166,7 @@ export async function invokeRegisterPatient(
         method: "POST",
         headers: {
           "Content-Type":  "application/json",
+          "Accept":        "application/json, application/problem+json",
           "apikey":        SUPABASE_ANON_KEY,
           "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
         },
@@ -261,7 +279,6 @@ export async function invokeRegisterPatientWithPassword(
         headers: {
           "Content-Type":  "application/json",
           "apikey":        SUPABASE_ANON_KEY,
-          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
           "Accept":        "application/json, application/problem+json",
         },
         body: JSON.stringify(body),

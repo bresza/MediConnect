@@ -1,11 +1,13 @@
-import { useState, useEffect, useCallback } from "react"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import type { FinancialRecord } from "../types"
+import { useAuth } from "../contexts/authStore"
 import {
   getFinancialRecords,
   createFinancialRecord,
   updateFinancialRecord,
   deleteFinancialRecord,
 } from "../services/financial"
+import { financialKeys } from "./query/queryKeys"
 
 export interface UseFinancialReturn {
   records:       FinancialRecord[]
@@ -17,41 +19,43 @@ export interface UseFinancialReturn {
   reload:        () => Promise<void>
 }
 
-export function useFinancial(): UseFinancialReturn {
-  const [records,   setRecords]   = useState<FinancialRecord[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error,     setError]     = useState<string | null>(null)
+export function useFinancial(options?: { enabled?: boolean }): UseFinancialReturn {
+  const enabled = options?.enabled ?? true
+  const { clinicId } = useAuth()
+  const queryClient = useQueryClient()
 
-  const load = useCallback(async () => {
-    setIsLoading(true)
-    setError(null)
-    try {
-      const data = await getFinancialRecords()
-      setRecords(data)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao carregar registros financeiros")
-    } finally {
-      setIsLoading(false)
-    }
-  }, [])
+  const query = useQuery({
+    queryKey: financialKeys.all(clinicId),
+    queryFn: getFinancialRecords,
+    enabled,
+    staleTime: 60_000,
+  })
 
-  useEffect(() => { load() }, [load])
+  const invalidate = () =>
+    queryClient.invalidateQueries({ queryKey: financialKeys.all(clinicId) })
 
-  const addRecord = useCallback(async (r: Omit<FinancialRecord, "id">) => {
-    const created = await createFinancialRecord(r)
-    setRecords((prev) => [...prev, created])
-    return created
-  }, [])
+  const addMutation = useMutation({
+    mutationFn: createFinancialRecord,
+    onSuccess: async () => { await invalidate() },
+  })
 
-  const updateRecord = useCallback(async (r: FinancialRecord) => {
-    const saved = await updateFinancialRecord(r)
-    setRecords((prev) => prev.map((x) => (x.id === saved.id ? saved : x)))
-  }, [])
+  const updateMutation = useMutation({
+    mutationFn: updateFinancialRecord,
+    onSuccess: async () => { await invalidate() },
+  })
 
-  const deleteRecord = useCallback(async (id: string) => {
-    await deleteFinancialRecord(id)
-    setRecords((prev) => prev.filter((r) => r.id !== id))
-  }, [])
+  const deleteMutation = useMutation({
+    mutationFn: deleteFinancialRecord,
+    onSuccess: async () => { await invalidate() },
+  })
 
-  return { records, isLoading, error, addRecord, updateRecord, deleteRecord, reload: load }
+  return {
+    records: query.data ?? [],
+    isLoading: enabled && query.isLoading,
+    error: query.error instanceof Error ? query.error.message : null,
+    addRecord: (r) => addMutation.mutateAsync(r),
+    updateRecord: async (r) => { await updateMutation.mutateAsync(r) },
+    deleteRecord: async (id) => { await deleteMutation.mutateAsync(id) },
+    reload: async () => { await query.refetch() },
+  }
 }

@@ -3,7 +3,7 @@
  * que o restante do app) para o assistente usar nas respostas.
  * Nao expoe CPF completo nem tokens; limita tamanho para caber no prompt.
  */
-import type { Appointment, Patient, Prescription, Report, StaffMember, UserRole } from "../types"
+import type { Appointment, PageId, Patient, Prescription, Report, StaffMember, UserRole } from "../types"
 
 const MAX_SNAPSHOT_CHARS = 7500
 const MAX_PATIENTS       = 20
@@ -18,6 +18,7 @@ function clip(text: string, max: number): string {
 
 export interface AIContextFromAppStateInput {
   role:           UserRole
+  activePage?:    PageId
   patients:       Patient[]
   appointments:   Appointment[]
   prescriptions:  Prescription[]
@@ -27,11 +28,12 @@ export interface AIContextFromAppStateInput {
 }
 
 export function buildAIApiContextFromAppState(input: AIContextFromAppStateInput): string {
-  const { role, patients, appointments, prescriptions, staff, reports = [] } = input
+  const { role, activePage, patients, appointments, prescriptions, staff, reports = [] } = input
 
   const lines: string[] = []
   lines.push("[Contexto da API — dados desta sessao, mesmo backend Supabase do MediConnect]")
   lines.push(`Perfil: ${role}`)
+  if (activePage) lines.push(`Tela atual: ${activePage}`)
   lines.push(
     `Totais: ${patients.length} paciente(s) na visao, ${appointments.length} agendamento(s), ` +
     `${prescriptions.length} receita(s)` +

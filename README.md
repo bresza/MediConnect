@@ -152,11 +152,11 @@ em `/rest/v1/*` um `401` aciona refresh + retry e, em ultimo caso, logout.
 | `delete-user`                  | **Sim**      | nenhum — auth.users nao e acessivel via REST  |
 | `ai-chat`                      | Nao          | proxy OpenAI; alternativas: Groq/Gemini no front |
 | `user-info`                    | Nao          | leitura direta em `profiles`/`patients`/`doctors` |
-| `register-patient`             | Nao          | cai em `create-user-with-password`            |
+| `register-patient`             | Nao          | auto-cadastro via magic link; fallback em `create-user-with-password` |
 | `request-password-reset`       | Nao          | cai em `/auth/v1/recover`                     |
 | `create-doctor`                | Nao          | PATCH em `/rest/v1/doctors` apos criar o user |
 | `create-patient`               | Nao          | insert direto em `/rest/v1/patients`          |
-| `get-available-slots`          | Nao          | calculo de slots no cliente                   |
+| `get-available-slots`          | Nao          | tenta endpoint (`start_date/end_date`) e faz fallback local |
 | `send-sms`                     | Nao          | mensagem de erro tratada                      |
 
 Para o assistente IA, veja a secao **Assistente de IA** (Groq, Gemini, OpenAI direto, proxy `ai-chat` ou Puter). Para as demais,

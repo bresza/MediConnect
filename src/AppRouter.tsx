@@ -1,27 +1,38 @@
-import { useState } from "react"
+import { Suspense, useMemo, useState } from "react"
 import { Sidebar }        from "./components/layout/Sidebar/Sidebar"
 import { AIAssistant }    from "./components/ui/AIAssistant/AIAssistant"
 import { ToastContainer } from "./components/ui/ToastContainer/ToastContainer"
-import { Dashboard }      from "./pages/Dashboard/Dashboard"
-import { Patients }       from "./pages/Patients/Patients"
-import { Registration }   from "./pages/Registration/Registration"
-import { Appointments }   from "./pages/Appointments/Appointments"
-import { Availability }   from "./pages/Availability/Availability"
-import { Reports }        from "./pages/Reports/Reports"
-import { PatientProfile } from "./pages/PatientProfile/PatientProfile"
-import { PatientPortal }  from "./pages/PatientPortal/PatientPortal"
+import { PageLoader }     from "./components/ui/PageLoader/PageLoader"
+import { PageSkeleton }   from "./components/ui/PageSkeleton/PageSkeleton"
+import {
+  Dashboard,
+  Patients,
+  Registration,
+  Appointments,
+  Availability,
+  Reports,
+  PatientProfile,
+  PatientPortal,
+  Messages,
+  Financial,
+  Settings,
+  Team,
+} from "./pages/lazyPages"
 import type { PortalSection } from "./pages/PatientPortal/patientPortalSections"
 import {
   cancelPatientAppointment,
   createPatientAppointment,
   updatePatientAppointment,
 } from "./services/appointments"
-import { Messages }       from "./pages/Messages/Messages"
-import { Financial }      from "./pages/Financial/Financial"
-import { Settings }       from "./pages/Settings/Settings"
-import { Team }           from "./pages/Team/Team"
-import { canAccess, canDo, getDefaultPage } from "./utils/permissions"
+import {
+  canAccess,
+  canDo,
+  canManageMedicalRecords,
+  canViewClinicalData,
+  getDefaultPage,
+} from "./utils/permissions"
 import { buildAIApiContextFromAppState } from "./services/aiContext"
+import { createAppAIActions } from "./services/aiActions"
 import { useAuth }          from "./contexts/authStore"
 import { usePatients }      from "./hooks/usePatients"
 import { useAppointments }  from "./hooks/useAppointments"
@@ -29,7 +40,9 @@ import { useMedicalData }   from "./hooks/useMedicalData"
 import { useFinancial }     from "./hooks/useFinancial"
 import { useStaff }         from "./hooks/useStaff"
 import { usePatientAIData } from "./hooks/usePatientAIData"
-import { useToast }         from "./hooks/useToast"
+import { useToast }                 from "./hooks/useToast"
+import { useDelayedLoading }        from "./hooks/useDelayedLoading"
+import { useMessagingAutomation }   from "./hooks/useMessagingAutomation"
 import type { Appointment, PageId, Patient } from "./types"
 import styles from "./App.module.css"
 
@@ -38,25 +51,92 @@ interface AppRouterProps { darkMode: boolean; onToggleDark: () => void }
 export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
   const { user, logout, clinicName } = useAuth()
 
+  const [activePage,       setActivePage]       = useState<PageId>(() => getDefaultPage(user?.role ?? "secretary"))
+  const [sidebarOpen,      setSidebarOpen]      = useState(false)
+  const [patientPortalSection, setPatientPortalSection] = useState<PortalSection>("overview")
+  const [patientPortalCounts, setPatientPortalCounts] = useState<Partial<Record<PortalSection, number>>>({})
+  const [editingPatient,   setEditingPatient]   = useState<Patient | null>(null)
+  const [viewingPatient,   setViewingPatient]   = useState<Patient | null>(null)
+
+  const userRole = user?.role
+  const loadStaffRole = Boolean(
+    userRole && (canAccess(userRole, "team") || userRole === "manager" || userRole === "admin"),
+  )
+  const loadFinancialRole = Boolean(
+    userRole && (canAccess(userRole, "financial") || canAccess(userRole, "appointments")),
+  )
+  const loadMedicalRole = Boolean(
+    userRole &&
+    userRole !== "patient" &&
+    canViewClinicalData(userRole) &&
+    (canAccess(userRole, "reports") ||
+      canAccess(userRole, "patient-profile") ||
+      canAccess(userRole, "appointments")),
+  )
+
+  const loadMedical = loadMedicalRole && (
+    activePage === "patient-profile" ||
+    activePage === "appointments" ||
+    activePage === "reports"
+  )
+  const loadFinancial = loadFinancialRole && activePage === "financial"
+  const loadStaff = loadStaffRole && (activePage === "team" || activePage === "availability")
+
   const {
     patients, addPatient, addPatientWithPassword, createPatientAccess, updatePatient, deletePatient,
-    error: patientsError, reload: reloadPatients,
+    error: patientsError, isLoading: patientsLoading, reload: reloadPatients,
   } = usePatients()
   const {
     appointments, addAppointment, updateAppointment,
-    error: appointmentsError, reload: reloadAppointments,
+    error: appointmentsError, isLoading: appointmentsLoading, reload: reloadAppointments,
   } = useAppointments()
   const {
     prescriptions, addPrescription, addMedicalRecord,
     error: medicalDataError, reload: reloadMedicalData,
-  } = useMedicalData()
-  const { addRecord: addFinancialRecord, reload: reloadFinancial } = useFinancial()
+  } = useMedicalData({ enabled: loadMedical })
+  const {
+    records: financialRecords,
+    addRecord: addFinancialRecord,
+    updateRecord: updateFinancialRecord,
+    deleteRecord: deleteFinancialRecord,
+    reload: reloadFinancial,
+  } = useFinancial({ enabled: loadFinancial })
   const {
     staff, addStaff, updateStaff, deleteStaff,
     error: staffError, reload: reloadStaff,
-  } = useStaff()
+  } = useStaff({ enabled: loadStaff })
   const { toasts,       toast,         dismiss }                                       = useToast()
   const patientAIData = usePatientAIData(user)
+
+  const automationAppointments = useMemo(() => {
+    if (!user || user.role === "patient") return []
+    if (user.role === "doctor") {
+      return appointments.filter(
+        (a) =>
+          a.doctorId === user.id ||
+          a.doctorName === user.name ||
+          a.doctorName?.toLowerCase().trim() === user.name.toLowerCase().trim(),
+      )
+    }
+    return appointments
+  }, [user, appointments])
+
+  const automationPatients = useMemo(() => {
+    if (!user || user.role === "patient") return []
+    if (user.role === "doctor") {
+      const ids = new Set(automationAppointments.map((a) => a.patientId))
+      return patients.filter((p) => ids.has(p.id))
+    }
+    return patients
+  }, [user, patients, automationAppointments])
+
+  useMessagingAutomation({
+    enabled: Boolean(user && user.role !== "patient" && canAccess(user.role, "messages")),
+    appointments: automationAppointments,
+    patients: automationPatients,
+    clinicName: clinicName ?? undefined,
+    onActivity: (summary) => toast(summary, "info"),
+  })
 
   const reloadAll = async () => {
     await Promise.all([
@@ -68,64 +148,67 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
     ])
   }
 
-  const [activePage,       setActivePage]       = useState<PageId>(() => getDefaultPage(user?.role ?? "secretary"))
-  const [sidebarOpen,      setSidebarOpen]      = useState(false)
-  const [patientPortalSection, setPatientPortalSection] = useState<PortalSection>("overview")
-  const [patientPortalCounts, setPatientPortalCounts] = useState<Partial<Record<PortalSection, number>>>({})
-  const [editingPatient,   setEditingPatient]   = useState<Patient | null>(null)
-  const [viewingPatient,   setViewingPatient]   = useState<Patient | null>(null)
+  const showCoreSkeleton = useDelayedLoading(patientsLoading || appointmentsLoading)
 
-  if (!user) return null
-  const currentUser = user
-
-  const isDoctor    = currentUser.role === "doctor"
-  const isPatient   = currentUser.role === "patient"
-  const isSecretary = currentUser.role === "secretary"
+  const isDoctor    = user?.role === "doctor"
+  const isPatient   = user?.role === "patient"
+  const isSecretary = user?.role === "secretary"
   const onlyDigits = (value?: string) => value?.replace(/\D/g, "") ?? ""
   const isCurrentDoctor = (doctorId?: string, doctorName?: string) =>
-    doctorId === currentUser.id ||
-    doctorName === currentUser.name ||
-    doctorName?.toLowerCase().trim() === currentUser.name.toLowerCase().trim()
+    Boolean(user) && (
+      doctorId === user!.id ||
+      doctorName === user!.name ||
+      doctorName?.toLowerCase().trim() === user!.name.toLowerCase().trim()
+    )
 
-  // ── Filtros de dados por perfil ──────────────────────────────────
-  const linkedPatient = isPatient
+  const linkedPatient = isPatient && user
     ? patients.find((p) =>
-      (currentUser.patientId && p.id === currentUser.patientId) ||
-      p.userId === currentUser.id ||
-      (!!currentUser.patientCpf && onlyDigits(p.cpf) === currentUser.patientCpf) ||
-      (!!currentUser.email && p.email?.toLowerCase().trim() === currentUser.email.toLowerCase().trim())) ?? null
+      (user.patientId && p.id === user.patientId) ||
+      p.userId === user.id ||
+      (!!user.patientCpf && onlyDigits(p.cpf) === user.patientCpf) ||
+      (!!user.email && p.email?.toLowerCase().trim() === user.email.toLowerCase().trim())) ?? null
     : null
-  const fallbackPatient: Patient | null = isPatient && !linkedPatient
+  const fallbackPatient: Patient | null = isPatient && user && !linkedPatient
     ? {
-      id: currentUser.patientId ?? currentUser.id,
-      name: currentUser.name,
-      cpf: currentUser.patientCpf ?? "",
-      email: currentUser.email,
-      phone: currentUser.phone ?? "",
-      dob: currentUser.dob ?? "",
+      id: user.patientId ?? user.id,
+      name: user.name,
+      cpf: user.patientCpf ?? "",
+      email: user.email,
+      phone: user.phone ?? "",
+      dob: user.dob ?? "",
       status: "Active",
     }
     : null
   const portalPatient = linkedPatient ?? fallbackPatient
-  const linkedPatientId = portalPatient?.id ?? currentUser.patientId ?? ""
+  const linkedPatientId = portalPatient?.id ?? user?.patientId ?? ""
 
-  // Médico vê apenas seus próprios agendamentos e pacientes vinculados
-  const doctorAppts      = isDoctor
+  const doctorAppts = isDoctor
     ? appointments.filter((a) => isCurrentDoctor(a.doctorId, a.doctorName))
     : appointments
-  const doctorPatientIds = isDoctor
-    ? new Set(doctorAppts.map((a) => a.patientId))
-    : null
+  const doctorPatientIds = useMemo(
+    () => (isDoctor ? new Set(doctorAppts.map((a) => a.patientId)) : null),
+    [isDoctor, doctorAppts],
+  )
 
-  const visiblePatients      = isPatient
-    ? (portalPatient ? [portalPatient] : [])
-    : isDoctor ? patients.filter((p) => doctorPatientIds!.has(p.id)) : patients
-  const visibleAppointments  = isPatient
-    ? appointments.filter((a) => a.patientId === linkedPatientId)
-    : doctorAppts
-  const visiblePrescriptions = isPatient
-    ? prescriptions.filter((p) => p.patientId === linkedPatientId)
-    : isDoctor ? prescriptions.filter((p) => doctorPatientIds!.has(p.patientId)) : prescriptions
+  const visiblePatients = useMemo(() => {
+    if (isPatient) return portalPatient ? [portalPatient] : []
+    if (isDoctor && doctorPatientIds) return patients.filter((p) => doctorPatientIds.has(p.id))
+    return patients
+  }, [isPatient, isDoctor, portalPatient, patients, doctorPatientIds])
+
+  const visibleAppointments = useMemo(() => {
+    if (isPatient) return appointments.filter((a) => a.patientId === linkedPatientId)
+    return doctorAppts
+  }, [isPatient, appointments, linkedPatientId, doctorAppts])
+
+  const visiblePrescriptions = useMemo(() => {
+    if (isPatient) return prescriptions.filter((p) => p.patientId === linkedPatientId)
+    if (isDoctor && doctorPatientIds) return prescriptions.filter((p) => doctorPatientIds.has(p.patientId))
+    return prescriptions
+  }, [isPatient, isDoctor, prescriptions, linkedPatientId, doctorPatientIds])
+
+  if (!user) return null
+  const currentUser = user
 
   const aiPatients = isPatient
     ? (patientAIData.patient ? [patientAIData.patient] : visiblePatients)
@@ -135,6 +218,7 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
 
   const aiApiContextSnapshot = buildAIApiContextFromAppState({
     role:          currentUser.role,
+    activePage,
     patients:      aiPatients,
     appointments:  aiAppointments,
     prescriptions: aiPrescriptions,
@@ -218,14 +302,40 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
     return saved
   }
   async function handleUpdatePatient(p: Patient) {
-    await updatePatient(p)
-    toast(`Dados de ${p.name} atualizados.`, "success")
+    try {
+      await updatePatient(p)
+      toast(`Dados de ${p.name} atualizados.`, "success")
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Não foi possível atualizar o paciente."
+      toast(message, "error")
+      throw err
+    }
   }
   async function handleDeletePatient(id: string) {
     const target = patients.find((p) => p.id === id)
     await deletePatient(id)
     if (target) toast(`Paciente ${target.name} removido.`, "info")
   }
+
+  const appAIActions = createAppAIActions({
+    role: currentUser.role,
+    currentUser,
+    activePage,
+    clinicName: clinicName ?? undefined,
+    patients: visiblePatients,
+    appointments: visibleAppointments,
+    staff: isPatient ? [] : staff,
+    prescriptions: visiblePrescriptions,
+    portalPatient,
+    navigate: handleNavigate,
+    setPortalSection: setPatientPortalSection,
+    reloadAll,
+    addAppointment,
+    updateAppointment,
+    bookPatientAppointment: isPatient ? handlePatientBookAppointment : undefined,
+    cancelPatientAppointment: isPatient ? handlePatientCancelAppointment : undefined,
+    addMedicalRecord,
+  })
 
   // ── Renderização por página ──────────────────────────────────────
   function renderPage() {
@@ -286,6 +396,7 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
             canCreatePatient={canAccess(currentUser.role, "register")}
             toast={toast}
             onRefresh={reloadPatients}
+            loadError={patientsError}
           />
         )
 
@@ -343,9 +454,13 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
             onAddAppointment={addAppointment}
             onUpdateAppointment={updateAppointment}
             onRefresh={reloadAppointments}
-            onAddMedicalRecord={addMedicalRecord}
-            onAddPrescription={addPrescription}
-            onAddFinancialRecord={addFinancialRecord}
+            onAddMedicalRecord={canManageMedicalRecords(currentUser.role) ? addMedicalRecord : undefined}
+            onAddPrescription={canDo(currentUser.role, "create_reports") ? addPrescription : undefined}
+            onAddFinancialRecord={
+              canDo(currentUser.role, "manage_financial") || canDo(currentUser.role, "view_financial")
+                ? addFinancialRecord
+                : undefined
+            }
           />
         )
 
@@ -358,11 +473,26 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
 
       // ── Mensagens ────────────────────────────────────────────────
       case "messages":
-        return <Messages />
+        return (
+          <Messages
+            appointments={visibleAppointments}
+            patients={visiblePatients}
+            clinicName={clinicName ?? undefined}
+          />
+        )
 
       // ── Financeiro — somente gestor e financeiro ─────────────────
       case "financial":
-        return <Financial patients={patients} />
+        return (
+          <Financial
+            patients={visiblePatients}
+            records={financialRecords}
+            onAddRecord={addFinancialRecord}
+            onUpdateRecord={updateFinancialRecord}
+            onDeleteRecord={deleteFinancialRecord}
+            onReload={reloadFinancial}
+          />
+        )
 
       // ── Equipe — somente gestão ──────────────────────────────────
       case "team":
@@ -436,7 +566,9 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
               <span>{dataErrors.join(" | ")}</span>
             </div>
           )}
-          {renderPage()}
+          <Suspense fallback={<PageLoader />}>
+            {showCoreSkeleton ? <PageSkeleton /> : renderPage()}
+          </Suspense>
         </div>
       </main>
       <ToastContainer toasts={toasts} onDismiss={dismiss} />
@@ -444,6 +576,7 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
         currentUser={currentUser}
         clinicName={clinicName}
         apiContextSnapshot={aiApiContextSnapshot}
+        appActions={appAIActions}
       />
     </div>
   )

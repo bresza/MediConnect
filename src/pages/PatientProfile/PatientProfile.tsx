@@ -2,6 +2,7 @@ import { useState } from "react"
 import { Avatar } from "../../components/ui/Avatar/Avatar"
 import { Button } from "../../components/ui/Button/Button"
 import { formatCpfBR, formatDate, formatPhoneBR } from "../../utils"
+import { canViewClinicalData } from "../../utils/permissions"
 import { PrescriptionEditor } from "./PrescriptionEditor"
 import type { PageId, Patient, Appointment, Prescription, User } from "../../types"
 import styles from "./PatientProfile.module.css"
@@ -78,7 +79,10 @@ export function PatientProfile({
   const [prescribing, setPrescribing] = useState(false)
 
   const isDoctor = currentUser.role === "doctor"
+  const showClinical = canViewClinicalData(currentUser.role)
+  const visibleTabs = showClinical ? TABS : TABS.filter((t) => t.id !== "prescriptions")
   const age = calcAge(patient.dob)
+  const activeTab: Tab = !showClinical && tab === "prescriptions" ? "overview" : tab
 
   const patientAppts = appointments
     .filter(a => a.patientId === patient.id)
@@ -160,14 +164,18 @@ export function PatientProfile({
               <span className={styles.heroStatValue}>{patientAppts.length}</span>
               <span className={styles.heroStatLabel}>Consultas</span>
             </div>
+            {showClinical && (
+              <>
+                <div className={styles.heroStatDiv} />
+                <div className={styles.heroStat}>
+                  <span className={styles.heroStatValue}>{patientRx.length}</span>
+                  <span className={styles.heroStatLabel}>Receitas</span>
+                </div>
+              </>
+            )}
             <div className={styles.heroStatDiv} />
             <div className={styles.heroStat}>
-              <span className={styles.heroStatValue}>{patientRx.length}</span>
-              <span className={styles.heroStatLabel}>Receitas</span>
-            </div>
-            <div className={styles.heroStatDiv} />
-            <div className={styles.heroStat}>
-              {patient.behaviorScore != null ? (
+              {showClinical && patient.behaviorScore != null ? (
                 <>
                   <span className={styles.heroStatValue} style={{
                     color: patient.behaviorScore >= 70 ? "#4ade80"
@@ -212,10 +220,10 @@ export function PatientProfile({
       {/* ── TAB BAR ─────────────────────────────────────────────── */}
       <div className={styles.tabBar}>
         <div className={styles.tabBarInner}>
-          {TABS.map(t => (
+          {visibleTabs.map(t => (
             <button
               key={t.id}
-              className={`${styles.tabBtn} ${tab === t.id ? styles.tabBtnActive : ""}`}
+              className={`${styles.tabBtn} ${activeTab === t.id ? styles.tabBtnActive : ""}`}
               onClick={() => setTab(t.id)}
             >
               {t.label}
@@ -229,7 +237,7 @@ export function PatientProfile({
       <div className={styles.content}>
 
         {/* ══ RESUMO ═══════════════════════════════════════════════ */}
-        {tab === "overview" && (
+        {activeTab === "overview" && (
           <div className={styles.overviewGrid}>
 
             {/* Left column */}
@@ -312,8 +320,8 @@ export function PatientProfile({
                 </dl>
               </SectionCard>
 
-              {/* Score card */}
-              {patient.behaviorScore != null && (
+              {/* Score card — somente perfis com acesso clínico */}
+              {showClinical && patient.behaviorScore != null && (
                 <SectionCard title="Score de comportamento">
                   <div className={styles.scoreRow}>
                     <div className={styles.scoreGauge}>
@@ -353,7 +361,7 @@ export function PatientProfile({
         )}
 
         {/* ══ DADOS PESSOAIS ═══════════════════════════════════════ */}
-        {tab === "personal" && (
+        {activeTab === "personal" && (
           <div className={styles.personalGrid}>
             <SectionCard title="Identificação">
               <dl className={styles.infoGrid}>
@@ -436,7 +444,7 @@ export function PatientProfile({
         )}
 
         {/* ══ RECEITAS ═════════════════════════════════════════════ */}
-        {tab === "prescriptions" && (
+        {showClinical && activeTab === "prescriptions" && (
           <div>
             <div className={styles.listHeader}>
               <p className={styles.listHeaderTitle}>{patientRx.length} receita{patientRx.length !== 1 ? "s" : ""}</p>

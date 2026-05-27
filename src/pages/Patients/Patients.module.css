@@ -76,7 +76,7 @@
 }
 
 /* ── Table ────────────────────────────────────────────────────── */
-.tableScroll { overflow-x: auto; }
+.tableScroll { overflow-x: auto; overflow-y: auto; max-height: min(70vh, 640px); }
 
 .table {
   width: 100%;

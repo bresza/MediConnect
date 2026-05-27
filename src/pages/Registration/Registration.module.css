@@ -275,6 +275,18 @@
   color: var(--muted-foreground);
 }
 
+.alertBanner {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--destructive) 35%, transparent);
+  background: color-mix(in srgb, var(--destructive) 10%, transparent);
+  color: var(--destructive);
+  font-size: 13px;
+  line-height: 1.45;
+  font-weight: 500;
+}
+
 .saveError {
   max-width: 320px;
   color: var(--destructive);

@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from "react"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import type { Patient } from "../types"
+import { useAuth } from "../contexts/authStore"
 import {
   getPatients,
   createPatient,
@@ -8,10 +9,13 @@ import {
   updatePatient,
   deletePatient,
 } from "../services/patients"
+import { invalidateLookupCaches } from "../services/lookups"
+import { patientKeys } from "./query/queryKeys"
 
 export interface UsePatientsReturn {
   patients:      Patient[]
   isLoading:     boolean
+  isFetching:    boolean
   error:         string | null
   addPatient:    (p: Omit<Patient, "id">) => Promise<Patient>
   addPatientWithPassword: (p: Omit<Patient, "id">, password: string) => Promise<Patient>
@@ -21,59 +25,62 @@ export interface UsePatientsReturn {
   reload:        () => Promise<void>
 }
 
-export function usePatients(): UsePatientsReturn {
-  const [patients,  setPatients]  = useState<Patient[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error,     setError]     = useState<string | null>(null)
+export function usePatients(options?: { enabled?: boolean }): UsePatientsReturn {
+  const { clinicId } = useAuth()
+  const queryClient = useQueryClient()
+  const enabled = options?.enabled ?? true
 
-  const load = useCallback(async () => {
-    setIsLoading(true); setError(null)
-    try {
-      setPatients(await getPatients())
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao carregar pacientes")
-    } finally { setIsLoading(false) }
-  }, [])
+  const query = useQuery({
+    queryKey: patientKeys.list(clinicId, {}),
+    queryFn: () => getPatients({ skipPhotos: true }),
+    enabled,
+    staleTime: 120_000,
+  })
 
-  useEffect(() => { load() }, [load])
+  const invalidate = () => {
+    invalidateLookupCaches()
+    return queryClient.invalidateQueries({ queryKey: patientKeys.all(clinicId) })
+  }
 
-  const addPatient = useCallback(async (p: Omit<Patient, "id">) => {
-    const created = await createPatient(p)
-    setPatients((prev) => [...prev, created])
-    return created
-  }, [])
+  const addPatientMutation = useMutation({
+    mutationFn: createPatient,
+    onSuccess: async () => { await invalidate() },
+  })
 
-  const addPatientWithPassword = useCallback(async (p: Omit<Patient, "id">, password: string) => {
-    const created = await createPatientWithPassword(p, password)
-    setPatients((prev) => [...prev, created])
-    return created
-  }, [])
+  const addPatientWithPasswordMutation = useMutation({
+    mutationFn: ({ p, password }: { p: Omit<Patient, "id">; password: string }) =>
+      createPatientWithPassword(p, password),
+    onSuccess: async () => { await invalidate() },
+  })
 
-  const createPatientAccess = useCallback(async (p: Patient, password: string) => {
-    const saved = await createPatientPortalAccess(p, password)
-    setPatients((prev) => prev.map((x) => (x.id === saved.id ? saved : x)))
-    return saved
-  }, [])
+  const createPatientAccessMutation = useMutation({
+    mutationFn: ({ p, password }: { p: Patient; password: string }) =>
+      createPatientPortalAccess(p, password),
+    onSuccess: async () => { await invalidate() },
+  })
 
-  const updatePatientFn = useCallback(async (p: Patient) => {
-    const saved = await updatePatient(p)
-    setPatients((prev) => prev.map((x) => (x.id === saved.id ? saved : x)))
-  }, [])
+  const updatePatientMutation = useMutation({
+    mutationFn: updatePatient,
+    onSuccess: async () => { await invalidate() },
+  })
 
-  const deletePatientFn = useCallback(async (id: string) => {
-    await deletePatient(id)
-    setPatients((prev) => prev.filter((p) => p.id !== id))
-  }, [])
+  const deletePatientMutation = useMutation({
+    mutationFn: deletePatient,
+    onSuccess: async () => { await invalidate() },
+  })
 
   return {
-    patients,
-    isLoading,
-    error,
-    addPatient,
-    addPatientWithPassword,
-    createPatientAccess,
-    updatePatient: updatePatientFn,
-    deletePatient: deletePatientFn,
-    reload: load,
+    patients: query.data ?? [],
+    isLoading: query.isLoading,
+    isFetching: query.isFetching,
+    error: query.error instanceof Error ? query.error.message : null,
+    addPatient: (p) => addPatientMutation.mutateAsync(p),
+    addPatientWithPassword: (p, password) =>
+      addPatientWithPasswordMutation.mutateAsync({ p, password }),
+    createPatientAccess: (p, password) =>
+      createPatientAccessMutation.mutateAsync({ p, password }),
+    updatePatient: async (p) => { await updatePatientMutation.mutateAsync(p) },
+    deletePatient: async (id) => { await deletePatientMutation.mutateAsync(id) },
+    reload: async () => { await query.refetch() },
   }
 }

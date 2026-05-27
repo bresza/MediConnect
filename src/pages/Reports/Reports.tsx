@@ -1,5 +1,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef, type ChangeEvent } from "react"
-import { getReports, createReport, updateReport } from "../../services/domain"
+import { useQueryClient } from "@tanstack/react-query"
+import { useReportsQuery } from "../../hooks/query/useReportsQuery"
+import { useAuth } from "../../contexts/authStore"
+import { reportKeys } from "../../hooks/query/queryKeys"
+import { createReport, updateReport } from "../../services/domain"
 import { REPORT_TEMPLATES, TEMPLATE_SPECIALTIES } from "../../data/reportTemplates"
 import type { ReportTemplate } from "../../data/reportTemplates"
 import type { Report, ReportStatus, User, Patient } from "../../types"
@@ -14,6 +18,7 @@ import { RefreshButton } from "../../components/ui/RefreshButton/RefreshButton"
 import { RichTextEditor } from "../../components/ui/RichTextEditor/RichTextEditor"
 import { chatComplete, isAIConfigured, AIError, type ChatMessage } from "../../services/ai"
 import { formatCrm, formatDate, sortByName, toTitleCase } from "../../utils"
+import { canAccess } from "../../utils/permissions"
 import styles from "./Reports.module.css"
 
 interface ReportsProps { currentUser: User; patients?: Patient[] }
@@ -329,8 +334,10 @@ function TemplateSelector({ onSelect, onClose }: TemplateSelectorProps) {
 
 // ─── Main ─────────────────────────────────────────────────────────
 export function Reports({ currentUser, patients = [] }: ReportsProps) {
-  const [reports,       setReports]       = useState<Report[]>([])
-  const [isLoading,     setIsLoading]     = useState(true)
+  const allowed = canAccess(currentUser.role, "reports")
+  const { clinicId } = useAuth()
+  const queryClient = useQueryClient()
+  const { data: reports = [], isLoading, refetch } = useReportsQuery(allowed)
   const [modalOpen,     setModalOpen]     = useState(false)
   const [templateModal, setTemplateModal] = useState(false)
   const [editingReport, setEditingReport] = useState<Report | null>(null)
@@ -364,14 +371,10 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
     (r) => r.patientName,
   )
 
-  const load = useCallback(async () => {
-    setIsLoading(true)
-    try { setReports(await getReports()) }
-    catch { setReports([]) }
-    finally { setIsLoading(false) }
-  }, [])
-
-  useEffect(() => { void load() }, [load])
+  const refreshReports = useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: reportKeys.all(clinicId) })
+    await refetch()
+  }, [queryClient, clinicId, refetch])
 
   function setField<K extends keyof ReportForm>(k: K, v: ReportForm[K]) {
     setForm((p) => ({ ...p, [k]: v })); setError(null)
@@ -507,8 +510,8 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
     setUpdatingId(r.id)
     try {
       const updated = await updateReport({ ...r, status: nextStatus })
-      setReports((prev) => prev.map((x) => (x.id === updated.id ? updated : x)))
-      await load()
+      void updated
+      await refreshReports()
     } catch (err) {
       setListError(err instanceof Error ? err.message : "Erro ao atualizar status do laudo")
     } finally {
@@ -539,12 +542,11 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
         date:          new Date().toISOString().slice(0, 10),
       }
       if (editingReport) {
-        const updated = await updateReport({ ...editingReport, ...payload })
-        setReports((prev) => prev.map((r) => r.id === updated.id ? updated : r))
+        await updateReport({ ...editingReport, ...payload })
       } else {
-        const created = await createReport(payload)
-        setReports((prev) => [created, ...prev])
+        await createReport(payload)
       }
+      await refreshReports()
       setModalOpen(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao salvar laudo")
@@ -563,6 +565,15 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
     display: "block", marginBottom: 4,
   }
 
+  if (!allowed) {
+    return (
+      <div style={{ padding: 48, textAlign: "center", color: "var(--muted-foreground)" }}>
+        <p style={{ fontSize: 18, fontWeight: 700, color: "var(--foreground)" }}>Acesso restrito</p>
+        <p style={{ fontSize: 13 }}>Seu perfil não tem permissão para acessar laudos e relatórios médicos.</p>
+      </div>
+    )
+  }
+
   return (
     <div>
       <Topbar
@@ -570,7 +581,7 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
         subtitle={`${visibleReports.length} laudo${visibleReports.length !== 1 ? "s" : ""}`}
         action={
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <RefreshButton onRefresh={load} />
+            <RefreshButton onRefresh={refreshReports} />
             <Button onClick={openNew}>+ Novo laudo</Button>
           </div>
         }

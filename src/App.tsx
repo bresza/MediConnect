@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react"
 import { AuthProvider } from "./contexts/AuthContext"
+import { QueryProvider } from "./contexts/QueryProvider"
 import { useAuth }      from "./contexts/authStore"
 import { AppRouter } from "./AppRouter"
 import { Login } from "./pages/Login/Login"
@@ -44,8 +45,10 @@ function AppInner() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AppInner />
-    </AuthProvider>
+    <QueryProvider>
+      <AuthProvider>
+        <AppInner />
+      </AuthProvider>
+    </QueryProvider>
   )
 }

@@ -1,10 +1,20 @@
-import { useState, useEffect, useCallback } from "react"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import type { Appointment } from "../types"
-import { getAppointments, createAppointment, updateAppointment, deleteAppointment } from "../services/appointments"
+import { useAuth } from "../contexts/authStore"
+import {
+  getAppointments,
+  createAppointment,
+  updateAppointment,
+  deleteAppointment,
+} from "../services/appointments"
+import { invalidateLookupCaches } from "../services/lookups"
+import { getDefaultAppointmentRange } from "./query/appointmentRange"
+import { appointmentKeys } from "./query/queryKeys"
 
 export interface UseAppointmentsReturn {
   appointments:      Appointment[]
   isLoading:         boolean
+  isFetching:        boolean
   error:             string | null
   addAppointment:    (a: Omit<Appointment, "id">) => Promise<void>
   updateAppointment: (a: Appointment) => Promise<void>
@@ -12,36 +22,47 @@ export interface UseAppointmentsReturn {
   reload:            () => Promise<void>
 }
 
-export function useAppointments(): UseAppointmentsReturn {
-  const [appointments, setAppointments] = useState<Appointment[]>([])
-  const [isLoading,    setIsLoading]    = useState(true)
-  const [error,        setError]        = useState<string | null>(null)
+export function useAppointments(options?: { enabled?: boolean }): UseAppointmentsReturn {
+  const { clinicId } = useAuth()
+  const queryClient = useQueryClient()
+  const enabled = options?.enabled ?? true
+  const range = getDefaultAppointmentRange()
 
-  const load = useCallback(async () => {
-    setIsLoading(true); setError(null)
-    try {
-      setAppointments(await getAppointments())
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao carregar agendamentos")
-    } finally { setIsLoading(false) }
-  }, [])
+  const query = useQuery({
+    queryKey: appointmentKeys.range(clinicId, range),
+    queryFn: () => getAppointments(range),
+    enabled,
+    staleTime: 30_000,
+  })
 
-  useEffect(() => { load() }, [load])
+  const invalidate = () => {
+    invalidateLookupCaches()
+    return queryClient.invalidateQueries({ queryKey: appointmentKeys.all(clinicId) })
+  }
 
-  const addAppointment = useCallback(async (a: Omit<Appointment, "id">) => {
-    const created = await createAppointment(a)
-    setAppointments((prev) => [...prev, created])
-  }, [])
+  const addMutation = useMutation({
+    mutationFn: createAppointment,
+    onSuccess: async () => { await invalidate() },
+  })
 
-  const updateAppointmentFn = useCallback(async (a: Appointment) => {
-    const saved = await updateAppointment(a)
-    setAppointments((prev) => prev.map((x) => (x.id === saved.id ? saved : x)))
-  }, [])
+  const updateMutation = useMutation({
+    mutationFn: updateAppointment,
+    onSuccess: async () => { await invalidate() },
+  })
 
-  const deleteAppointmentFn = useCallback(async (id: string) => {
-    await deleteAppointment(id)
-    setAppointments((prev) => prev.filter((x) => x.id !== id))
-  }, [])
+  const deleteMutation = useMutation({
+    mutationFn: deleteAppointment,
+    onSuccess: async () => { await invalidate() },
+  })
 
-  return { appointments, isLoading, error, addAppointment, updateAppointment: updateAppointmentFn, deleteAppointment: deleteAppointmentFn, reload: load }
+  return {
+    appointments: query.data ?? [],
+    isLoading: query.isLoading,
+    isFetching: query.isFetching,
+    error: query.error instanceof Error ? query.error.message : null,
+    addAppointment: async (a) => { await addMutation.mutateAsync(a) },
+    updateAppointment: async (a) => { await updateMutation.mutateAsync(a) },
+    deleteAppointment: async (id) => { await deleteMutation.mutateAsync(id) },
+    reload: async () => { await query.refetch() },
+  }
 }

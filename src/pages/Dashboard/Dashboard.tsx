@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useState } from "react"
-import { getReports } from "../../services/domain"
-import type { Report } from "../../types"
+import { useCallback } from "react"
+import { useReportsQuery } from "../../hooks/query/useReportsQuery"
 import { Topbar } from "../../components/layout/Topbar/Topbar"
 import { Card } from "../../components/ui/Card/Card"
 import { Badge } from "../../components/ui/Badge/Badge"
@@ -53,20 +52,16 @@ function todayKey() {
 export function Dashboard({ patients, appointments, currentUser, onNavigate, onRefresh }: DashboardProps) {
   const isDoctor = currentUser.role === "doctor"
 
-  const [allReports, setAllReports] = useState<Report[]>([])
-  const loadReports = useCallback(() => {
-    return getReports()
-      .then(setAllReports)
-      .catch(() => setAllReports([]))
-  }, [])
-  useEffect(() => { void loadReports() }, [loadReports])
+  const { data: allReports = [], refetch: refetchReports } = useReportsQuery(
+    currentUser.role !== "patient",
+  )
 
   const handleRefresh = useCallback(async () => {
     await Promise.all([
       onRefresh ? Promise.resolve(onRefresh()) : Promise.resolve(),
-      loadReports(),
+      refetchReports(),
     ])
-  }, [onRefresh, loadReports])
+  }, [onRefresh, refetchReports])
 
   const isCurrentDoctor = (doctorId?: string, doctorName?: string) =>
     doctorId === currentUser.id ||

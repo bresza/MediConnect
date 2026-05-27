@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { getMessages, sendMessage } from "../../services/domain"
-import { getPatients } from "../../services/patients"
-import type { Message, MessageTemplate, Patient } from "../../types"
+import { processInboundWhatsAppReplies } from "../../services/whatsappInbound"
+import { runAppointmentReminders } from "../../services/appointmentReminders"
+import type { Appointment, CommunicationChannel, Message, MessageTemplate, Patient } from "../../types"
 import { Topbar } from "../../components/layout/Topbar/Topbar"
 import { Card } from "../../components/ui/Card/Card"
 import { Badge } from "../../components/ui/Badge/Badge"
@@ -10,38 +11,77 @@ import { Button } from "../../components/ui/Button/Button"
 import { Select } from "../../components/ui/Select/Select"
 import styles from "./Messages.module.css"
 
-// Presets de UI (não são dados da API — são atalhos de redação para a
-// secretaria preencher rapidamente a caixa de SMS). Como o canal real
-// disponível na Edge Function `send-sms` é apenas SMS, todos os presets
-// usam esse canal.
-const SMS_TEMPLATES: MessageTemplate[] = [
-  { id: 1, name: "Lembrete de consulta (48h)", channel: "SMS", content: "Olá {nome}, lembrete da sua consulta em {data} às {hora}." },
-  { id: 2, name: "Confirmação de agendamento", channel: "SMS", content: "Olá {nome}, sua consulta foi confirmada para {data} às {hora}." },
-  { id: 3, name: "Resultado de exame disponível", channel: "SMS", content: "Olá {nome}, seu resultado de exame está disponível." },
+const MESSAGE_TEMPLATES: MessageTemplate[] = [
+  { id: 1, name: "Lembrete de consulta (48h)", channel: "WhatsApp", content: "Olá {nome}, lembrete da sua consulta em {data} às {hora}." },
+  { id: 2, name: "Confirmação de agendamento", channel: "WhatsApp", content: "Olá {nome}, sua consulta foi confirmada para {data} às {hora}." },
+  { id: 3, name: "Resultado de exame disponível", channel: "WhatsApp", content: "Olá {nome}, seu resultado de exame está disponível." },
   { id: 4, name: "Cancelamento de consulta", channel: "SMS", content: "Olá {nome}, sua consulta de {data} foi cancelada." },
-  { id: 5, name: "Boas-vindas ao paciente", channel: "SMS", content: "Olá {nome}, seja bem-vindo(a) à Clínica Mediconnect!" },
+  { id: 5, name: "Boas-vindas ao paciente", channel: "WhatsApp", content: "Olá {nome}, seja bem-vindo(a) à Clínica Mediconnect!" },
 ]
 
-export function Messages() {
+const CHANNEL_OPTIONS: CommunicationChannel[] = ["WhatsApp", "SMS"]
+
+interface MessagesProps {
+  appointments?: Appointment[]
+  patients?: Patient[]
+  clinicName?: string
+}
+
+export function Messages({
+  appointments = [],
+  patients: patientsProp = [],
+  clinicName,
+}: MessagesProps) {
   const [showModal,   setShowModal]   = useState(false)
   const [messages,    setMessages]    = useState<Message[]>([])
-  const [patients,    setPatients]    = useState<Patient[]>([])
+  const [patients,    setPatients]    = useState<Patient[]>(patientsProp)
   const [patientId,   setPatientId]   = useState("")
+  const [channel,     setChannel]     = useState<CommunicationChannel>("WhatsApp")
+  const [fallbackSms, setFallbackSms] = useState(true)
   const [templateId,  setTemplateId]  = useState("")
   const [content,     setContent]     = useState("")
   const [error,       setError]       = useState<string | null>(null)
   const [isSending,   setIsSending]   = useState(false)
+  const [automationStatus, setAutomationStatus] = useState<string | null>(null)
+  const [isProcessingInbound, setIsProcessingInbound] = useState(false)
 
-  const templates = SMS_TEMPLATES
+  const templates = MESSAGE_TEMPLATES.filter(
+    (t) => t.channel === channel || t.channel === "SMS" || t.channel === "WhatsApp",
+  )
 
   useEffect(() => {
     getMessages().then(setMessages)
-    getPatients().then(setPatients)
   }, [])
+
+  useEffect(() => {
+    if (patientsProp.length > 0) setPatients(patientsProp)
+  }, [patientsProp])
+
+  const handleProcessInbound = useCallback(async () => {
+    setIsProcessingInbound(true)
+    setAutomationStatus(null)
+    try {
+      const inbound = await processInboundWhatsAppReplies(appointments, patients, clinicName)
+      const reminders = await runAppointmentReminders(appointments, new Map(patients.map((p) => [p.id, p])))
+      const parts: string[] = []
+      if (inbound.replied > 0) parts.push(`${inbound.replied} resposta(s) automática(s)`)
+      if (reminders.sent > 0) parts.push(`${reminders.sent} lembrete(s) enviado(s)`)
+      if (inbound.errors.length > 0 || reminders.errors.length > 0) {
+        parts.push([...inbound.errors, ...reminders.errors].join(" · "))
+      }
+      setAutomationStatus(parts.length > 0 ? parts.join(" · ") : "Nenhuma mensagem pendente no momento.")
+    } catch (err) {
+      setAutomationStatus(err instanceof Error ? err.message : "Falha ao processar automações.")
+    } finally {
+      setIsProcessingInbound(false)
+    }
+  }, [appointments, patients, clinicName])
 
   function closeModal() {
     setShowModal(false)
     setPatientId("")
+    setChannel("WhatsApp")
+    setFallbackSms(true)
     setTemplateId("")
     setContent("")
     setError(null)
@@ -49,9 +89,12 @@ export function Messages() {
 
   function handleTemplateChange(id: string) {
     setTemplateId(id)
-    const template = templates.find((t) => String(t.id) === id)
+    const template = MESSAGE_TEMPLATES.find((t) => String(t.id) === id)
     const patient = patients.find((p) => p.id === patientId)
-    if (template) setContent(template.content.replace(/\{nome\}/g, patient?.name ?? ""))
+    if (template) {
+      setChannel(template.channel === "SMS" ? "SMS" : "WhatsApp")
+      setContent(template.content.replace(/\{nome\}/g, patient?.name ?? ""))
+    }
     setError(null)
   }
 
@@ -64,21 +107,20 @@ export function Messages() {
     setIsSending(true)
     setError(null)
     try {
-      // sendMessage recebe phoneNumber + content e monta o body da Edge
-      // Function exatamente como `{ message, phone_number, patient_id? }`.
       const sent = await sendMessage({
         patientId: patient.id,
         patientName: patient.name,
         phoneNumber: patient.phone,
-        channel: "SMS",
+        channel,
         content: content.trim(),
         status: "Pending",
         date: new Date().toISOString().slice(0, 10),
+        fallbackSms: channel === "WhatsApp" ? fallbackSms : undefined,
       })
       setMessages((prev) => [sent, ...prev])
       closeModal()
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao enviar SMS.")
+      setError(err instanceof Error ? err.message : "Erro ao enviar mensagem.")
     } finally {
       setIsSending(false)
     }
@@ -90,15 +132,32 @@ export function Messages() {
     { label: "Falhos",    value: messages.filter((m) => m.status === "Failed").length,    cls: styles.statRed    },
   ]
 
+  const sendLabel = channel === "WhatsApp"
+    ? (fallbackSms ? "Enviar WhatsApp (com SMS de reserva)" : "Enviar WhatsApp")
+    : "Enviar SMS"
+
   return (
     <div>
       <Topbar
         title="Comunicação"
-        subtitle="Mensagens enviadas aos pacientes"
+        subtitle="SMS, WhatsApp e respostas automáticas"
         action={<Button onClick={() => setShowModal(true)}>Nova mensagem</Button>}
       />
 
-      {/* Stats */}
+      <Card className={styles.automationCard}>
+        <p className={styles.automationTitle}>Automação ativa</p>
+        <p className={styles.automationText}>
+          Lembretes automáticos: 30, 15 e 7 dias antes, 3 dias antes e 24h antes da consulta.
+          Quando o paciente responder no WhatsApp (CONFIRMAR, HORÁRIO, REAGENDAR, AJUDA), o sistema envia a resposta adequada.
+        </p>
+        <div className={styles.automationActions}>
+          <Button variant="outline" onClick={handleProcessInbound} disabled={isProcessingInbound}>
+            {isProcessingInbound ? "Processando..." : "Processar respostas agora"}
+          </Button>
+        </div>
+        {automationStatus && <p className={styles.automationStatus}>{automationStatus}</p>}
+      </Card>
+
       <div className={styles.statsGrid}>
         {stats.map((s) => (
           <Card key={s.label} className={styles.statCard}>
@@ -109,7 +168,6 @@ export function Messages() {
       </div>
 
       <div className={styles.layout}>
-        {/* Table */}
         <Card>
           <div className={styles.cardHeader}>
             <p className={styles.cardHeaderTitle}>Histórico de mensagens</p>
@@ -157,11 +215,10 @@ export function Messages() {
           </div>
         </Card>
 
-        {/* Templates */}
         <Card className={styles.templatesCard}>
           <p className={styles.templatesTitle}>Templates</p>
           <div className={styles.templateList}>
-            {templates.map((tpl) => (
+            {MESSAGE_TEMPLATES.map((tpl) => (
               <div key={tpl.id} className={styles.templateItem}>
                 <div className={styles.templateItemHeader}>
                   <p className={styles.templateName}>{tpl.name}</p>
@@ -174,7 +231,6 @@ export function Messages() {
         </Card>
       </div>
 
-      {/* Modal */}
       {showModal && (
         <div className={styles.modalOverlay} onClick={closeModal}>
           <Card className={styles.modal} onClick={(e) => e.stopPropagation()}>
@@ -189,7 +245,26 @@ export function Messages() {
                   setError(null)
                 }}
               />
-              <Select label="Canal" options={["SMS"]} value="SMS" disabled />
+              <Select
+                label="Canal"
+                options={CHANNEL_OPTIONS}
+                value={channel}
+                onChange={(e) => {
+                  setChannel(e.target.value as CommunicationChannel)
+                  setTemplateId("")
+                  setError(null)
+                }}
+              />
+              {channel === "WhatsApp" && (
+                <label className={styles.checkboxRow}>
+                  <input
+                    type="checkbox"
+                    checked={fallbackSms}
+                    onChange={(e) => setFallbackSms(e.target.checked)}
+                  />
+                  <span>Se WhatsApp falhar, enviar SMS (Twilio)</span>
+                </label>
+              )}
               <Select
                 label="Template"
                 options={templates.map((t) => ({ value: String(t.id), label: t.name }))}
@@ -212,7 +287,7 @@ export function Messages() {
             <div className={styles.modalFooter}>
               <Button variant="ghost" onClick={closeModal}>Cancelar</Button>
               <Button onClick={handleSend} disabled={isSending}>
-                {isSending ? "Enviando..." : "Enviar SMS"}
+                {isSending ? "Enviando..." : sendLabel}
               </Button>
             </div>
           </Card>

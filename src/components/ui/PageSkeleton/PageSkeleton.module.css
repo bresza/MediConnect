@@ -1,0 +1,37 @@
+.wrap {
+  padding: 1.5rem;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.bar {
+  height: 2rem;
+  width: 40%;
+  max-width: 280px;
+  border-radius: 0.5rem;
+  background: var(--muted, #e5e7eb);
+  margin-bottom: 1.5rem;
+}
+
+.grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+}
+
+.card {
+  height: 96px;
+  border-radius: 0.75rem;
+  background: var(--muted, #e5e7eb);
+}
+
+.cardWide {
+  grid-column: 1 / -1;
+  height: 200px;
+  border-radius: 0.75rem;
+  background: var(--muted, #e5e7eb);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}

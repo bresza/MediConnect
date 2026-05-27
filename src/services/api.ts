@@ -143,7 +143,14 @@ export class ApiError extends Error {
 function connectionError(): ApiError {
   return new ApiError(
     0,
-    "Não foi possível conectar ao Supabase configurado. Verifique a URL do projeto, a conexão de rede ou se o projeto está ativo.",
+    "Não foi possível alcançar a API. Verifique URL/CORS da API e tente novamente.",
+  )
+}
+
+function timeoutError(): ApiError {
+  return new ApiError(
+    0,
+    "A operação demorou demais. Tente novamente.",
   )
 }
 
@@ -194,6 +201,11 @@ async function performFetch(path: string, options: RequestOptions): Promise<Resp
       signal: rest.signal ?? controller.signal,
       body: body !== undefined ? JSON.stringify(body) : undefined,
     })
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw timeoutError()
+    }
+    throw connectionError()
   } finally {
     window.clearTimeout(timeoutId)
   }
@@ -218,11 +230,25 @@ export async function apiRequest<T>(
 
   await ensureFreshToken()
 
+  const attempt = async (): Promise<Response> => {
+    try {
+      return await performFetch(path, options)
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 0) throw err
+      throw connectionError()
+    }
+  }
+
   let res: Response
   try {
-    res = await performFetch(path, options)
-  } catch {
-    throw connectionError()
+    res = await attempt()
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 0) {
+      await new Promise((r) => setTimeout(r, 400))
+      res = await attempt()
+    } else {
+      throw err
+    }
   }
 
   // Em 401 com refresh_token disponivel, tenta renovar a sessao e refazer a request uma unica vez.

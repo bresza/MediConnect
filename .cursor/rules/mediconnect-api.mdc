@@ -1,0 +1,48 @@
+---
+description: OBRIGATÓRIO — só integrar o que a API documenta; nunca inventar colunas
+globs:
+  - src/services/**/*.ts
+  - src/hooks/**/*.ts
+  - src/pages/**/*.tsx
+alwaysApply: true
+---
+
+# MediConnect — API e schema
+
+## Regra principal (não negociável)
+
+O usuário pede seguir **a API documentada**, não o tipo TypeScript nem “boas práticas” de performance.
+
+- **Fonte da verdade:** `docs/api-frontend-audit.md`, `docs/schema/*.md`, e selects já usados e estáveis no repo (ex.: `getPatientsForReports`, `lookups.ts`).
+- **Proibido:** adicionar colunas em `select=` porque existem em `Patient`, em mocks ou em refactors de performance (`SLIM_*`, `MINIMAL_*` com campos extras).
+- **Proibido:** assumir Edge Functions ou tabelas sem entrada na auditoria da API.
+- Se a API não documenta um campo, o front **não** o pede no REST — usa default na UI ou pede ao back-end por escrito.
+
+Erros como `column patients.status does not exist` foram causados por o Agent, não pelo usuário. Não repetir.
+
+## Antes de mudar `select=` ou tipos de API
+
+1. Ler `docs/api-frontend-audit.md` e `docs/schema/patients.md`.
+2. Copiar o `select` de uma função que já funciona em produção; não inventar lista nova.
+3. `isMissingColumnError` em `schemaSafe.ts` é último recurso, não licença para tentar colunas aleatórias.
+
+## Edge Functions
+
+- Não chamar `/functions/v1/*` no carregamento do painel por padrão.
+- Só habilitar com `VITE_ENABLE_EDGE_AUTOMATION=true` no `.env` após deploy + CORS no Supabase.
+
+## Listagem de pacientes
+
+- Listas: `CORE_PATIENT_SELECT` em `getPatients()` — nunca incluir `status`, `gender`, etc. sem migration.
+- Detalhe/edição: `getPatientById` pode usar `*` se necessário.
+
+## Quando o usuário pedir feature nova
+
+- Desenvolvedor pode ser **só front-end**: não assumir acesso a Supabase CLI, migrations ou deploy de functions.
+- Se precisar de coluna nova: documentar pedido ao back-end; no front usar defaults e `select` mínimo até a coluna existir.
+- Não copiar campos de mocks ou tipos TypeScript sem verificar PostgREST ou `docs/schema/`.
+
+## Spec Kit
+
+- Para features grandes: `/speckit-specify` → plan → tasks → implement.
+- Constitution: manter princípio “schema documentado antes de select estreito”.

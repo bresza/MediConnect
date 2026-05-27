@@ -1,5 +1,12 @@
-export { login, createPatientAccount, requestPasswordReset, refreshSession } from "./auth"
-export type { LoginResponse, LoginPayload, PatientSignupPayload, PatientSignupResponse, RefreshSessionResponse } from "./auth"
+export { login, createPatientAccount, requestPasswordReset, refreshSession, getUserInfoById } from "./auth"
+export type {
+  LoginResponse,
+  LoginPayload,
+  PatientSignupPayload,
+  PatientSignupResponse,
+  RefreshSessionResponse,
+  UserInfoByIdResponse,
+} from "./auth"
 
 export {
   invokeRegisterPatient,
@@ -38,3 +45,11 @@ export {
 
 export { buildAIApiContextFromAppState } from "./aiContext"
 export type { AIContextFromAppStateInput } from "./aiContext"
+
+export { sendSms, sendWhatsApp, sendOutboundMessage, toE164BR } from "./messaging"
+export type { SendSmsInput, SendWhatsAppInput, SendResult, OutboundMessageInput } from "./messaging"
+export {
+  notifyAppointmentBooked,
+  notifyAppointmentCancelled,
+  notifyAppointmentRescheduled,
+} from "./appointmentNotifications"

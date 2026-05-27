@@ -32,6 +32,42 @@ const STEP_LABELS = [
   "Saúde e Clínica",
 ]
 
+const FIELD_LABELS: Partial<Record<keyof FormState, string>> = {
+  name: "Nome completo",
+  gender: "Sexo biológico",
+  dob: "Data de nascimento",
+  cpf: "CPF",
+  phone: "Celular",
+  email: "E-mail",
+  emergencyName: "Nome do contato de emergência",
+  portalPassword: "Senha do portal",
+  portalConfirmPassword: "Confirmação de senha",
+}
+
+const FIELD_STEP: Partial<Record<keyof FormState, number>> = {
+  name: 1,
+  gender: 1,
+  dob: 1,
+  cpf: 2,
+  phone: 4,
+  email: 4,
+  emergencyName: 4,
+  portalPassword: 4,
+  portalConfirmPassword: 4,
+}
+
+function formatValidationSummary(
+  fieldErrors: Partial<Record<keyof FormState, string>>,
+): string {
+  const parts = Object.entries(fieldErrors).map(([key, msg]) => {
+    const label = FIELD_LABELS[key as keyof FormState] ?? key
+    const step = FIELD_STEP[key as keyof FormState]
+    const tab = step ? STEP_LABELS[step - 1] : ""
+    return tab ? `${label} (${tab}): ${msg}` : `${label}: ${msg}`
+  })
+  return parts.join(" · ")
+}
+
 // ─── Form state ───────────────────────────────────────────────────
 interface FormState {
   // Step 1 — Identificação
@@ -385,7 +421,8 @@ export function Registration({
       const phone = onlyDigits(form.phone)
       const email = form.email.trim()
       if (!phone)        e.phone = "Celular é obrigatório"
-      else if (phone.length !== 11) e.phone = "Celular deve estar no formato (00)-00000-0000"
+      else if (phone.length < 10 || phone.length > 11)
+        e.phone = "Informe DDD + número (10 ou 11 dígitos)"
       if (!email) e.email = "E-mail é obrigatório"
       else if (!isValidEmail(email)) e.email = "E-mail inválido"
       if (form.emergencyPhone && !form.emergencyName)
@@ -408,15 +445,26 @@ export function Registration({
   }
 
   function validateRequiredSteps(): boolean {
+    const merged: Partial<Record<keyof FormState, string>> = {}
+    let firstInvalidStep = 0
+
     for (const targetStep of [1, 2, 4]) {
-      const e = validationForStep(targetStep)
-      if (Object.keys(e).length > 0) {
-        setErrors(e)
-        setStep(targetStep)
-        return false
+      const stepErrors = validationForStep(targetStep)
+      if (Object.keys(stepErrors).length > 0) {
+        Object.assign(merged, stepErrors)
+        if (!firstInvalidStep) firstInvalidStep = targetStep
       }
     }
+
+    if (Object.keys(merged).length > 0) {
+      setErrors(merged)
+      setStep(firstInvalidStep)
+      setSaveError(formatValidationSummary(merged))
+      return false
+    }
+
     setErrors({})
+    setSaveError(null)
     return true
   }
 
@@ -498,12 +546,12 @@ export function Registration({
   }
 
   async function handleNext() {
-    setSaveError(null)
     if (isEditing) {
       if (!validateRequiredSteps()) return
       await savePatient()
       return
     }
+    setSaveError(null)
     if (!validateStep()) return
     if (step < totalSteps) { setStep((s) => s + 1); return }
     await savePatient()
@@ -572,6 +620,12 @@ export function Registration({
       />
 
       <Card className={styles.formCard}>
+        {(saveError || Object.keys(errors).length > 0) && (
+          <div className={styles.alertBanner} role="alert">
+            {saveError ?? "Verifique os campos obrigatórios destacados abaixo."}
+          </div>
+        )}
+
         {/* Stepper */}
         <div className={styles.stepper}>
         {STEP_LABELS.slice(0, totalSteps).map((label, i) => {
@@ -643,7 +697,8 @@ export function Registration({
               </div>
               <div className={`${styles.grid3} ${styles.marginTop}`}>
                 <Select label="Sexo biológico" options={GENDERS}
-                  value={form.gender} onChange={(e) => set("gender", e.target.value)} />
+                  value={form.gender} onChange={(e) => set("gender", e.target.value)}
+                  error={errors.gender} />
                 <Input label="Data de nascimento" type="date" required max={TODAY}
                   value={form.dob} onChange={(e) => set("dob", e.target.value)} error={errors.dob} />
                 <Select label="Estado civil" options={MARITAL}

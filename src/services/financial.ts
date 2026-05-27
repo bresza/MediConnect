@@ -2,11 +2,12 @@ import { apiRequest, getApiUserId } from "./api"
 import type { FinancialRecord, PaymentMethod, PaymentStatus } from "../types"
 
 const FINANCIAL_RECORD_EXAM = "Registro Financeiro"
+type ReportApiStatus = "draft" | "completed"
 
 interface ApiReport {
   id: string
   patient_id: string
-  status?: string
+  status?: ReportApiStatus
   exam?: string
   requested_by?: string
   cid_code?: string
@@ -62,7 +63,7 @@ function apiToFinancialRecord(api: ApiReport, patientName = ""): FinancialRecord
     paymentMethod: (json.payment_method ?? "Pix") as PaymentMethod,
     healthInsurance: json.health_insurance,
     dueDate: json.due_date ?? api.created_at?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
-    status: (json.status ?? (api.status === "delivered" ? "Paid" : "Pending")) as PaymentStatus,
+    status: (json.status ?? (api.status === "completed" ? "Paid" : "Pending")) as PaymentStatus,
     observations: json.observations ?? api.conclusion,
   }
 }
@@ -84,7 +85,7 @@ function financialRecordToReport(record: Omit<FinancialRecord, "id">): Record<st
   const uid = getApiUserId()
   return compactPayload({
     patient_id: record.patientId,
-    status: record.status === "Paid" ? "delivered" : "draft",
+    status: record.status === "Paid" ? "completed" : "draft",
     exam: FINANCIAL_RECORD_EXAM,
     requested_by: uid ?? undefined,
     diagnosis: "Lançamento financeiro",

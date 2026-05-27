@@ -5,7 +5,7 @@ import {
   setSessionRefresher,
   setUnauthorizedHandler,
 } from "../services/api"
-import { refreshSession } from "../services/auth"
+import { logoutSession, refreshSession } from "../services/auth"
 import {
   AuthContext,
   authReducer,
@@ -30,7 +30,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
   }, [state.token, state.refreshToken, state.expiresAt, state.user?.id])
 
-  const logout = useCallback(() => dispatch({ type: "LOGOUT" }), [])
+  const logout = useCallback(() => {
+    const currentToken = state.token
+    if (currentToken) {
+      void logoutSession(currentToken).catch((err) => {
+        console.warn("[auth] logout remoto falhou:", err)
+      })
+    }
+    dispatch({ type: "LOGOUT" })
+  }, [state.token])
 
   useEffect(() => { setUnauthorizedHandler(logout) }, [logout])
 

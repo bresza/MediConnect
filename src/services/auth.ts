@@ -1,4 +1,4 @@
-import { SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_CONFIG_ERROR } from "./api"
+import { SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_CONFIG_ERROR, apiRequest, ApiError } from "./api"
 import {
   invokeRegisterPatient,
   invokeRegisterPatientWithPassword,
@@ -6,8 +6,10 @@ import {
   RegisterPatientApiError,
 } from "./registerPatient"
 import { messageFromProblemDetails, parseProblemDetails } from "./problemDetails"
-import { isValidCpf } from "../utils"
+import { isValidCpf, isValidEmail } from "../utils"
 import type { User, UserRole } from "../types"
+
+type ApiUserRole = "admin" | "gestor" | "medico" | "secretaria" | "paciente" | "user"
 
 function assertSupabaseConfigured(): void {
   if (SUPABASE_CONFIG_ERROR) throw new Error(SUPABASE_CONFIG_ERROR)
@@ -49,6 +51,24 @@ export interface PasswordResetResponse {
   success: boolean
   message: string
 }
+export interface UserInfoByIdResponse {
+  user?: {
+    id?: string
+    email?: string
+  }
+  profile?: {
+    full_name?: string
+    phone?: string
+    avatar_url?: string | null
+  }
+  roles?: string[]
+  permissions?: {
+    isAdmin?: boolean
+    canManageUsers?: boolean
+  }
+  doctor?: Record<string, unknown> | null
+  patient?: Record<string, unknown> | null
+}
 
 const AUTH_TIMEOUT_MS = 15000
 
@@ -64,6 +84,24 @@ function isNetworkFailure(err: unknown): boolean {
 
 function connectionMessage(): string {
   return "Não foi possível conectar ao Supabase configurado. Verifique se o projeto está ativo, se a URL em .env está correta e se sua rede permite acesso a supabase.co."
+}
+
+function authHeaders(): HeadersInit {
+  return {
+    "Content-Type": "application/json",
+    "Accept": "application/json, application/problem+json",
+    "apikey": SUPABASE_ANON_KEY,
+    "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+  }
+}
+
+function authHeadersWithBearer(token: string): HeadersInit {
+  return {
+    "Content-Type": "application/json",
+    "Accept": "application/json, application/problem+json",
+    "apikey": SUPABASE_ANON_KEY,
+    "Authorization": `Bearer ${token}`,
+  }
 }
 
 async function fetchWithTimeout(
@@ -144,7 +182,7 @@ export async function refreshSession(refreshToken: string): Promise<RefreshSessi
     `${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json", "apikey": SUPABASE_ANON_KEY },
+      headers: authHeaders(),
       body: JSON.stringify({ refresh_token: refreshToken }),
     },
   )
@@ -162,6 +200,48 @@ export async function refreshSession(refreshToken: string): Promise<RefreshSessi
   }
 }
 
+export async function getUserInfoById(userIdInput: string): Promise<UserInfoByIdResponse> {
+  const userId = userIdInput.trim()
+  if (!userId) throw new Error("userId é obrigatório.")
+
+  const body = { userId }
+  try {
+    return await apiRequest<UserInfoByIdResponse>("/user-info-by-id", {
+      method: "POST",
+      body,
+      logErrors: false,
+    })
+  } catch (err) {
+    if (!(err instanceof ApiError) || err.status !== 404) throw err
+  }
+
+  return apiRequest<UserInfoByIdResponse>("/functions/v1/user-info-by-id", {
+    method: "POST",
+    body,
+    logErrors: false,
+  })
+}
+
+export async function logoutSession(token: string): Promise<void> {
+  if (!token || token.startsWith("local-dev:")) return
+
+  const res = await fetchWithTimeout(`${SUPABASE_URL}/auth/v1/logout`, {
+    method: "POST",
+    headers: authHeadersWithBearer(token),
+  })
+
+  if (res.status === 401) {
+    // Sessão já inválida no servidor; localmente ainda podemos encerrar normalmente.
+    return
+  }
+  if (res.status !== 204 && !res.ok) {
+    const raw = await res.text().catch(() => "")
+    const parsed = safeJsonParse(raw)
+    const message = parsed.error_description ?? parsed.message ?? parsed.error ?? "Não foi possível encerrar a sessão no servidor."
+    throw new Error(message)
+  }
+}
+
 export async function createPatientAccount(payload: PatientSignupPayload): Promise<PatientSignupResponse> {
   const name = payload.name.trim()
   const email = payload.email.trim().toLowerCase()
@@ -169,12 +249,14 @@ export async function createPatientAccount(payload: PatientSignupPayload): Promi
   const cpf = onlyDigits(payload.cpf)
   const phone = onlyDigits(payload.phone)
 
-  if (!name) throw new Error("Informe seu nome completo.")
+  if (!name || name.length < 3) throw new Error("Informe seu nome completo.")
   if (!email) throw new Error("Informe seu e-mail.")
+  if (!isValidEmail(email)) throw new Error("E-mail inválido.")
   if (password && password.length < 6) throw new Error("A senha deve ter pelo menos 6 caracteres.")
   if (cpf.length !== 11) throw new Error("Informe um CPF válido com 11 dígitos.")
   if (!isValidCpf(cpf)) throw new Error("CPF inválido. Confira os números e os dígitos verificadores.")
   if (!phone) throw new Error("Informe seu telefone.")
+  if (!/^\d{10,11}$/.test(phone)) throw new Error("Telefone inválido. Informe DDD + número (10-11 dígitos).")
 
   if (password.length >= 6) {
     return createPatientAccountWithPassword({
@@ -193,6 +275,90 @@ interface CreatePatientMagicLinkInput {
   cpf:   string
   phone: string
   dob?:  string
+}
+
+interface CreateUserMagicLinkResponse {
+  success?: boolean
+  user?: { id?: string; email?: string }
+  profile?: { patient_id?: string }
+  patient_id?: string
+  message?: string
+}
+
+async function sendMagicLinkOtp(email: string): Promise<void> {
+  const res = await fetchWithTimeout(`${SUPABASE_URL}/auth/v1/otp`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ email }),
+  })
+
+  if (!res.ok) {
+    const raw = await res.text().catch(() => "")
+    const parsed = safeJsonParse(raw)
+    const message =
+      parsed.error_description ??
+      parsed.message ??
+      parsed.error ??
+      (res.status === 429
+        ? "Muitas tentativas para envio de link. Aguarde alguns instantes e tente novamente."
+        : "Não foi possível enviar o link de acesso por e-mail.")
+    throw new Error(message)
+  }
+}
+
+async function createPatientViaCreateUserMagicLink(
+  input: CreatePatientMagicLinkInput,
+): Promise<PatientSignupResponse> {
+  const redirect_url = typeof window !== "undefined" ? window.location.origin : undefined
+  const payload = {
+    email: input.email,
+    full_name: input.name,
+    phone: input.phone || undefined,
+    role: "paciente",
+    create_patient_record: true,
+    cpf: input.cpf,
+    phone_mobile: input.phone || undefined,
+    redirect_url,
+  }
+
+  async function post(path: string): Promise<Response> {
+    return fetchWithTimeout(`${SUPABASE_URL}${path}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json, application/problem+json",
+        "apikey": SUPABASE_ANON_KEY,
+        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify(payload),
+    })
+  }
+
+  let res = await post("/functions/v1/create-user")
+  if (res.status === 404) res = await post("/create-user")
+
+  if (!res.ok) {
+    const raw = await res.text().catch(() => "")
+    const parsed = safeJsonParse(raw)
+    const message =
+      parsed.error_description ??
+      parsed.message ??
+      parsed.error ??
+      "Não foi possível criar o usuário com Magic Link."
+    throw new Error(message)
+  }
+
+  const data = await res.json().catch(() => null) as CreateUserMagicLinkResponse | null
+  return {
+    success: data?.success ?? true,
+    patient_id: data?.patient_id ?? data?.profile?.patient_id,
+    user_id: data?.user?.id,
+    email: data?.user?.email ?? input.email,
+    message:
+      data?.message ??
+      "Enviamos um link de acesso para o seu e-mail. Abra a mensagem para concluir o primeiro acesso.",
+    magicLinkSent: true,
+  }
 }
 
 async function createPatientAccountMagicLink(input: CreatePatientMagicLinkInput): Promise<PatientSignupResponse> {
@@ -227,9 +393,17 @@ async function createPatientAccountMagicLink(input: CreatePatientMagicLinkInput)
       )
     }
     if (err.status === 404) {
-      throw new Error(
-        "Cadastro por e-mail não está disponível neste ambiente. Defina uma senha para tentar o fluxo alternativo.",
-      )
+      try {
+        return await createPatientViaCreateUserMagicLink(input)
+      } catch {
+        await sendMagicLinkOtp(input.email)
+        return {
+          success: true,
+          email: input.email,
+          message: "Enviamos um link de acesso para o seu e-mail. Abra a mensagem para concluir o primeiro acesso.",
+          magicLinkSent: true,
+        }
+      }
     }
     throw new Error(err.message)
   }
@@ -275,12 +449,13 @@ async function createPatientAccountWithPassword(input: ClaimPatientInput): Promi
 // quando register-patient nao esta disponivel no projeto.
 async function createPatientViaGenericEndpoint(input: ClaimPatientInput): Promise<PatientSignupResponse> {
   const payload = {
-    email:     input.email,
-    password:  input.password,
-    full_name: input.name,
-    phone:     input.phone || undefined,
-    cpf:       input.cpf,
-    role:      "paciente",
+    email:                 input.email,
+    password:              input.password,
+    full_name:             input.name,
+    role:                  "paciente",
+    create_patient_record: true,
+    cpf:                   input.cpf,
+    phone_mobile:          input.phone || undefined,
   }
 
   async function post(path: string): Promise<Response> {
@@ -454,42 +629,48 @@ async function claimExistingPatientAccount(input: ClaimPatientInput): Promise<Pa
   }
 }
 
-async function requestPasswordResetAt(path: string, email: string): Promise<Response> {
+function defaultResetRedirectUrl(): string | undefined {
+  if (typeof window === "undefined") return undefined
+  return `${window.location.origin}/reset-password`
+}
+
+async function requestPasswordResetAt(
+  path: string,
+  email: string,
+  redirectUrl?: string,
+): Promise<Response> {
+  const body: Record<string, string> = { email }
+  if (redirectUrl?.trim()) body.redirect_url = redirectUrl.trim()
   return fetchWithTimeout(`${SUPABASE_URL}${path}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      "Accept": "application/json, application/problem+json",
       "apikey": SUPABASE_ANON_KEY,
     },
-    body: JSON.stringify({
-      email,
-      redirect_url: window.location.origin,
-      // O endpoint nativo /auth/v1/recover usa `redirect_to` em vez de `redirect_url`,
-      // entao mandamos ambos.
-      redirect_to: window.location.origin,
-    }),
+    body: JSON.stringify(body),
   })
 }
 
 /**
- * Solicita o e-mail de recuperacao de senha tentando, em ordem:
- *  1) Edge Function customizada `/functions/v1/request-password-reset`
- *  2) Alias curto `/request-password-reset` (projetos antigos)
- *  3) Endpoint nativo do Supabase Auth `/auth/v1/recover` (sempre disponivel)
+ * Solicita o e-mail de recuperacao de senha no endpoint publico da API
+ * (somente `apikey`, sem Bearer token), tentando:
+ *  1) `/functions/v1/request-password-reset`
+ *  2) `/request-password-reset`
  *
- * Se a Edge Function falhar com erro de rede/CORS/404, caimos automaticamente
- * no endpoint nativo para que o reset funcione mesmo sem Edge Function publicada.
+ * Mantemos fallback no `/auth/v1/recover` apenas para ambientes legados.
  */
 export async function requestPasswordReset(emailInput: string): Promise<PasswordResetResponse> {
   const email = emailInput.trim().toLowerCase()
   if (!email) throw new Error("Informe seu e-mail.")
+  const redirectUrl = defaultResetRedirectUrl()
 
-  // Tentativa 1: Edge Function customizada.
+  // Tentativa principal: endpoint publico da API (sem Authorization Bearer).
   let res: Response | null = null
   try {
-    res = await requestPasswordResetAt("/functions/v1/request-password-reset", email)
+    res = await requestPasswordResetAt("/functions/v1/request-password-reset", email, redirectUrl)
     if (res.status === 404) {
-      res = await requestPasswordResetAt("/request-password-reset", email)
+      res = await requestPasswordResetAt("/request-password-reset", email, redirectUrl)
     }
   } catch {
     res = null // erro de rede/CORS — cai no fallback nativo
@@ -508,13 +689,10 @@ export async function requestPasswordReset(emailInput: string): Promise<Password
   try {
     nativeRes = await fetchWithTimeout(`${SUPABASE_URL}/auth/v1/recover`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "apikey": SUPABASE_ANON_KEY,
-      },
+      headers: authHeaders(),
       body: JSON.stringify({
         email,
-        redirect_to: window.location.origin,
+        redirect_to: redirectUrl ?? window.location.origin,
       }),
     })
   } catch (err) {
@@ -558,11 +736,24 @@ function mapRole(roles: unknown[], profileRole?: string | null): UserRole {
       return []
     })
 
-  if (normalized.some((r) => ["admin", "administrador"].includes(r))) return "admin"
-  if (normalized.some((r) => ["gestor", "manager"].includes(r))) return "manager"
-  if (normalized.some((r) => ["medico", "doctor"].includes(r))) return "doctor"
-  if (normalized.some((r) => ["paciente", "patient"].includes(r))) return "patient"
-  if (normalized.some((r) => ["secretaria", "secretary"].includes(r))) return "secretary"
+  const apiRoles = new Set<ApiUserRole>(
+    normalized.filter((r): r is ApiUserRole =>
+      ["admin", "gestor", "medico", "secretaria", "paciente", "user"].includes(r),
+    ),
+  )
+
+  if (apiRoles.has("admin")) return "admin"
+  if (apiRoles.has("gestor")) return "manager"
+  if (apiRoles.has("medico")) return "doctor"
+  if (apiRoles.has("paciente") || apiRoles.has("user")) return "patient"
+  if (apiRoles.has("secretaria")) return "secretary"
+
+  // fallback legado/tolerante para ambientes antigos
+  if (normalized.some((r) => ["administrador"].includes(r))) return "admin"
+  if (normalized.some((r) => ["manager"].includes(r))) return "manager"
+  if (normalized.some((r) => ["doctor"].includes(r))) return "doctor"
+  if (normalized.some((r) => ["patient"].includes(r))) return "patient"
+  if (normalized.some((r) => ["secretary"].includes(r))) return "secretary"
   if (normalized.some((r) => ["financeiro", "financial"].includes(r))) return "financial"
   return "secretary"
 }
@@ -573,11 +764,35 @@ interface SupabaseAuthResponse {
   user: { id: string; email: string }
 }
 
+interface AuthUserResponse {
+  id?: string
+  email?: string
+  created_at?: string
+}
+
 interface UserInfoResponse {
-  user:    { id: string; email: string }
-  profile?: { id?: string; full_name?: string; email?: string; phone?: string; role?: string; crm?: string; specialty?: string; cpf?: string; patient_id?: string }
-  patient?: PatientLinkResponse
-  roles?:   unknown[]
+  user?: {
+    id?: string
+    email?: string
+  }
+  profile?: {
+    full_name?: string
+    email?: string
+    phone?: string
+    avatar_url?: string | null
+    role?: string
+    crm?: string
+    specialty?: string
+    cpf?: string
+    patient_id?: string
+  }
+  roles?: unknown[]
+  permissions?: {
+    isAdmin?: boolean
+    canManageUsers?: boolean
+  }
+  doctor?: unknown | null
+  patient?: unknown | null
 }
 
 interface ProfileResponse {
@@ -641,7 +856,7 @@ async function fetchPatientLink(
   ].filter(Boolean)
   if (filters.length === 0) return null
 
-  const res = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/patients?or=(${filters.join(",")})&select=id,cpf,email,phone_mobile,birth_date&limit=1`, {
+  const res = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/patients?or=(${filters.join(",")})&select=id,cpf,email,phone_mobile&limit=1`, {
     headers: {
       "Content-Type":  "application/json",
       "apikey":        SUPABASE_ANON_KEY,
@@ -693,7 +908,7 @@ async function withPatientLink(user: User, token: string): Promise<User> {
     patientId: patient.id,
     patientCpf: patient.cpf ? onlyDigits(patient.cpf) : user.patientCpf,
     phone: patient.phone_mobile ?? user.phone,
-    dob: patient.birth_date ?? user.dob,
+    dob: user.dob,
   }
 }
 
@@ -715,6 +930,26 @@ async function withRoleLinks(user: User, token: string): Promise<User> {
   return withDoctorLink(await withPatientLink(user, token), token)
 }
 
+async function fetchUserInfo(token: string): Promise<UserInfoResponse | null> {
+  async function post(path: string): Promise<Response> {
+    return fetchWithTimeout(`${SUPABASE_URL}${path}`, {
+      method: "POST",
+      headers: authHeadersWithBearer(token),
+    })
+  }
+
+  try {
+    // Contrato documentado: `/user-info`.
+    // Fallback legado: `/functions/v1/user-info`.
+    let res = await post("/user-info")
+    if (res.status === 404) res = await post("/functions/v1/user-info")
+    if (!res.ok) return null
+    return await res.json().catch(() => null) as UserInfoResponse | null
+  } catch {
+    return null
+  }
+}
+
 export async function login(payload: LoginPayload): Promise<LoginResponse> {
   assertSupabaseConfigured()
   // Passo 1 — autenticar. Usamos sempre email/senha em formato normalizado
@@ -728,7 +963,7 @@ export async function login(payload: LoginPayload): Promise<LoginResponse> {
       `${SUPABASE_URL}/auth/v1/token?grant_type=password`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json", "apikey": SUPABASE_ANON_KEY },
+        headers: authHeaders(),
         body: JSON.stringify({ email: normalizedEmail, password: normalizedPassword }),
       },
     )
@@ -755,59 +990,48 @@ export async function login(payload: LoginPayload): Promise<LoginResponse> {
 
   const authData: SupabaseAuthResponse = await authRes.json()
 
-  // Passo 2 — buscar perfil e roles
-  const infoRes = await fetchWithTimeout(`${SUPABASE_URL}/functions/v1/user-info`, {
-    method: "POST",
-    headers: {
-      "Content-Type":  "application/json",
-      "apikey":        SUPABASE_ANON_KEY,
-      "Authorization": `Bearer ${authData.access_token}`,
-    },
-  })
+  // Passo 2 — obter usuario no endpoint documentado `/functions/v1/user-info`.
+  // Se indisponivel, mantemos fallback para `/auth/v1/user` + profiles.
+  const info = await fetchUserInfo(authData.access_token)
+  const infoUserId = info?.user?.id
+  const infoEmail = info?.user?.email
+  const resolvedUserId = (infoUserId ?? authData.user.id).trim()
+  const resolvedEmail = (infoEmail ?? authData.user.email).trim().toLowerCase()
 
-  if (!infoRes.ok) {
-    const profile = await fetchProfileFallback(authData.access_token, authData.user.id, authData.user.email)
-    const patient = await fetchPatientLink(
-      authData.access_token,
-      authData.user.id,
-      authData.user.email,
-      profile?.cpf,
-      profile?.patient_id,
-    )
-    const user: User = {
-      id: authData.user.id,
-      name: profile?.full_name ?? authData.user.email,
-      role: patient ? "patient" : mapRole([], profile?.role),
-      email: profile?.email ?? authData.user.email,
-      crm: profile?.crm,
-      specialty: profile?.specialty,
-      patientCpf: patient?.cpf ? onlyDigits(patient.cpf) : profile?.cpf ? onlyDigits(profile.cpf) : undefined,
-      phone: patient?.phone_mobile ?? profile?.phone,
-      patientId: patient?.id ?? profile?.patient_id,
-      dob: patient?.birth_date,
+  let profile = info?.profile ?? null
+  if (!profile) {
+    const authUserRes = await fetchWithTimeout(`${SUPABASE_URL}/auth/v1/user`, {
+      method: "GET",
+      headers: authHeadersWithBearer(authData.access_token),
+    })
+    let authUser: AuthUserResponse = {}
+    if (authUserRes.ok) {
+      authUser = await authUserRes.json().catch(() => ({})) as AuthUserResponse
     }
-    return {
-      user: await withRoleLinks(user, authData.access_token),
-      token: authData.access_token,
-      clinicId: "default",
-      clinicName: "Mediconnect",
-      refreshToken: authData.refresh_token ?? null,
-      expiresAt: expiresAtFromSeconds(authData.expires_in),
-    }
+    const fallbackUserId = (authUser.id ?? resolvedUserId).trim()
+    const fallbackEmail = (authUser.email ?? resolvedEmail).trim().toLowerCase()
+    profile = await fetchProfileFallback(authData.access_token, fallbackUserId, fallbackEmail)
   }
+  const patient = await fetchPatientLink(
+    authData.access_token,
+    resolvedUserId,
+    resolvedEmail,
+    profile?.cpf,
+    profile?.patient_id,
+  )
 
-  const info: UserInfoResponse = await infoRes.json()
   const user: User = {
-    id:        authData.user.id,
-    name:      info.profile?.full_name ?? authData.user.email,
-    role:      info.patient ? "patient" : mapRole(info.roles ?? [], info.profile?.role),
-    email:     info.profile?.email ?? info.patient?.email ?? authData.user.email,
-    crm:       info.profile?.crm,
-    specialty: info.profile?.specialty,
-    patientCpf: info.patient?.cpf ? onlyDigits(info.patient.cpf) : info.profile?.cpf ? onlyDigits(info.profile.cpf) : undefined,
-    patientId:  info.patient?.id ?? info.profile?.patient_id,
-    phone:     info.patient?.phone_mobile ?? info.profile?.phone,
-    dob:       info.patient?.birth_date,
+    id: resolvedUserId,
+    name: profile?.full_name ?? resolvedEmail,
+    // Prioriza `roles` do endpoint `/user-info` (fallback via linked patient).
+    role: patient ? "patient" : mapRole(info?.roles ?? [], null),
+    email: profile?.email ?? patient?.email ?? resolvedEmail,
+    crm: profile?.crm,
+    specialty: profile?.specialty,
+    patientCpf: patient?.cpf ? onlyDigits(patient.cpf) : profile?.cpf ? onlyDigits(profile.cpf) : undefined,
+    patientId: patient?.id ?? profile?.patient_id,
+    phone: patient?.phone_mobile ?? profile?.phone,
+    dob: patient?.birth_date,
   }
 
   return {

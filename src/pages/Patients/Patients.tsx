@@ -1,5 +1,8 @@
-import { useMemo, useState } from "react"
+import { useMemo, useRef, useState } from "react"
+import { useVirtualizer } from "@tanstack/react-virtual"
 import { Topbar } from "../../components/layout/Topbar/Topbar"
+import { InlineErrorRetry } from "../../components/ui/InlineErrorRetry/InlineErrorRetry"
+import { useDebouncedValue } from "../../hooks/useDebouncedValue"
 import { Card } from "../../components/ui/Card/Card"
 import { Badge } from "../../components/ui/Badge/Badge"
 import { Avatar } from "../../components/ui/Avatar/Avatar"
@@ -20,7 +23,10 @@ interface PatientsProps {
   canCreatePatient?: boolean
   toast?: UseToastReturn["toast"]
   onRefresh?: () => void | Promise<unknown>
+  loadError?: string | null
 }
+
+const ROW_HEIGHT = 56
 
 const SearchIcon = () => (
   <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -39,10 +45,21 @@ const TrashIcon = () => (
   </svg>
 )
 
-export function Patients({ patients, onNavigate, onEditPatient, onViewProfile, onDeletePatient, canCreatePatient = true, onRefresh }: PatientsProps) {
+export function Patients({
+  patients,
+  onNavigate,
+  onEditPatient,
+  onViewProfile,
+  onDeletePatient,
+  canCreatePatient = true,
+  onRefresh,
+  loadError,
+}: PatientsProps) {
   const [search, setSearch]             = useState("")
+  const debouncedSearch                 = useDebouncedValue(search, 300)
   const [filterStatus, setFilterStatus] = useState<"All" | "Active" | "Inactive">("All")
   const [confirmId, setConfirmId]       = useState<string | null>(null)
+  const listParentRef = useRef<HTMLDivElement>(null)
 
   // Normaliza nome para exibicao e ordena alfabeticamente (case-insensitive, pt-BR).
   const orderedPatients = useMemo(() => {
@@ -50,9 +67,9 @@ export function Patients({ patients, onNavigate, onEditPatient, onViewProfile, o
     return sortByName(normalized, (p) => p.name)
   }, [patients])
 
-  const filtered = orderedPatients.filter((p) => {
+  const filtered = useMemo(() => orderedPatients.filter((p) => {
     if (filterStatus !== "All" && p.status !== filterStatus) return false
-    const q = search.trim()
+    const q = debouncedSearch.trim()
     if (!q) return true
     const qLower = q.toLowerCase()
     const qDigits = onlyDigits(q)
@@ -60,6 +77,13 @@ export function Patients({ patients, onNavigate, onEditPatient, onViewProfile, o
     if (p.email?.toLowerCase().includes(qLower)) return true
     if (qDigits && onlyDigits(p.cpf).includes(qDigits)) return true
     return false
+  }), [orderedPatients, filterStatus, debouncedSearch])
+
+  const rowVirtualizer = useVirtualizer({
+    count: filtered.length,
+    getScrollElement: () => listParentRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 8,
   })
   const confirmTarget = orderedPatients.find((p) => p.id === confirmId)
   const FILTER_LABELS = { All: "Todos", Active: "Ativo", Inactive: "Inativo" } as const
@@ -96,6 +120,9 @@ export function Patients({ patients, onNavigate, onEditPatient, onViewProfile, o
           </button>
         ))}
       </div>
+      {loadError && onRefresh && (
+        <InlineErrorRetry message={loadError} onRetry={() => void onRefresh()} />
+      )}
       <Card>
         {filtered.length === 0 ? (
           <div className={styles.empty}>
@@ -105,16 +132,30 @@ export function Patients({ patients, onNavigate, onEditPatient, onViewProfile, o
             <p>Nenhum paciente encontrado</p>
           </div>
         ) : (
-          <div className={styles.tableScroll}>
+          <div className={styles.tableScroll} ref={listParentRef}>
             <table className={styles.table}>
               <thead className={styles.thead}>
                 <tr>{["Paciente", "CPF", "Convênio", "Última visita", "Status", "Ações"].map((h) => <th key={h} className={styles.th}>{h}</th>)}</tr>
               </thead>
-              <tbody>
-                {filtered.map((p, i) => {
-                  const isLast = i === filtered.length - 1
+              <tbody style={{ height: rowVirtualizer.getTotalSize(), position: "relative" }}>
+                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const p = filtered[virtualRow.index]
+                  const isLast = virtualRow.index === filtered.length - 1
                   return (
-                    <tr key={p.id} className={styles.clickableRow} onClick={() => onViewProfile?.(p)}>
+                    <tr
+                      key={p.id}
+                      className={styles.clickableRow}
+                      onClick={() => onViewProfile?.(p)}
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        transform: `translateY(${virtualRow.start}px)`,
+                        display: "table",
+                        tableLayout: "fixed",
+                      }}
+                    >
                       <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}>
                         <div className={styles.patientCell}>
                           {p.photoUrl ? <img src={p.photoUrl} alt={p.name} className={styles.patientPhoto} /> : <Avatar name={p.name} size="sm" />}

@@ -65,6 +65,7 @@
   grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   align-items: stretch;
+  margin-bottom: 16px;
 }
 
 @media (min-width: 960px) {
@@ -74,12 +75,65 @@
 }
 
 .formCard,
-.listCard {
+.listCard,
+.exceptionsCard {
   padding: 20px;
   display: flex;
   flex-direction: column;
   min-height: 0;
   height: 100%;
+}
+
+.exceptionsCard {
+  height: auto;
+}
+
+.exceptionsHeader {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.exceptionsHeader .cardTitle {
+  margin-bottom: 0;
+  flex: 1 1 auto;
+}
+
+.exceptionsHeader > :last-child {
+  flex: 0 1 220px;
+  min-width: 180px;
+}
+
+.exceptionsHint {
+  margin: 0 0 14px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.exceptionsForm {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.exceptionReasonField {
+  grid-column: 1 / -1;
+}
+
+.exceptionActions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.exceptionActions button {
+  min-width: 170px;
 }
 
 @media (min-width: 1024px) {
@@ -175,6 +229,32 @@
   background: var(--muted-foreground);
 }
 
+.blockDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  background: #dc2626;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #dc2626 18%, transparent);
+}
+
+.extraDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  background: #16a34a;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #16a34a 18%, transparent);
+}
+
+.rowBlock {
+  border-color: color-mix(in srgb, #dc2626 22%, var(--border));
+}
+
+.rowExtra {
+  border-color: color-mix(in srgb, #16a34a 22%, var(--border));
+}
+
 .rowTitle {
   margin: 0;
   color: var(--foreground);
@@ -261,6 +341,10 @@
   }
 
   .formGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .exceptionsForm {
     grid-template-columns: 1fr;
   }
 
