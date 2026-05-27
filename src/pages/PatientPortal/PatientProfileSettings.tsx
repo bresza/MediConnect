@@ -3,7 +3,7 @@ import { Avatar } from "../../components/ui/Avatar/Avatar"
 import { Button } from "../../components/ui/Button/Button"
 import { Input } from "../../components/ui/Input/Input"
 import { attachPatientPhoto, uploadPatientPhoto } from "../../services/patientPhoto"
-import { updatePatient } from "../../services/patients"
+import { getPatientById, updatePatient } from "../../services/patients"
 import type { CommunicationChannel, Patient } from "../../types"
 import { formatCpfBR, formatDate } from "../../utils"
 import styles from "./PatientProfileSettings.module.css"
@@ -83,6 +83,12 @@ export function PatientProfileSettings({ patient, onSaved }: PatientProfileSetti
     try {
       let photoUrl = photoPreview
       if (photoFile) {
+        const existing = await getPatientById(patient.id)
+        if (!existing) {
+          throw new Error(
+            "Não encontramos este cadastro de paciente para salvar. Peça à recepção para vincular seu acesso ao cadastro correto.",
+          )
+        }
         photoUrl = await uploadPatientPhoto(patient.id, photoFile)
       }
 

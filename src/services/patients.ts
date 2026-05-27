@@ -706,21 +706,28 @@ export async function updatePatient(patient: Patient): Promise<Patient> {
   const linkedProfile = patient.userId ? null : await findProfileByEmail(patient.email)
   const patientWithUser = linkedProfile?.id ? { ...patient, userId: linkedProfile.id } : patient
   const patientWithPhoto = await persistPatientPhoto(patientWithUser)
+  let updatedRows: ApiPatient[] | undefined
 
   try {
-    await apiRequest(`/rest/v1/patients?id=eq.${patientWithPhoto.id}`, {
+    updatedRows = await apiRequest<ApiPatient[]>(`/rest/v1/patients?id=eq.${patientWithPhoto.id}`, {
       method: "PATCH",
-      headers: { Prefer: "return=minimal" },
+      headers: { Prefer: "return=representation" },
       body: patientToFullApi(patientWithPhoto),
       logErrors: false,
     })
   } catch (err) {
     if (!isSchemaMismatch(err)) throw err
-    await apiRequest(`/rest/v1/patients?id=eq.${patientWithPhoto.id}`, {
+    updatedRows = await apiRequest<ApiPatient[]>(`/rest/v1/patients?id=eq.${patientWithPhoto.id}`, {
       method: "PATCH",
-      headers: { Prefer: "return=minimal" },
+      headers: { Prefer: "return=representation" },
       body: patientToApi(patientWithPhoto),
     })
+  }
+
+  if (!updatedRows?.length) {
+    throw new Error(
+      "Não encontramos este cadastro de paciente para salvar. Peça à recepção para vincular seu acesso ao cadastro correto.",
+    )
   }
 
   rememberPatientLink({

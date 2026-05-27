@@ -274,13 +274,21 @@ async function createPatientAccountWithPassword(input: ClaimPatientInput): Promi
 // Fallback: cria conta de paciente via /functions/v1/create-user-with-password
 // quando register-patient nao esta disponivel no projeto.
 async function createPatientViaGenericEndpoint(input: ClaimPatientInput): Promise<PatientSignupResponse> {
+  const redirectUrl = typeof window !== "undefined" ? window.location.origin : undefined
   const payload = {
-    email:     input.email,
-    password:  input.password,
-    full_name: input.name,
-    phone:     input.phone || undefined,
-    cpf:       input.cpf,
-    role:      "paciente",
+    email:                 input.email,
+    password:              input.password,
+    full_name:             input.name,
+    phone:                 input.phone || undefined,
+    phone_mobile:          input.phone || undefined,
+    cpf:                   input.cpf || undefined,
+    birth_date:            input.dob || undefined,
+    dob:                   input.dob || undefined,
+    role:                  "paciente",
+    create_patient_record: true,
+    redirect_url:          redirectUrl,
+    email_confirm:         true,
+    auto_confirm:          true,
   }
 
   async function post(path: string): Promise<Response> {
@@ -391,13 +399,20 @@ interface ClaimPatientInput {
 
 // Cria credencial para paciente ja cadastrado (vinculo por CPF/e-mail no backend).
 async function claimExistingPatientAccount(input: ClaimPatientInput): Promise<PatientSignupResponse> {
+  const redirectUrl = typeof window !== "undefined" ? window.location.origin : undefined
   const payload = {
-    email:     input.email,
-    password:  input.password,
-    full_name: input.name,
-    phone:     input.phone || undefined,
-    cpf:       input.cpf,
-    role:      "paciente",
+    email:                 input.email,
+    password:              input.password,
+    full_name:             input.name,
+    phone:                 input.phone || undefined,
+    phone_mobile:          input.phone || undefined,
+    cpf:                   input.cpf || undefined,
+    birth_date:            input.dob || undefined,
+    role:                  "paciente",
+    create_patient_record: false,
+    redirect_url:          redirectUrl,
+    email_confirm:         true,
+    auto_confirm:          true,
   }
 
   async function post(path: string): Promise<Response> {
