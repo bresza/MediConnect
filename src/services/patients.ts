@@ -506,6 +506,7 @@ function scorePatientMatch(api: ApiPatient, identity: PatientIdentity): number {
 
 async function syncResolvedPatientProfile(userId: string | undefined, patient: ApiPatient): Promise<void> {
   if (!userId) return
+  if (patient.user_id && patient.user_id !== userId) return
 
   await apiRequest(`/rest/v1/patients?id=eq.${encodeURIComponent(patient.id)}`, {
     method: "PATCH",
@@ -554,6 +555,7 @@ export async function getPatientByIdentity(identity: PatientIdentity): Promise<P
     .sort((a, b) => b.score - a.score)[0]?.row
 
   if (!best) return null
+  if (identity.userId && best.user_id && best.user_id !== identity.userId) return null
   await syncResolvedPatientProfile(identity.userId, best)
   return attachPatientPhoto(apiToPatient(best))
 }
@@ -662,8 +664,12 @@ export async function createPatientPortalAccess(
     full_name:  String(base.full_name ?? patient.name).trim(),
     cpf,
     phone:      base.phone_mobile,
+    phone_mobile: base.phone_mobile,
+    birth_date:   base.birth_date,
     role:       "paciente",
     patient_id: patient.id,
+    create_patient_record: false,
+    redirect_url: window.location.origin,
   }
 
   if (!payload.email) throw new Error("E-mail obrigatório para criar acesso do paciente.")

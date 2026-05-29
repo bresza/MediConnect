@@ -666,12 +666,15 @@ async function patchAppointmentFields(
   body: Record<string, unknown>,
 ): Promise<void> {
   const filter = `id=eq.${encodeURIComponent(appointmentId)}&patient_id=eq.${encodeURIComponent(patientId)}`
-  await apiRequest(`/rest/v1/appointments?${filter}`, {
+  const updated = await apiRequest<ApiAppointment[]>(`/rest/v1/appointments?${filter}`, {
     method: "PATCH",
-    headers: { Prefer: "return=minimal" },
+    headers: { Prefer: "return=representation" },
     body,
     logErrors: false,
   })
+  if (!Array.isArray(updated) || updated.length === 0) {
+    throw new Error("Não foi possível atualizar a consulta. Atualize a página e tente novamente.")
+  }
 }
 
 function buildCancellationNotes(

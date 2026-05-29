@@ -377,6 +377,8 @@ export async function createWaitlistEntry(
 export async function updateWaitlistEntry(entry: WaitlistEntry): Promise<WaitlistEntry> {
   // Recalcula prazo se a cor mudou.
   const next: WaitlistEntry = { ...entry, dueBy: calcDueBy(entry.priorityColor, entry.enteredAt) }
+  const localEntries = loadLocal()
+  const localIndex = localEntries.findIndex((it) => it.id === entry.id)
 
   try {
     const updated = await apiRequest<ApiWaitlistRow[]>(
@@ -394,7 +396,12 @@ export async function updateWaitlistEntry(entry: WaitlistEntry): Promise<Waitlis
     if (!isRemoteUnavailable(err)) throw err
   }
 
-  const local = loadLocal().map((it) => it.id === entry.id ? next : it)
+  if (localIndex === -1) {
+    throw new Error("Entrada da fila de espera não foi atualizada.")
+  }
+
+  const local = [...localEntries]
+  local[localIndex] = next
   saveLocal(local)
   return next
 }

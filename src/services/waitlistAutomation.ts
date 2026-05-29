@@ -1,5 +1,5 @@
 import type { Appointment, WaitlistEntry } from "../types"
-import { createAppointment } from "./appointments"
+import { createAppointment, deleteAppointment, getAvailableSlots } from "./appointments"
 import { sendMessage } from "./domain"
 import { getPatientById } from "./patients"
 import {
@@ -150,6 +150,11 @@ export async function fillGapFromWaitlist(
     return { filled: false, message: "Próximo da fila é o mesmo paciente." }
   }
 
+  const availableSlots = await getAvailableSlots(freed.doctorId, freed.date, freed.type).catch(() => [])
+  if (!availableSlots.includes(freed.time)) {
+    return { filled: false, message: "Horário liberado não está mais disponível." }
+  }
+
   const notePrefix = `Encaixe automático (fila ${WAITLIST_COLOR_LABEL[candidate.priorityColor]}).`
   const observations = [
     notePrefix,
@@ -174,11 +179,16 @@ export async function fillGapFromWaitlist(
       observations,
     })
 
-    await updateWaitlistEntry({
-      ...candidate,
-      status: "scheduled",
-      notes: [candidate.notes, observations].filter(Boolean).join("\n"),
-    })
+    try {
+      await updateWaitlistEntry({
+        ...candidate,
+        status: "scheduled",
+        notes: [candidate.notes, observations].filter(Boolean).join("\n"),
+      })
+    } catch (err) {
+      await deleteAppointment(appointment.id).catch(() => undefined)
+      throw err
+    }
 
     const notified = await notifyPromotedPatient(
       candidate.patientId,
