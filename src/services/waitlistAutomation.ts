@@ -150,7 +150,7 @@ export async function fillGapFromWaitlist(
     return { filled: false, message: "Próximo da fila é o mesmo paciente." }
   }
 
-  const availableSlots = await getAvailableSlots(freed.doctorId, freed.date, freed.type).catch(() => [])
+  const availableSlots = await getAvailableSlots(freed.doctorId, freed.date, freed.type).catch((): string[] => [])
   if (!availableSlots.includes(freed.time)) {
     return { filled: false, message: "Horário liberado não está mais disponível." }
   }
