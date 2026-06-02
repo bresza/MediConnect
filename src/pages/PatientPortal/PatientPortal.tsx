@@ -107,6 +107,7 @@ export function PatientPortal({
 
   const portalPatient = resolvedPatient ?? patient
   const rememberedPatientId = resolveRememberedPatientId({
+    authUserId: currentUser.id,
     name: portalPatient?.name ?? patient?.name ?? currentUser.name,
     email: portalPatient?.email ?? patient?.email ?? currentUser.email,
     cpf: portalPatient?.cpf ?? patient?.cpf ?? currentUser.patientCpf,
@@ -139,7 +140,8 @@ export function PatientPortal({
       return
     }
 
-    const withPhoto = await attachPatientPhoto(base).catch(() => base)
+    const enriched = { ...base, userId: base.userId ?? currentUser.id }
+    const withPhoto = await attachPatientPhoto(enriched).catch(() => enriched)
     setResolvedPatient(withPhoto)
   }, [currentUser.id, currentUser.patientId, currentUser.name, currentUser.email, currentUser.patientCpf, patient])
 
@@ -191,24 +193,26 @@ export function PatientPortal({
     .filter(isFutureAppointment)
     .sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`))[0]
 
-  const navCounts: Partial<Record<PortalSection, number>> = {
-    consultations: scheduledConsultations.length,
-    exams: exams.length,
-    reports: reports.length,
-    prescriptions: portalPrescriptions.length,
-    billing: pendingBilling.length,
-  }
+  const navCounts = useMemo<Partial<Record<PortalSection, number>>>(
+    () => ({
+      consultations: scheduledConsultations.length,
+      exams: exams.length,
+      reports: reports.length,
+      prescriptions: portalPrescriptions.length,
+      billing: pendingBilling.length,
+    }),
+    [
+      scheduledConsultations.length,
+      exams.length,
+      reports.length,
+      portalPrescriptions.length,
+      pendingBilling.length,
+    ],
+  )
 
   useEffect(() => {
     onNavCountsChange?.(navCounts)
-  }, [
-    onNavCountsChange,
-    scheduledConsultations.length,
-    exams.length,
-    reports.length,
-    portalPrescriptions.length,
-    pendingBilling.length,
-  ])
+  }, [onNavCountsChange, navCounts])
 
   const sectionMeta = SECTION_META[activeSection]
 
@@ -383,10 +387,7 @@ export function PatientPortal({
             )}
 
             {activeSection === "profile" && (
-              <PatientProfileSettings
-                patient={portalPatient}
-                onSaved={(saved) => setResolvedPatient(saved)}
-              />
+              <PatientProfileSettings patient={portalPatient} />
             )}
           </ContentPanel>
         )}

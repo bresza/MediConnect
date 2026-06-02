@@ -1,8 +1,8 @@
 import type { PageId, User } from "../../../types"
 import type { PortalSection } from "../../../pages/PatientPortal/patientPortalSections"
 import { ROLE_PAGES, ROLE_LABELS, ROLE_COLORS } from "../../../utils/permissions"
-import { getInitials } from "../../../utils"
 import { prefetchPageChunk } from "../../../utils/routePrefetch"
+import { Avatar } from "../../ui/Avatar/Avatar"
 import { PatientPortalSidebarNav } from "./PatientPortalSidebarNav"
 import styles from "./Sidebar.module.css"
 
@@ -189,9 +189,7 @@ export function Sidebar({
       {/* User */}
       <div className={styles.user}>
         <div className={styles.userCard}>
-          <div className={styles.userAvatar} style={{ background: roleColor }}>
-            {getInitials(currentUser.name)}
-          </div>
+          <Avatar name={currentUser.name} photoUrl={currentUser.photoUrl} size="sm" />
           <div className={styles.userInfo}>
             <p className={styles.userName}>{currentUser.name}</p>
             <p className={styles.userRole}>{ROLE_LABELS[currentUser.role]}</p>

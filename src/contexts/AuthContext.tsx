@@ -5,7 +5,8 @@ import {
   setSessionRefresher,
   setUnauthorizedHandler,
 } from "../services/api"
-import { logoutSession, refreshSession } from "../services/auth"
+import { logoutSession, reconcileUserRole, refreshSession } from "../services/auth"
+import { clearPatientLinksForUser } from "../services/patientLinks"
 import {
   AuthContext,
   authReducer,
@@ -30,7 +31,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
   }, [state.token, state.refreshToken, state.expiresAt, state.user?.id])
 
+  // Corrige papel salvo errado (ex.: secretária em vez de admin) lendo `user_roles` + perfil.
+  useEffect(() => {
+    const token = state.token
+    const user = state.user
+    if (!token || !user || token.startsWith("local-dev:")) return
+
+    let cancelled = false
+    void reconcileUserRole(token, user).then((next) => {
+      if (cancelled || next.role === user.role) return
+      dispatch({
+        type: "LOGIN",
+        payload: {
+          user:         next,
+          token:        state.token,
+          refreshToken: state.refreshToken,
+          expiresAt:    state.expiresAt,
+          clinicId:     state.clinicId,
+          clinicName:   state.clinicName,
+        },
+      })
+    })
+    return () => { cancelled = true }
+  }, [state.user?.id, state.token])
+
   const logout = useCallback(() => {
+    if (state.user?.id) clearPatientLinksForUser(state.user.id)
     const currentToken = state.token
     if (currentToken) {
       void logoutSession(currentToken).catch((err) => {
@@ -38,7 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
     }
     dispatch({ type: "LOGOUT" })
-  }, [state.token])
+  }, [state.token, state.user?.id])
 
   useEffect(() => { setUnauthorizedHandler(logout) }, [logout])
 

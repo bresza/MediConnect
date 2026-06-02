@@ -20,33 +20,33 @@ interface AIAssistantProps {
 
 const STARTERS: Record<UserRole, string[]> = {
   doctor: [
-    "Crie um laudo de ressonancia para o paciente Joao com dor lombar ha 2 semanas",
-    "Quais consultas tenho amanha?",
-    "Registre nota de consulta: paciente Maria, cefaleia e nausea",
+    "Crie um laudo de ressonância para o paciente João com dor lombar há 2 semanas",
+    "Quais consultas tenho amanhã?",
+    "Registre nota de consulta: paciente Maria, cefaleia e náusea",
   ],
   manager: [
-    "Agende consulta para Ana Silva dia 15/06 as 14h com Dr. Carlos",
-    "Envie lembrete por WhatsApp para pacientes com consulta amanha",
+    "Agende consulta para Ana Silva dia 15/06 às 14h com Dr. Carlos",
+    "Envie lembrete por WhatsApp para pacientes com consulta amanhã",
     "Mostre a agenda de hoje",
   ],
   financial: [
-    "Liste pacientes com consulta esta semana",
-    "Crie um laudo resumo para convenio do paciente Pedro",
-    "Va para o modulo financeiro",
+    "Liste pacientes com consulta nesta semana",
+    "Crie um laudo resumo para convênio do paciente Pedro",
+    "Vá para o módulo financeiro",
   ],
   secretary: [
-    "Agende retorno para Maria dia 20/06 as 10h",
-    "Cancele a consulta das 15h de hoje do paciente Joao",
-    "Envie confirmacao por WhatsApp: consulta confirmada amanha as 9h",
+    "Agende retorno para Maria dia 20/06 às 10h",
+    "Cancele a consulta das 15h de hoje do paciente João",
+    "Envie confirmação por WhatsApp: consulta confirmada amanhã às 9h",
   ],
   admin: [
-    "Processe respostas automaticas do WhatsApp",
+    "Processe respostas automáticas do WhatsApp",
     "Rode os lembretes de consulta agora",
-    "Quantos agendamentos temos esta semana?",
+    "Quantos agendamentos temos nesta semana?",
   ],
   patient: [
-    "Agende minha consulta para proxima terca as 10h",
-    "Quais sao minhas proximas consultas?",
+    "Agende minha consulta para próxima terça às 10h",
+    "Quais são minhas próximas consultas?",
     "Abra a tela de agendamento",
   ],
 }
@@ -286,13 +286,13 @@ export function AIAssistant({ currentUser, clinicName, apiContextSnapshot, appAc
 
             {!configured && (
               <div className={styles.warning}>
-                Configure <code>VITE_GROQ_API_KEY</code> ou <code>VITE_GEMINI_API_KEY</code> no .env para usar o assistente com acoes automaticas.
+                Configure <code>VITE_GROQ_API_KEY</code> ou <code>VITE_GEMINI_API_KEY</code> no .env para usar o assistente com ações automáticas.
               </div>
             )}
 
             {pendingAction && (
               <div className={styles.confirmCard}>
-                <p className={styles.confirmTitle}>Confirmar acao</p>
+                <p className={styles.confirmTitle}>Confirmar ação</p>
                 <p className={styles.confirmText}>{pendingAction.summary}</p>
                 <div className={styles.confirmActions}>
                   <button type="button" className={styles.confirmCancel} onClick={() => setPendingAction(null)}>
@@ -309,7 +309,7 @@ export function AIAssistant({ currentUser, clinicName, apiContextSnapshot, appAc
               {messages.length === 0 ? (
                 <div className={styles.empty}>
                   <strong>O que deseja fazer?</strong>
-                  <span>Fale ou escolha uma acao — a IA executa no MediConnect.</span>
+                  <span>Fale ou escolha uma ação — a IA executa no MediConnect.</span>
                   <div className={styles.suggestions}>
                     {starters.map((s) => (
                       <button
@@ -356,7 +356,7 @@ export function AIAssistant({ currentUser, clinicName, apiContextSnapshot, appAc
                 <textarea
                   className={styles.textarea}
                   placeholder={configured
-                    ? (voiceListening ? "Ouvindo… fale o comando" : "Ex.: agende consulta para Maria amanhã 14h")
+                    ? (voiceListening ? "Ouvindo… fale o comando" : "Ex.: agende consulta para Maria amanhã às 14h")
                     : "Configure a chave de IA no .env"}
                   value={input}
                   onChange={(e) => setInput(e.target.value)}

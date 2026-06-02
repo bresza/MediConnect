@@ -1,4 +1,5 @@
 import { messageFromProblemDetails, parseProblemDetails } from "./problemDetails"
+import { translateApiError } from "../utils/apiErrors"
 
 // Le e normaliza as credenciais do Supabase. Sem esse passo, qualquer build
 // que tenha sido gerado sem VITE_SUPABASE_URL acaba chamando `undefined/auth/...`,
@@ -20,9 +21,9 @@ export const SUPABASE_CONFIG_ERROR: string | null = (() => {
   if (!SUPABASE_ANON_KEY) missing.push("VITE_SUPABASE_ANON_KEY")
   if (missing.length === 0) return null
   return (
-    `Configuracao do Supabase ausente no build: defina ${missing.join(" e ")} ` +
-    "no painel do Vercel (Settings -> Environment Variables, escopo Production) " +
-    "e disparare um novo Deploy. Variaveis do Vite sao lidas em tempo de build."
+    `Configuração do Supabase ausente no build: defina ${missing.join(" e ")} ` +
+    "no painel do Vercel (Settings → Environment Variables, escopo Production) " +
+    "e dispare um novo deploy. Variáveis do Vite são lidas em tempo de build."
   )
 })()
 
@@ -155,17 +156,19 @@ function timeoutError(): ApiError {
 }
 
 function friendlyMessage(status: number, raw: string): string {
+  const translated = translateApiError(raw)
+  const msg = translated || raw
   switch (status) {
-    case 400: return raw || "Dados inválidos. Verifique os campos e tente novamente."
-    case 401: return raw || "Sessão expirada. Faça login novamente."
-    case 403: return raw || "Você não tem permissão para realizar esta ação."
-    case 404: return raw || "Recurso não encontrado."
-    case 409: return raw || "Conflito: registro já existe ou está em uso."
-    case 422: return raw || "Erro de validação nos dados enviados."
-    case 429: return raw || "Muitas requisições. Aguarde alguns instantes."
-    case 500: return raw || "Erro interno do servidor. Tente novamente em instantes."
-    case 502: case 503: case 504: return raw || "Serviço temporariamente indisponível."
-    default:  return raw || `Erro inesperado (${status}).`
+    case 400: return msg || "Dados inválidos. Verifique os campos e tente novamente."
+    case 401: return msg || "Sessão expirada. Faça login novamente."
+    case 403: return msg || "Você não tem permissão para realizar esta ação."
+    case 404: return msg || "Recurso não encontrado."
+    case 409: return msg || "Conflito: registro já existe ou está em uso."
+    case 422: return msg || "Erro de validação nos dados enviados."
+    case 429: return msg || "Muitas requisições. Aguarde alguns instantes."
+    case 500: return msg || "Erro interno do servidor. Tente novamente em instantes."
+    case 502: case 503: case 504: return msg || "Serviço temporariamente indisponível."
+    default:  return msg || `Erro inesperado (${status}).`
   }
 }
 
@@ -173,8 +176,14 @@ function parseErrorMessage(raw: string, status = 0): string {
   if (!raw) return ""
   const problem = parseProblemDetails(raw)
   const fromProblem = messageFromProblemDetails(status, problem)
-  if (fromProblem) return fromProblem
-  return problem.detail ?? problem.message ?? problem.title ?? problem.error ?? raw
+  const merged =
+    fromProblem ||
+    problem.detail ||
+    problem.message ||
+    problem.title ||
+    problem.error ||
+    raw
+  return translateApiError(merged) || merged
 }
 
 async function performFetch(path: string, options: RequestOptions): Promise<Response> {

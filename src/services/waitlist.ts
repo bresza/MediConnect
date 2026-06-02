@@ -24,6 +24,7 @@
 // ─────────────────────────────────────────────────────────────────
 
 import { ApiError, apiRequest } from "./api"
+import { isEndpointUnavailable, markEndpointUnavailableFromError } from "./schemaSafe"
 import type {
   Patient,
   WaitlistEntry,
@@ -34,6 +35,7 @@ import type {
 
 const STORAGE_KEY = "mediconnect:waitlist"
 const TABLE_PATH  = "/rest/v1/appointment_waitlist"
+const WAITLIST_REST_KEY = "rest:appointment_waitlist"
 
 const DUE_DAYS_BY_COLOR: Record<WaitlistPriorityColor, number> = {
   red:    30,
@@ -319,14 +321,18 @@ function isRemoteUnavailable(err: unknown): boolean {
 // ─── CRUD híbrido ────────────────────────────────────────────────
 
 export async function getWaitlist(): Promise<WaitlistEntry[]> {
+  if (isEndpointUnavailable(WAITLIST_REST_KEY)) return loadLocal()
+
   try {
     const rows = await apiRequest<ApiWaitlistRow[]>(`${TABLE_PATH}?select=*&order=entered_at.asc`, {
       logErrors: false,
     })
     return Array.isArray(rows) ? rows.map(fromRow) : []
   } catch (err) {
-    if (!isRemoteUnavailable(err)) throw err
-    return loadLocal()
+    if (markEndpointUnavailableFromError(WAITLIST_REST_KEY, err) || isRemoteUnavailable(err)) {
+      return loadLocal()
+    }
+    throw err
   }
 }
 
@@ -357,16 +363,22 @@ export async function createWaitlistEntry(
   }
 
   try {
-    const created = await apiRequest<ApiWaitlistRow[]>(TABLE_PATH, {
-      method:    "POST",
-      headers:   { Prefer: "return=representation" },
-      body:      toRow(entry),
-      logErrors: false,
-    })
-    const row = Array.isArray(created) ? created[0] : (created as unknown as ApiWaitlistRow)
-    if (row) return fromRow(row)
+    if (!isEndpointUnavailable(WAITLIST_REST_KEY)) {
+      const created = await apiRequest<ApiWaitlistRow[]>(TABLE_PATH, {
+        method:    "POST",
+        headers:   { Prefer: "return=representation" },
+        body:      toRow(entry),
+        logErrors: false,
+      })
+      const row = Array.isArray(created) ? created[0] : (created as unknown as ApiWaitlistRow)
+      if (row) return fromRow(row)
+    }
   } catch (err) {
-    if (!isRemoteUnavailable(err)) throw err
+    if (markEndpointUnavailableFromError(WAITLIST_REST_KEY, err) || isRemoteUnavailable(err)) {
+      /* fallback local abaixo */
+    } else {
+      throw err
+    }
   }
 
   const local = [...loadLocal(), entry]
@@ -379,19 +391,25 @@ export async function updateWaitlistEntry(entry: WaitlistEntry): Promise<Waitlis
   const next: WaitlistEntry = { ...entry, dueBy: calcDueBy(entry.priorityColor, entry.enteredAt) }
 
   try {
-    const updated = await apiRequest<ApiWaitlistRow[]>(
-      `${TABLE_PATH}?id=eq.${encodeURIComponent(entry.id)}`,
-      {
-        method:    "PATCH",
-        headers:   { Prefer: "return=representation" },
-        body:      toRow(next),
-        logErrors: false,
-      },
-    )
-    const row = Array.isArray(updated) ? updated[0] : (updated as unknown as ApiWaitlistRow)
-    if (row) return fromRow(row)
+    if (!isEndpointUnavailable(WAITLIST_REST_KEY)) {
+      const updated = await apiRequest<ApiWaitlistRow[]>(
+        `${TABLE_PATH}?id=eq.${encodeURIComponent(entry.id)}`,
+        {
+          method:    "PATCH",
+          headers:   { Prefer: "return=representation" },
+          body:      toRow(next),
+          logErrors: false,
+        },
+      )
+      const row = Array.isArray(updated) ? updated[0] : (updated as unknown as ApiWaitlistRow)
+      if (row) return fromRow(row)
+    }
   } catch (err) {
-    if (!isRemoteUnavailable(err)) throw err
+    if (markEndpointUnavailableFromError(WAITLIST_REST_KEY, err) || isRemoteUnavailable(err)) {
+      /* fallback local abaixo */
+    } else {
+      throw err
+    }
   }
 
   const local = loadLocal().map((it) => it.id === entry.id ? next : it)

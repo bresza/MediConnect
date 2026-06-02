@@ -99,18 +99,32 @@
 }
 
 .td {
-  padding: 13px 16px;
+  padding: 0 16px;
+  height: 100%;
+  vertical-align: middle;
   color: var(--muted-foreground);
   border-bottom: 1px solid var(--border);
+  box-sizing: border-box;
 }
 
 .tdLast { border-bottom: none; }
+
+.clickableRow {
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.clickableRow:hover td {
+  background-color: var(--muted);
+}
 
 .patientCell {
   display: flex;
   align-items: center;
   gap: 10px;
   min-width: 0;
+  height: 100%;
+  padding: 10px 0;
 }
 
 .patientName {
@@ -131,15 +145,9 @@
 .actions {
   display: flex;
   gap: 6px;
-}
-
-.clickableRow {
-  cursor: pointer;
-  transition: background-color 120ms ease;
-}
-
-.clickableRow:hover td {
-  background-color: var(--muted);
+  align-items: center;
+  height: 100%;
+  padding: 10px 0;
 }
 
 .patientPhoto {

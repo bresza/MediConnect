@@ -131,52 +131,52 @@ export function getAIModel(): string {
 
 // ── System prompts por perfil ─────────────────────────────────────
 const BASE_PROMPT = [
-  "Voce e o assistente virtual INTELIGENTE do MediConnect, um sistema de gestao para clinicas.",
-  "Responda sempre em portugues do Brasil, de forma direta, objetiva e gentil.",
-  "Voce pode EXECUTAR tarefas no sistema quando estiver em modo agente (agendar, laudos, mensagens, navegacao).",
-  "Nao invente dados clinicos, financeiros ou pessoais que nao tenham sido informados na conversa.",
-  "Quando o usuario pedir algo fora do escopo do MediConnect, oriente-o brevemente e volte ao foco.",
-  "Nao faca diagnosticos definitivos nem prescreva medicamentos por conta propria.",
-  "Sempre que houver risco clinico, recomende avaliacao presencial com um profissional de saude.",
+  "Você é o assistente virtual INTELIGENTE do MediConnect, um sistema de gestão para clínicas.",
+  "Responda sempre em português do Brasil, de forma direta, objetiva e gentil.",
+  "Você pode EXECUTAR tarefas no sistema quando estiver em modo agente (agendar, laudos, mensagens, navegação).",
+  "Não invente dados clínicos, financeiros ou pessoais que não tenham sido informados na conversa.",
+  "Quando o usuário pedir algo fora do escopo do MediConnect, oriente-o brevemente e volte ao foco.",
+  "Não faça diagnósticos definitivos nem prescreva medicamentos por conta própria.",
+  "Sempre que houver risco clínico, recomende avaliação presencial com um profissional de saúde.",
 ].join(" ")
 
 const ROLE_PROMPTS: Record<UserRole, string> = {
   doctor: [
-    "Voce esta auxiliando um(a) MEDICO(a) da clinica.",
-    "Pode sugerir diferenciais diagnosticos, hipoteses, codigos CID-10, condutas, posologias e exames de apoio,",
-    "sempre como sugestao de raciocinio clinico, deixando claro que a decisao final e do(a) profissional.",
-    "Pode ajudar a redigir laudos, prontuarios, receitas, anamneses e mensagens para pacientes.",
-    "Use linguagem tecnica quando solicitado e linguagem leiga quando o medico pedir explicacao para paciente.",
+    "Você está auxiliando um(a) MÉDICO(A) da clínica.",
+    "Pode sugerir diferenciais diagnósticos, hipóteses, códigos CID-10, condutas, posologias e exames de apoio,",
+    "sempre como sugestão de raciocínio clínico, deixando claro que a decisão final é do(a) profissional.",
+    "Pode ajudar a redigir laudos, prontuários, receitas, anamneses e mensagens para pacientes.",
+    "Use linguagem técnica quando solicitado e linguagem leiga quando o médico pedir explicação para paciente.",
   ].join(" "),
   manager: [
-    "Voce esta auxiliando um(a) GESTOR(A) da clinica.",
-    "Foque em gestao operacional: KPIs, agendamentos, equipe, financeiro, comunicacao interna e fluxos administrativos.",
-    "Quando houver um resumo de dados da sessao (API) no contexto, use-o para numeros e listagens; nao invente registros alem desse resumo.",
-    "Pode sugerir templates de relatorios, metas, plano de acao, scripts de comunicacao e checklists de processos.",
+    "Você está auxiliando um(a) GESTOR(A) da clínica.",
+    "Foque em gestão operacional: KPIs, agendamentos, equipe, financeiro, comunicação interna e fluxos administrativos.",
+    "Quando houver um resumo de dados da sessão (API) no contexto, use-o para números e listagens; não invente registros além desse resumo.",
+    "Pode sugerir templates de relatórios, metas, plano de ação, scripts de comunicação e checklists de processos.",
   ].join(" "),
   financial: [
-    "Voce esta auxiliando uma pessoa do FINANCEIRO da clinica.",
-    "Foque em cobranca, conciliacao, inadimplencia, convenios, recibos, fluxo de caixa e relatorios financeiros.",
-    "Nao acesse dados clinicos. Trate informacoes financeiras com confidencialidade.",
+    "Você está auxiliando uma pessoa do FINANCEIRO da clínica.",
+    "Foque em cobrança, conciliação, inadimplência, convênios, recibos, fluxo de caixa e relatórios financeiros.",
+    "Não acesse dados clínicos. Trate informações financeiras com confidencialidade.",
   ].join(" "),
   secretary: [
-    "Voce esta auxiliando uma SECRETARIA(O) da clinica.",
-    "Foque em agendamento, confirmacao de consultas, cadastro de pacientes, comunicacao via WhatsApp/SMS/e-mail,",
-    "scripts de atendimento, etiqueta no telefone, organizacao de fila e orientacao geral ao paciente.",
-    "Nao oferece orientacao clinica: encaminhe duvidas medicas ao(a) profissional responsavel.",
+    "Você está auxiliando uma SECRETÁRIA(O) da clínica.",
+    "Foque em agendamento, confirmação de consultas, cadastro de pacientes, comunicação via WhatsApp/SMS/e-mail,",
+    "scripts de atendimento, etiqueta no telefone, organização de fila e orientação geral ao paciente.",
+    "Não ofereça orientação clínica: encaminhe dúvidas médicas ao(a) profissional responsável.",
   ].join(" "),
   admin: [
-    "Voce esta auxiliando um(a) ADMINISTRADOR(A) do sistema MediConnect.",
-    "Pode ajudar com configuracoes, permissoes, modelos de documentos, dicas de uso e boas praticas operacionais.",
-    "Nao se envolva em decisoes clinicas individuais.",
+    "Você está auxiliando um(a) ADMINISTRADOR(A) do sistema MediConnect.",
+    "Pode ajudar com configurações, permissões, modelos de documentos, dicas de uso e boas práticas operacionais.",
+    "Não se envolva em decisões clínicas individuais.",
   ].join(" "),
   patient: [
-    "Voce esta auxiliando um(a) PACIENTE da clinica.",
-    "Oferecer informacoes gerais sobre preparo de exames, agendamento, cuidados gerais e orientacoes pos-consulta",
-    "que o(a) medico(a) ja tenha indicado.",
-    "NUNCA faca diagnostico, nao prescreva medicamentos e nao sugira doses. Em caso de sintoma novo ou agravamento,",
-    "oriente a procurar atendimento medico ou servico de urgencia.",
-    "Use linguagem simples, acolhedora e sem termos tecnicos quando possivel.",
+    "Você está auxiliando um(a) PACIENTE da clínica.",
+    "Ofereça informações gerais sobre preparo de exames, agendamento, cuidados gerais e orientações pós-consulta",
+    "que o(a) médico(a) já tenha indicado.",
+    "NUNCA faça diagnóstico, não prescreva medicamentos e não sugira doses. Em caso de sintoma novo ou agravamento,",
+    "oriente a procurar atendimento médico ou serviço de urgência.",
+    "Use linguagem simples, acolhedora e sem termos técnicos quando possível.",
   ].join(" "),
 }
 
@@ -193,14 +193,14 @@ export function buildSystemPrompt({ role, userName, clinicName, apiContextSnapsh
   const parts = [
     BASE_PROMPT,
     intro,
-    userName   ? `O usuario logado se chama "${userName}".`    : "",
-    clinicName ? `A clinica atual e "${clinicName}".`           : "",
+    userName   ? `O usuário logado se chama "${userName}".`    : "",
+    clinicName ? `A clínica atual é "${clinicName}".`           : "",
   ]
   if (apiContextSnapshot?.trim()) {
     parts.push(
-      "Segue um resumo dos dados reais retornados pela API MediConnect/Supabase nesta sessao (mesmos dados das telas do usuario). " +
-        "Use esse bloco para responder com precisao sobre contagens, nomes e agenda visiveis. " +
-        "Nao invente registros fora deste bloco. Se algo nao aparecer, diga que nao consta nos dados carregados e sugira atualizar a pagina (botao Atualizar) ou consultar a tela correspondente.",
+      "Segue um resumo dos dados reais retornados pela API MediConnect/Supabase nesta sessão (mesmos dados das telas do usuário). " +
+        "Use esse bloco para responder com precisão sobre contagens, nomes e agenda visíveis. " +
+        "Não invente registros fora deste bloco. Se algo não aparecer, diga que não consta nos dados carregados e sugira atualizar a página (botão Atualizar) ou consultar a tela correspondente.",
     )
     parts.push(apiContextSnapshot.trim())
   }
@@ -230,18 +230,18 @@ function humanizeAIProviderError(message: string, provider: "gemini" | "groq" | 
   const m = message.toLowerCase()
   if (/leaked|reported as leaked|compromised/.test(m)) {
     return (
-      "A chave da API foi bloqueada pelo Google por vazamento (ex.: commit no GitHub, print ou chat publico). " +
+      "A chave da API foi bloqueada pelo Google por vazamento (ex.: commit no GitHub, print ou chat público). " +
       "Crie uma chave NOVA em https://aistudio.google.com/apikey , atualize VITE_GEMINI_API_KEY no arquivo .env " +
       "e reinicie o npm run dev. Revogue a chave antiga no Google Cloud."
     )
   }
   if (/invalid.*api.*key|api key not valid|incorrect api key/.test(m)) {
     return provider === "gemini"
-      ? "Chave do Gemini invalida. Confira VITE_GEMINI_API_KEY no .env."
-      : "Chave de API invalida. Confira o .env."
+      ? "Chave do Gemini inválida. Confira VITE_GEMINI_API_KEY no .env."
+      : "Chave de API inválida. Confira o .env."
   }
   if (/quota|rate limit|resource exhausted/.test(m)) {
-    return "Cota ou limite de requisicoes atingido. Aguarde alguns minutos ou use outro modelo no .env."
+    return "Cota ou limite de requisições atingido. Aguarde alguns minutos ou use outro modelo no .env."
   }
   return message
 }
@@ -292,27 +292,27 @@ async function chatCompleteGroq(
     if ((res.status === 400 || res.status === 404) &&
         /model|decommission|not\s+found|does\s+not\s+exist/i.test(parsed?.error?.message ?? raw)) {
       lastStatus  = res.status
-      lastMessage = parsed?.error?.message ?? `Modelo Groq nao encontrado: ${model}`
+      lastMessage = parsed?.error?.message ?? `Modelo Groq não encontrado: ${model}`
       continue
     }
 
     if (!res.ok) {
       const message = parsed?.error?.message
-        ?? (res.status === 401 ? "Chave do Groq invalida (VITE_GROQ_API_KEY)."
-          : res.status === 403 ? "Chave do Groq sem permissao."
+        ?? (res.status === 401 ? "Chave do Groq inválida (VITE_GROQ_API_KEY)."
+          : res.status === 403 ? "Chave do Groq sem permissão."
           : res.status === 429 ? "Limite de uso do Groq atingido. Aguarde alguns segundos."
           : `Erro ${res.status} ao consultar o Groq.`)
       throw new AIError(message)
     }
 
     const content = parsed?.choices?.[0]?.message?.content?.trim() ?? ""
-    if (!content) throw new AIError("O Groq nao retornou conteudo.")
+    if (!content) throw new AIError("O Groq não retornou conteúdo.")
     return content
   }
 
   throw new AIError(
     lastMessage ||
-      `Nenhum modelo Groq respondeu. Defina VITE_GROQ_MODEL com um modelo valido (ex.: llama-3.1-8b-instant). Ultimo status: ${lastStatus}.`,
+      `Nenhum modelo Groq respondeu. Defina VITE_GROQ_MODEL com um modelo válido (ex.: llama-3.1-8b-instant). Último status: ${lastStatus}.`,
   )
 }
 
@@ -349,14 +349,14 @@ async function chatCompleteDirect(
 
   if (!res.ok) {
     const message = parsed?.error?.message
-      ?? (res.status === 401 ? "Chave da OpenAI invalida ou nao autorizada (VITE_OPENAI_API_KEY)."
+      ?? (res.status === 401 ? "Chave da OpenAI inválida ou não autorizada (VITE_OPENAI_API_KEY)."
         : res.status === 429 ? "Limite de uso da OpenAI atingido."
         : `Erro ${res.status} ao consultar a OpenAI.`)
     throw new AIError(message)
   }
 
   const content = parsed?.choices?.[0]?.message?.content?.trim() ?? ""
-  if (!content) throw new AIError("A OpenAI nao retornou conteudo.")
+  if (!content) throw new AIError("A OpenAI não retornou conteúdo.")
   return content
 }
 
@@ -380,7 +380,7 @@ async function chatCompleteProxy(
 
     if (res?.error) throw new AIError(res.error)
     const content = res?.content?.trim()
-    if (!content) throw new AIError("O assistente nao retornou conteudo.")
+    if (!content) throw new AIError("O assistente não retornou conteúdo.")
     return content
   } catch (err) {
     if (err instanceof AIError) throw err
@@ -388,17 +388,17 @@ async function chatCompleteProxy(
     if (err instanceof ApiError) {
       if (err.status === 0) {
         throw new AIError(
-          "Nao foi possivel falar com a Edge Function ai-chat (CORS/rede). " +
-          "Sem acesso ao back-end, voce pode habilitar o modo direto definindo VITE_OPENAI_API_KEY no .env (a chave fica visivel no bundle).",
+          "Não foi possível falar com a Edge Function ai-chat (CORS/rede). " +
+          "Você pode habilitar o modo direto definindo VITE_OPENAI_API_KEY no .env (a chave fica visível no bundle).",
         )
       }
       if (err.status === 404) {
         throw new AIError(
-          "Edge Function ai-chat nao encontrada. Peca ao time de back-end para fazer o deploy, ou habilite o modo direto via VITE_OPENAI_API_KEY.",
+          "Edge Function ai-chat não encontrada. Habilite o modo direto via VITE_OPENAI_API_KEY ou peça ao time da API para publicar a função.",
         )
       }
       if (err.status === 401 || err.status === 403) {
-        throw new AIError("Sua sessao expirou. Faca login novamente para usar o assistente.")
+        throw new AIError("Sua sessão expirou. Faça login novamente para usar o assistente.")
       }
       throw new AIError(err.message)
     }
@@ -432,7 +432,7 @@ async function chatCompleteGemini(
     }
   }
   if (contents.length === 0) {
-    throw new AIError("Nenhuma mensagem de usuario para enviar ao Gemini.")
+    throw new AIError("Nenhuma mensagem de usuário para enviar ao Gemini.")
   }
 
   const requested = options.model ?? GEMINI_MODEL
@@ -477,7 +477,7 @@ async function chatCompleteGemini(
 
     if (res.status === 404) {
       lastStatus  = 404
-      lastMessage = parsed?.error?.message ?? `Modelo nao encontrado: ${model}`
+      lastMessage = parsed?.error?.message ?? `Modelo não encontrado: ${model}`
       continue
     }
 
@@ -489,7 +489,7 @@ async function chatCompleteGemini(
       const noFreeTier = /free[_ ]tier[\s\S]*limit:\s*0|limit:\s*0[\s\S]*free[_ ]tier/i.test(rawMessage)
       if (noFreeTier) {
         lastStatus  = 429
-        lastMessage = `Modelo ${model} nao esta no tier free desta chave.`
+        lastMessage = `Modelo ${model} não está no tier free desta chave.`
         continue
       }
       // Rate limit transitorio: nao tentamos outros modelos para nao
@@ -504,8 +504,8 @@ async function chatCompleteGemini(
 
     if (!res.ok) {
       const raw = parsed?.error?.message
-        ?? (res.status === 400 ? "Requisicao invalida para a API do Gemini."
-          : res.status === 401 || res.status === 403 ? "Chave do Gemini invalida ou sem permissao."
+        ?? (res.status === 400 ? "Requisição inválida para a API do Gemini."
+          : res.status === 401 || res.status === 403 ? "Chave do Gemini inválida ou sem permissão."
           : `Erro ${res.status} ao consultar o Gemini.`)
       throw new AIError(humanizeAIProviderError(raw, "gemini"))
     }
@@ -518,20 +518,20 @@ async function chatCompleteGemini(
       ?.map((p) => p.text ?? "")
       .join("")
       .trim() ?? ""
-    if (!content) throw new AIError("O Gemini nao retornou conteudo.")
+    if (!content) throw new AIError("O Gemini não retornou conteúdo.")
     return content
   }
 
   if (lastStatus === 429) {
     throw new AIError(
-      "Nenhum modelo Gemini disponivel no tier free para esta chave. " +
-      "Habilite billing no projeto Google Cloud ou aguarde a renovacao diaria da cota.",
+      "Nenhum modelo Gemini disponível no tier free para esta chave. " +
+      "Habilite billing no projeto Google Cloud ou aguarde a renovação diária da cota.",
     )
   }
   throw new AIError(
     humanizeAIProviderError(
       lastMessage ||
-        `Nenhum modelo Gemini respondeu. Defina VITE_GEMINI_MODEL no .env (ex.: gemini-2.0-flash). Ultimo status: ${lastStatus}.`,
+        `Nenhum modelo Gemini respondeu. Defina VITE_GEMINI_MODEL no .env (ex.: gemini-2.0-flash). Último status: ${lastStatus}.`,
       "gemini",
     ),
   )
@@ -574,11 +574,11 @@ function loadPuter(): Promise<PuterGlobal> {
     const handleLoad = () => {
       const g = (window as unknown as { puter?: PuterGlobal }).puter
       if (g?.ai?.chat) resolve(g)
-      else reject(new AIError("Puter.js carregou, mas a API ai.chat nao esta disponivel."))
+      else reject(new AIError("Puter.js carregou, mas a API ai.chat não está disponível."))
     }
     const handleError = () => {
       puterLoadPromise = null
-      reject(new AIError("Nao foi possivel carregar Puter.js (verifique conexao com js.puter.com)."))
+      reject(new AIError("Não foi possível carregar Puter.js (verifique conexão com js.puter.com)."))
     }
     if (existing) {
       existing.addEventListener("load",  handleLoad,  { once: true })
@@ -614,7 +614,7 @@ async function chatCompletePuter(
   options:  ChatRequestOptions,
 ): Promise<string> {
   const puter = await loadPuter()
-  if (!puter.ai?.chat) throw new AIError("Puter.js nao expos `ai.chat`.")
+  if (!puter.ai?.chat) throw new AIError("Puter.js não expôs `ai.chat`.")
 
   // A API do Puter aceita o mesmo formato OpenAI (array de {role, content}).
   const result = await puter.ai.chat(messages, {
@@ -624,7 +624,7 @@ async function chatCompletePuter(
   })
 
   const text = extractPuterText(result)
-  if (!text) throw new AIError("Puter.js nao retornou conteudo.")
+  if (!text) throw new AIError("Puter.js não retornou conteúdo.")
   return text
 }
 
@@ -635,7 +635,7 @@ export async function chatComplete(
   const mode = getAIMode()
   if (mode === "none") {
     throw new AIError(
-      "Assistente indisponivel: defina VITE_GROQ_API_KEY (recomendado), " +
+      "Assistente indisponível: defina VITE_GROQ_API_KEY (recomendado), " +
       "VITE_GEMINI_API_KEY, VITE_OPENAI_API_KEY ou configure a Edge Function ai-chat.",
     )
   }

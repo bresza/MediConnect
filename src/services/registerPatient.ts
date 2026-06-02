@@ -16,6 +16,7 @@
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "./api"
 import { messageFromProblemDetails, parseProblemDetails, type ProblemDetails } from "./problemDetails"
 import { onlyDigits } from "../utils"
+import { translateApiError } from "../utils/apiErrors"
 
 const REQUEST_TIMEOUT_MS = 15000
 
@@ -103,7 +104,8 @@ function messageForStatusAndCode(status: number, parsed: ParsedEdgeError): strin
   if (status === 400) {
     return raw || "Não foi possível concluir o cadastro. Verifique os dados informados."
   }
-  return raw || `Erro ao cadastrar (${status}).`
+  const out = raw || `Erro ao cadastrar (${status}).`
+  return translateApiError(out) || out
 }
 
 function isValidEmail(value: string): boolean {
@@ -216,7 +218,14 @@ export async function invokeRegisterPatient(
 }
 
 export function isRegisterPatientConflict(err: RegisterPatientApiError): boolean {
-  return err.status === 409 && ["CPF_EXISTS", "EMAIL_EXISTS"].includes(err.code ?? "")
+  const code = (err.code ?? "").toUpperCase()
+  if (["CPF_EXISTS", "EMAIL_EXISTS", "PATIENT_EXISTS", "PATIENT_ALREADY_EXISTS"].includes(code)) {
+    return true
+  }
+  if (err.status === 409) return true
+
+  const text = err.message.toLowerCase()
+  return /cpf.*j[aá].*cadastrad|e-?mail.*j[aá].*cadastrad|paciente.*j[aá].*cadastrad|j[aá].*cadastrad.*sistema|cadastro.*j[aá].*existe|already exists|patient.*already/i.test(text)
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -236,7 +245,8 @@ function messageForProblem(status: number, p: ProblemDetails): string {
   const mapped = messageFromProblemDetails(status, p)
   if (mapped) return mapped
   if (status === 409) return "Já existe um cadastro com estes dados."
-  return `Erro ao cadastrar (${status}).`
+  const fallback = `Erro ao cadastrar (${status}).`
+  return translateApiError(fallback) || fallback
 }
 
 /**

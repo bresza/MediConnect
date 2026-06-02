@@ -2,7 +2,9 @@
 
 ## Se você é só front-end (sem Supabase / back-end)
 
-Você **não precisa** publicar Edge Functions, rodar migrations nem abrir o SQL Editor.
+**Regra fixa do projeto:** você trabalha apenas no front. Não é sua função configurar Supabase, RLS, Storage, migrations ou deploy de functions.
+
+Você **não precisa** publicar Edge Functions, rodar migrations nem abrir o SQL Editor — e **não tem** como fazer isso sem o time da API.
 
 | Você controla | Quem tem o back-end controla |
 |---------------|------------------------------|

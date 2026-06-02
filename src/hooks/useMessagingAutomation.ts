@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react"
 import { runAppointmentReminders } from "../services/appointmentReminders"
 import { processInboundWhatsAppReplies } from "../services/whatsappInbound"
+import { isEdgeAutomationEnabled, isInboundRestEnabled } from "../services/schemaSafe"
 import type { Appointment, Patient } from "../types"
 
 const REMINDER_INTERVAL_MS = 15 * 60 * 1000
@@ -46,11 +47,14 @@ export function useMessagingAutomation({
 
         const localReminders = await runAppointmentReminders(appointments, patientMap)
 
-        const inbound = await processInboundWhatsAppReplies(appointments, patients, clinicName)
-
         const parts: string[] = []
         if (localReminders.sent > 0) parts.push(`${localReminders.sent} lembrete(s)`)
-        if (inbound.replied > 0) parts.push(`${inbound.replied} resposta(s) WhatsApp`)
+
+        if (isEdgeAutomationEnabled() || isInboundRestEnabled()) {
+          const inbound = await processInboundWhatsAppReplies(appointments, patients, clinicName)
+          if (inbound.replied > 0) parts.push(`${inbound.replied} resposta(s) WhatsApp`)
+        }
+
         if (parts.length > 0) onActivity?.(parts.join(" · "))
       } catch (err) {
         console.warn("[messagingAutomation]", err)
@@ -61,19 +65,23 @@ export function useMessagingAutomation({
 
     void tick()
     const reminderTimer = window.setInterval(() => void tick(), REMINDER_INTERVAL_MS)
-    const inboundTimer = window.setInterval(() => {
-      if (cancelled) return
-      void processInboundWhatsAppReplies(appointments, patients, clinicName).then((inbound) => {
-        if (inbound.replied > 0) {
-          onActivity?.(`${inbound.replied} resposta(s) automática(s) no WhatsApp`)
-        }
-      })
-    }, INBOUND_INTERVAL_MS)
+
+    let inboundTimer: number | undefined
+    if (isEdgeAutomationEnabled() || isInboundRestEnabled()) {
+      inboundTimer = window.setInterval(() => {
+        if (cancelled) return
+        void processInboundWhatsAppReplies(appointments, patients, clinicName).then((inbound) => {
+          if (inbound.replied > 0) {
+            onActivity?.(`${inbound.replied} resposta(s) automática(s) no WhatsApp`)
+          }
+        })
+      }, INBOUND_INTERVAL_MS)
+    }
 
     return () => {
       cancelled = true
       window.clearInterval(reminderTimer)
-      window.clearInterval(inboundTimer)
+      if (inboundTimer !== undefined) window.clearInterval(inboundTimer)
     }
   }, [enabled, appointments, patients, clinicName, onActivity])
 }

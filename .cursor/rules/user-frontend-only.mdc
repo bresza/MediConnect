@@ -1,0 +1,35 @@
+---
+description: PERFIL DO USUÁRIO — apenas front-end, SEM Supabase e SEM back-end
+alwaysApply: true
+---
+
+# Usuário: SOMENTE FRONT-END (gravar e respeitar sempre)
+
+O desenvolvedor deste projeto **NÃO tem acesso** a:
+
+- Painel Supabase (Storage, RLS, SQL Editor, Table Editor)
+- Deploy de Edge Functions, migrations, secrets
+- Repositório ou ambiente do back-end
+
+**Nunca** instruir o usuário a “abrir o Supabase”, “criar policy”, “rodar migration”, “fazer deploy da function” como se fosse tarefa dele.
+
+## Como responder a erros de API / Storage / RLS / 403
+
+1. Explicar em português claro **o que o servidor está recusando** (não culpar internet nem formulário).
+2. Dizer o que **já dá para fazer só no front** (mensagem amigável, não bloquear o resto do formulário, fallback, esconder feature se a API não suporta).
+3. Se precisar de mudança no servidor: **uma frase** do tipo “o time da API precisa liberar X” — **sem** passo a passo de Supabase para o usuário executar.
+4. **Não** listar SQL, policies nem comandos `supabase` como próximos passos do usuário.
+
+## O que o usuário controla
+
+- Código em `src/`, estilos, componentes, rotas
+- `.env` com `VITE_*` que alguém já passou (URL + anon key)
+- `npm run dev` / build / PR no Git
+
+## O que o Agent NÃO deve fazer
+
+- Inventar colunas em `select=` ou campos que a API não documenta
+- Assumir que Edge Functions existem ou estão deployadas
+- Tratar correção de RLS/schema como tarefa do usuário
+
+Referência técnica (para o Agent, não como checklist para o usuário): `docs/api-frontend-audit.md`, `docs/API-ALINHAMENTO.md`, regra `mediconnect-api.mdc`.

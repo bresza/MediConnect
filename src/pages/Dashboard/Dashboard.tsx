@@ -6,7 +6,7 @@ import { Badge } from "../../components/ui/Badge/Badge"
 import { Avatar } from "../../components/ui/Avatar/Avatar"
 import { Button } from "../../components/ui/Button/Button"
 import { RefreshButton } from "../../components/ui/RefreshButton/RefreshButton"
-import { formatDate, formatAppointmentType, sortByName, toTitleCase } from "../../utils"
+import { formatDateOnly, formatAppointmentType, sortByName, toTitleCase } from "../../utils"
 import type { PageId, Patient, Appointment, User } from "../../types"
 import styles from "./Dashboard.module.css"
 
@@ -183,7 +183,7 @@ export function Dashboard({ patients, appointments, currentUser, onNavigate, onR
               <div className={styles.patientInfo}>
                 <p className={styles.patientName}>{p.name}</p>
                 <p className={styles.patientSub}>
-                  {p.healthInsurance ?? "—"} · última visita {p.lastVisit ? formatDate(p.lastVisit) : "—"}
+                  {p.healthInsurance ?? "—"} · última visita {p.lastVisit ? formatDateOnly(p.lastVisit) : "—"}
                 </p>
               </div>
               <Badge>{p.status}</Badge>

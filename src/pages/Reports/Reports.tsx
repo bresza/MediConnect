@@ -172,15 +172,15 @@ async function aiCompleteReport(
     {
       role: "system",
       content: [
-        "Voce e o assistente clinico do MediConnect que ajuda medicos a redigir laudos em portugues do Brasil.",
-        "Gere SEMPRE um JSON valido (UTF-8) e nada mais, sem comentarios, sem texto fora do JSON e sem markdown.",
-        "Estrutura obrigatoria: { \"diagnosis\": string, \"conclusion\": string, \"contentHtml\": string }.",
-        "diagnosis: paragrafo objetivo (1-3 frases) descrevendo o quadro do paciente.",
-        "conclusion: paragrafo (1-2 frases) com a conclusao do laudo e orientacao geral.",
+        "Você é o assistente clínico do MediConnect que ajuda médicos a redigir laudos em português do Brasil.",
+        "Gere SEMPRE um JSON válido (UTF-8) e nada mais, sem comentários, sem texto fora do JSON e sem markdown.",
+        "Estrutura obrigatória: { \"diagnosis\": string, \"conclusion\": string, \"contentHtml\": string }.",
+        "diagnosis: parágrafo objetivo (1-3 frases) descrevendo o quadro do paciente.",
+        "conclusion: parágrafo (1-2 frases) com a conclusão do laudo e orientação geral.",
         "contentHtml: HTML simples usando apenas <h2>, <p>, <ul>, <li>, <strong>. Sem <html>, <body>, <style>, scripts ou classes.",
-        "Estruture contentHtml em secoes: Identificacao do paciente, Anamnese e achados, Avaliacao clinica, Conduta sugerida e Conclusao.",
-        "Nao invente exames, valores numericos, doses ou nomes que nao tenham sido informados; use [VALOR] ou [A DEFINIR] quando faltarem dados.",
-        "Nao inclua diagnostico definitivo, prescricao ou doses sem ressalva: deixe explicito que a decisao final e do(a) medico(a).",
+        "Estruture contentHtml em seções: Identificação do paciente, Anamnese e achados, Avaliação clínica, Conduta sugerida e Conclusão.",
+        "Não invente exames, valores numéricos, doses ou nomes que não tenham sido informados; use [VALOR] ou [A DEFINIR] quando faltarem dados.",
+        "Não inclua diagnóstico definitivo, prescrição ou doses sem ressalva: deixe explícito que a decisão final é do(a) médico(a).",
       ].join(" "),
     },
   ]
@@ -188,16 +188,16 @@ async function aiCompleteReport(
   const userPrompt: ChatMessage = {
     role: "user",
     content: [
-      `Medico responsavel: ${currentUser.name}${currentUser.crm ? ` (CRM ${formatCrm(currentUser.crm)})` : ""}.`,
+      `Médico responsável: ${currentUser.name}${currentUser.crm ? ` (CRM ${formatCrm(currentUser.crm)})` : ""}.`,
       `Paciente: ${patientInfo}.`,
       `Tipo de laudo: ${form.type}.`,
       form.cid10 ? `CID-10 informado: ${form.cid10}.` : "Sem CID-10 informado.",
-      form.diagnosis ? `Diagnostico em rascunho: ${form.diagnosis}.` : "Sem diagnostico em rascunho.",
-      form.conclusion ? `Conclusao em rascunho: ${form.conclusion}.` : "Sem conclusao em rascunho.",
-      template?.diagnosis ? `Diagnostico de referencia do template: ${template.diagnosis}.` : "",
-      template?.conclusion ? `Conclusao de referencia do template: ${template.conclusion}.` : "",
-      baseContent ? `Rascunho atual do laudo (HTML ou texto): ${baseContent}` : "Sem rascunho de conteudo.",
-      "Refine os campos com base nesse contexto, mantendo o que ja faz sentido e completando o que falta.",
+      form.diagnosis ? `Diagnóstico em rascunho: ${form.diagnosis}.` : "Sem diagnóstico em rascunho.",
+      form.conclusion ? `Conclusão em rascunho: ${form.conclusion}.` : "Sem conclusão em rascunho.",
+      template?.diagnosis ? `Diagnóstico de referência do template: ${template.diagnosis}.` : "",
+      template?.conclusion ? `Conclusão de referência do template: ${template.conclusion}.` : "",
+      baseContent ? `Rascunho atual do laudo (HTML ou texto): ${baseContent}` : "Sem rascunho de conteúdo.",
+      "Refine os campos com base nesse contexto, mantendo o que já faz sentido e completando o que falta.",
       "Responda APENAS com o JSON descrito.",
     ].filter(Boolean).join("\n"),
   }
@@ -228,15 +228,15 @@ async function aiCompleteReport(
       contentHtml = raw.trim()
     } else {
       contentHtml = plainTextToHtml(raw.trim() || [
-        diagnosis ? `Diagnostico: ${diagnosis}` : "",
-        conclusion ? `Conclusao: ${conclusion}` : "",
+        diagnosis ? `Diagnóstico: ${diagnosis}` : "",
+        conclusion ? `Conclusão: ${conclusion}` : "",
       ].filter(Boolean).join("\n\n"))
     }
   }
 
   return {
-    diagnosis:  diagnosis  || "Quadro clinico em avaliacao, correlacionado aos achados apresentados.",
-    conclusion: conclusion || "Conclusao compativel com os dados informados; seguimento conforme criterio medico.",
+    diagnosis:  diagnosis  || "Quadro clínico em avaliação, correlacionado aos achados apresentados.",
+    conclusion: conclusion || "Conclusão compatível com os dados informados; seguimento conforme critério médico.",
     contentHtml,
   }
 }

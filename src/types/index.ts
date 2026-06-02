@@ -4,6 +4,8 @@ export type UserRole = "doctor" | "manager" | "financial" | "secretary" | "admin
 export interface User {
   id: string; name: string; role: UserRole; email: string; crm?: string; specialty?: string
   doctorId?: string; patientId?: string; patientCpf?: string; phone?: string; dob?: string
+  /** URL de avatar no Storage (`avatars/{id}/avatar.jpg`) quando disponível. */
+  photoUrl?: string
 }
 
 // ─── STAFF ────────────────────────────────────────────────────────

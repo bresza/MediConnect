@@ -9,6 +9,7 @@ import {
   formatCepBR, formatCpfBR, formatPhoneBR,
   hasAtLeastTwoNames, isValidCpf, isValidEmail, onlyDigits,
 } from "../../utils"
+import { PatientPortalVerifyError } from "../../services/patients"
 import type { PageId, Patient } from "../../types"
 import styles from "./Registration.module.css"
 
@@ -18,7 +19,7 @@ interface RegistrationProps {
   onAddPatient:    (p: Omit<Patient, "id">) => Promise<Patient>
   onAddPatientWithPassword?: (p: Omit<Patient, "id">, password: string) => Promise<Patient>
   onCreatePatientAccess?: (p: Patient, password: string) => Promise<Patient>
-  onUpdatePatient: (p: Patient) => Promise<void>
+  onUpdatePatient: (p: Patient) => Promise<Patient>
   onNavigate:      (page: PageId) => void
   isSecretary?:    boolean   // secretária vê apenas steps 1-4 (sem dados clínicos)
 }
@@ -59,13 +60,19 @@ const FIELD_STEP: Partial<Record<keyof FormState, number>> = {
 function formatValidationSummary(
   fieldErrors: Partial<Record<keyof FormState, string>>,
 ): string {
-  const parts = Object.entries(fieldErrors).map(([key, msg]) => {
+  const parts = Object.entries(fieldErrors)
+    .filter(([, msg]) => Boolean(msg))
+    .map(([key, msg]) => {
     const label = FIELD_LABELS[key as keyof FormState] ?? key
     const step = FIELD_STEP[key as keyof FormState]
     const tab = step ? STEP_LABELS[step - 1] : ""
     return tab ? `${label} (${tab}): ${msg}` : `${label}: ${msg}`
   })
   return parts.join(" · ")
+}
+
+function hasVisibleErrors(errors: Partial<Record<keyof FormState, string>>): boolean {
+  return Object.values(errors).some((msg) => Boolean(msg))
 }
 
 // ─── Form state ───────────────────────────────────────────────────
@@ -159,7 +166,7 @@ const EMPTY: FormState = {
   motherName:"",motherOccupation:"",fatherName:"",fatherOccupation:"",
   guardianName:"",guardianCpf:"",spouseName:"",
   emergencyName:"",emergencyRelation:"",emergencyPhone:"",
-  createPortalAccess:false,portalPassword:"",portalConfirmPassword:"",
+  createPortalAccess:true,portalPassword:"",portalConfirmPassword:"",
   bloodType:"",allergies:"",chronicDiseases:"",currentMeds:"",
   previousSurgeries:"",familyHistory:"",smokingStatus:"",alcoholUse:"",
   physicalActivity:"",observations:"",
@@ -367,20 +374,93 @@ export function Registration({
   const [step, setStep]       = useState(1)
   const [form, setForm]       = useState<FormState>(editingPatient ? toForm(editingPatient) : EMPTY)
   const [errors, setErrors]   = useState<Partial<Record<keyof FormState, string>>>({})
+  const [showValidationBanner, setShowValidationBanner] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [saveWarning, setSaveWarning] = useState<string | null>(null)
   const [saved, setSaved]     = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const editingPatientIdRef = useRef<string | null>(null)
 
-  // Reinicializa quando editingPatient muda
+  /** Evita apagar campos que o usuário já preencheu quando `getPatientById` retorna depois. */
+  function mergeEditForm(prev: FormState, incoming: FormState): FormState {
+    const pick = (next: string, previous: string) => next || previous
+    return {
+      ...incoming,
+      gender: pick(incoming.gender, prev.gender),
+      maritalStatus: pick(incoming.maritalStatus, prev.maritalStatus),
+      ethnicity: pick(incoming.ethnicity, prev.ethnicity),
+      socialName: pick(incoming.socialName, prev.socialName),
+      birthplace: pick(incoming.birthplace, prev.birthplace),
+      occupation: pick(incoming.occupation, prev.occupation),
+      religion: pick(incoming.religion, prev.religion),
+      education: pick(incoming.education, prev.education),
+      rg: pick(incoming.rg, prev.rg),
+      healthInsurance: pick(incoming.healthInsurance, prev.healthInsurance),
+      healthInsuranceNumber: pick(incoming.healthInsuranceNumber, prev.healthInsuranceNumber),
+      zipCode: pick(incoming.zipCode, prev.zipCode),
+      street: pick(incoming.street, prev.street),
+      addressNumber: pick(incoming.addressNumber, prev.addressNumber),
+      complement: pick(incoming.complement, prev.complement),
+      neighborhood: pick(incoming.neighborhood, prev.neighborhood),
+      city: pick(incoming.city, prev.city),
+      state: pick(incoming.state, prev.state),
+      reference: pick(incoming.reference, prev.reference),
+      landline: pick(incoming.landline, prev.landline),
+      alternativePhone: pick(incoming.alternativePhone, prev.alternativePhone),
+      motherName: pick(incoming.motherName, prev.motherName),
+      fatherName: pick(incoming.fatherName, prev.fatherName),
+      guardianName: pick(incoming.guardianName, prev.guardianName),
+      spouseName: pick(incoming.spouseName, prev.spouseName),
+      emergencyName: pick(incoming.emergencyName, prev.emergencyName),
+      emergencyRelation: pick(incoming.emergencyRelation, prev.emergencyRelation),
+      emergencyPhone: pick(incoming.emergencyPhone, prev.emergencyPhone),
+      observations: pick(incoming.observations, prev.observations),
+      portalPassword: prev.portalPassword,
+      portalConfirmPassword: prev.portalConfirmPassword,
+      createPortalAccess: prev.createPortalAccess,
+    }
+  }
+
   useEffect(() => {
-    setForm(editingPatient ? toForm(editingPatient) : EMPTY)
-    setStep(1); setSaved(false); setErrors({})
+    if (!editingPatient) {
+      editingPatientIdRef.current = null
+      setForm(EMPTY)
+      setStep(1)
+      setSaved(false)
+      setErrors({})
+      setSaveError(null)
+      setSaveWarning(null)
+      setShowValidationBanner(false)
+      return
+    }
+
+    const incoming = toForm(editingPatient)
+    const isNewPatient = editingPatientIdRef.current !== editingPatient.id
+
+    if (isNewPatient) {
+      editingPatientIdRef.current = editingPatient.id
+      setForm(incoming)
+      setStep(1)
+      setSaved(false)
+      setErrors({})
+      setSaveError(null)
+      setSaveWarning(null)
+      setShowValidationBanner(false)
+      return
+    }
+
+    setForm((prev) => mergeEditForm(prev, incoming))
   }, [editingPatient])
 
   function set(field: keyof FormState, value: string | boolean) {
     setForm((f) => ({ ...f, [field]: value }))
-    setErrors((e) => ({ ...e, [field]: undefined }))
+    setErrors((e) => {
+      if (!(field in e)) return e
+      const next = { ...e }
+      delete next[field]
+      return next
+    })
     setSaveError(null)
   }
 
@@ -459,12 +539,38 @@ export function Registration({
     if (Object.keys(merged).length > 0) {
       setErrors(merged)
       setStep(firstInvalidStep)
+      setShowValidationBanner(true)
       setSaveError(formatValidationSummary(merged))
       return false
     }
 
     setErrors({})
     setSaveError(null)
+    setShowValidationBanner(false)
+    return true
+  }
+
+  function validateAllStepsForCreate(): boolean {
+    const merged: Partial<Record<keyof FormState, string>> = {}
+    let firstInvalidStep = 0
+
+    for (const targetStep of [1, 2, 4]) {
+      const stepErrors = validationForStep(targetStep)
+      if (Object.keys(stepErrors).length > 0) {
+        Object.assign(merged, stepErrors)
+        if (!firstInvalidStep) firstInvalidStep = targetStep
+      }
+    }
+
+    if (Object.keys(merged).length > 0) {
+      setErrors(merged)
+      setStep(firstInvalidStep)
+      setShowValidationBanner(true)
+      return false
+    }
+
+    setErrors({})
+    setShowValidationBanner(false)
     return true
   }
 
@@ -525,14 +631,34 @@ export function Registration({
 
   async function savePatient() {
     setIsSaving(true)
+    setSaveError(null)
+    setSaveWarning(null)
     try {
       const data = buildPatientData()
       if (isEditing && editingPatient) {
-        const patient = { ...data, id: editingPatient.id }
-        if (form.createPortalAccess && onCreatePatientAccess) {
-          await onCreatePatientAccess(patient, form.portalPassword)
-        } else {
-          await onUpdatePatient(patient)
+        const patient: Patient = {
+          ...data,
+          id: editingPatient.id,
+          userId: editingPatient.userId,
+        }
+        await onUpdatePatient(patient)
+
+        const wantsPortal =
+          form.createPortalAccess &&
+          form.portalPassword.trim() &&
+          onCreatePatientAccess
+
+        if (wantsPortal) {
+          try {
+            await onCreatePatientAccess(patient, form.portalPassword)
+          } catch (portalErr) {
+            const portalMsg = portalErr instanceof Error
+              ? portalErr.message
+              : "Não foi possível criar o acesso ao portal."
+            setSaveWarning(`Os dados foram salvos, mas o acesso ao portal não pôde ser criado: ${portalMsg}`)
+            setSaved(true)
+            return
+          }
         }
       } else if (form.createPortalAccess && onAddPatientWithPassword) {
         await onAddPatientWithPassword(data, form.portalPassword)
@@ -541,6 +667,11 @@ export function Registration({
       }
       setSaved(true)
     } catch (err) {
+      if (err instanceof PatientPortalVerifyError) {
+        setSaveWarning(err.message)
+        setSaved(true)
+        return
+      }
       setSaveError(err instanceof Error ? err.message : "Não foi possível salvar o paciente.")
     } finally { setIsSaving(false) }
   }
@@ -551,9 +682,17 @@ export function Registration({
       await savePatient()
       return
     }
+
     setSaveError(null)
-    if (!validateStep()) return
-    if (step < totalSteps) { setStep((s) => s + 1); return }
+    setShowValidationBanner(false)
+
+    if (step < totalSteps) {
+      if (!validateStep()) return
+      setStep((s) => s + 1)
+      return
+    }
+
+    if (!validateAllStepsForCreate()) return
     await savePatient()
   }
 
@@ -571,6 +710,11 @@ export function Registration({
             <p style={{ fontSize:14,color:"var(--muted-foreground)",marginBottom:28 }}>
               {isEditing ? `Os dados de ${form.name} foram atualizados com sucesso.` : `${form.name} foi registrado no sistema.`}
             </p>
+            {saveWarning && (
+              <p style={{ fontSize:13,color:"#d97706",marginBottom:20,maxWidth:480,marginInline:"auto",lineHeight:1.5 }}>
+                {saveWarning}
+              </p>
+            )}
             <div style={{ display:"flex",gap:12,justifyContent:"center",flexWrap:"wrap" }}>
               {!isEditing && (
                 <Button variant="ghost" onClick={() => { setForm(EMPTY); setStep(1); setSaved(false) }}>
@@ -620,7 +764,7 @@ export function Registration({
       />
 
       <Card className={styles.formCard}>
-        {(saveError || Object.keys(errors).length > 0) && (
+        {(saveError || (showValidationBanner && hasVisibleErrors(errors))) && (
           <div className={styles.alertBanner} role="alert">
             {saveError ?? "Verifique os campos obrigatórios destacados abaixo."}
           </div>
@@ -670,7 +814,7 @@ export function Registration({
                   const file = e.target.files?.[0]
                   if (!file) return
                   if (file.size > 5 * 1024 * 1024) {
-                    setSaveError("A foto deve ter no maximo 5 MB.")
+                    setSaveError("A foto deve ter no máximo 5 MB.")
                     e.target.value = ""
                     return
                   }
@@ -830,12 +974,28 @@ export function Registration({
 
             <Section title="Acesso do paciente">
               <div className={`${styles.portalAccessBox} ${styles.marginTop}`}>
+                {isEditing && !editingPatient?.userId && (
+                  <p className={styles.portalAccessText} style={{ marginBottom: 12 }}>
+                    Este paciente ainda não tem login no portal. Marque a opção abaixo e defina uma senha para permitir o acesso.
+                  </p>
+                )}
+                {isEditing && editingPatient?.userId && (
+                  <p className={styles.portalAccessText} style={{ marginBottom: 12 }}>
+                    Este paciente já tem login no portal. Marque abaixo e informe uma nova senha — o sistema testa o login no servidor antes de concluir.
+                  </p>
+                )}
                 <CheckRow
                   field="createPortalAccess"
-                  label={isEditing ? "Criar acesso ao portal para este paciente" : "Criar usuário paciente com e-mail e senha"}
+                  label={
+                    isEditing && editingPatient?.userId
+                      ? "Redefinir senha do portal deste paciente"
+                      : isEditing
+                        ? "Criar acesso ao portal para este paciente"
+                        : "Criar usuário paciente com e-mail e senha"
+                  }
                 />
                 <p className={styles.portalAccessText}>
-                  O paciente poderá entrar com o e-mail cadastrado e acessar consultas, exames, receitas e laudos vinculados ao CPF/e-mail.
+                  O paciente entra com o e-mail cadastrado nesta ficha e a senha definida aqui.
                 </p>
                 {form.createPortalAccess && (
                   <div className={styles.grid2}>
@@ -917,7 +1077,15 @@ export function Registration({
 
         {/* Footer */}
         <div className={styles.formFooter}>
-          <Button variant="ghost" onClick={() => step > 1 ? setStep((s) => s - 1) : onNavigate("patients")}>
+          <Button variant="ghost" onClick={() => {
+            if (step > 1) {
+              setStep((s) => s - 1)
+              setShowValidationBanner(false)
+              setSaveError(null)
+              return
+            }
+            onNavigate("patients")
+          }}>
             {step > 1 ? "← Anterior" : "Cancelar"}
           </Button>
           <div className={styles.formFooterRight}>

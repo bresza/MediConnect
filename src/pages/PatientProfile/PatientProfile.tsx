@@ -41,8 +41,11 @@ const APPT_STATUS_COLOR: Record<string, string> = {
   cancelled: "#dc2626", absent: "#dc2626", blocked: "#6b7280", pending: "#d97706",
 }
 
-function calcAge(dob: string) {
-  const d = new Date(dob), t = new Date()
+function calcAge(dob: string): number | null {
+  if (!dob?.trim()) return null
+  const d = new Date(dob)
+  if (Number.isNaN(d.getTime())) return null
+  const t = new Date()
   let a = t.getFullYear() - d.getFullYear()
   if (t.getMonth() < d.getMonth() || (t.getMonth() === d.getMonth() && t.getDate() < d.getDate())) a--
   return a
@@ -82,6 +85,7 @@ export function PatientProfile({
   const showClinical = canViewClinicalData(currentUser.role)
   const visibleTabs = showClinical ? TABS : TABS.filter((t) => t.id !== "prescriptions")
   const age = calcAge(patient.dob)
+  const ageLabel = age != null ? `${age} anos` : undefined
   const activeTab: Tab = !showClinical && tab === "prescriptions" ? "overview" : tab
 
   const patientAppts = appointments
@@ -138,7 +142,7 @@ export function PatientProfile({
                 )}
               </div>
               <p className={styles.heroDemographic}>
-                {[patient.gender ? GENDER_MAP[patient.gender] : undefined, `${age} anos`, patient.dob ? formatDate(patient.dob) : "—"].filter(Boolean).join(" · ")}
+                {[patient.gender ? GENDER_MAP[patient.gender] : undefined, ageLabel, patient.dob ? formatDate(patient.dob) : "—"].filter(Boolean).join(" · ")}
                 {patient.occupation ? ` · ${patient.occupation}` : ""}
               </p>
               <p className={styles.heroInsurance}>
@@ -371,7 +375,7 @@ export function PatientProfile({
                 <InfoItem label="RG"                 value={patient.rg} />
                 <InfoItem label="Sexo"               value={patient.gender ? GENDER_MAP[patient.gender] : undefined} />
                 <InfoItem label="Data de nascimento" value={patient.dob ? formatDate(patient.dob) : undefined} />
-                <InfoItem label="Idade"              value={`${age} anos`} />
+                <InfoItem label="Idade"              value={ageLabel} />
                 <InfoItem label="Estado civil"       value={patient.maritalStatus ? MARITAL_MAP[patient.maritalStatus] : undefined} />
                 <InfoItem label="Profissão"          value={patient.occupation} />
                 <InfoItem label="Naturalidade"       value={patient.birthplace} />

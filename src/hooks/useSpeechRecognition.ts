@@ -107,10 +107,10 @@ export function useSpeechRecognition({
     recognition.onerror = (event) => {
       if (event.error === "aborted") return
       const message = event.error === "not-allowed"
-        ? "Permissao do microfone negada. Libere o acesso nas configuracoes do navegador."
+        ? "Permissão do microfone negada. Libere o acesso nas configurações do navegador."
         : event.error === "no-speech"
           ? "Nenhuma fala detectada. Tente novamente."
-          : "Nao foi possivel capturar a voz."
+          : "Não foi possível capturar a voz."
       onError?.(message)
       shouldSendRef.current = false
       setListening(false)
@@ -128,7 +128,7 @@ export function useSpeechRecognition({
     try {
       recognition.start()
     } catch {
-      onError?.("Nao foi possivel iniciar o microfone.")
+      onError?.("Não foi possível iniciar o microfone.")
       setListening(false)
     }
   }, [Ctor, listening, lang, autoSendOnEnd, onFinalTranscript, onInterimTranscript, onError])

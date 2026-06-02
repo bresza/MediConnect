@@ -1,5 +1,14 @@
 import { ApiError, apiRequest, getApiUserId } from "./api"
-import { exceptionBlockedMinuteRange, getDoctorExceptions } from "./availability"
+import {
+  isEdgeAutomationEnabled,
+  isEndpointUnavailable,
+  markEndpointUnavailableFromError,
+} from "./schemaSafe"
+import {
+  exceptionBlockedMinuteRange,
+  getDoctorExceptions,
+  normalizeWeekday,
+} from "./availability"
 import { fetchDoctorNameMap, fetchPatientNameMap } from "./lookups"
 import { getPatientByIdentity, type PatientIdentity } from "./patients"
 import { fillGapFromWaitlist } from "./waitlistAutomation"
@@ -69,18 +78,6 @@ export interface DoctorAvailability {
   active: boolean
 }
 
-const WEEKDAY_ENUM_VALUES = [
-  "sunday",
-  "monday",
-  "tuesday",
-  "wednesday",
-  "thursday",
-  "friday",
-  "saturday",
-] as const
-const WEEKDAY_PT_VALUES = ["domingo", "segunda", "terca", "quarta", "quinta", "sexta", "sabado"] as const
-const WEEKDAY_PT_DASH_VALUES = ["domingo", "segunda-feira", "terca-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sabado"] as const
-
 function pad(value: number): string {
   return String(value).padStart(2, "0")
 }
@@ -99,22 +96,6 @@ function localDateTimeIso(date: string, time: string): string {
   return new Date(year, month - 1, day, hours, minutes, 0).toISOString()
 }
 
-function normalizeWeekday(value: number | string): number {
-  if (typeof value === "number") return value
-  const numeric = Number(value)
-  if (Number.isInteger(numeric)) return numeric
-  const normalized = value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-  const englishIndex = WEEKDAY_ENUM_VALUES.indexOf(normalized as (typeof WEEKDAY_ENUM_VALUES)[number])
-  if (englishIndex >= 0) return englishIndex
-  const ptIndex = WEEKDAY_PT_VALUES.indexOf(normalized as (typeof WEEKDAY_PT_VALUES)[number])
-  if (ptIndex >= 0) return ptIndex
-  const ptDashIndex = WEEKDAY_PT_DASH_VALUES.indexOf(normalized as (typeof WEEKDAY_PT_DASH_VALUES)[number])
-  return ptDashIndex >= 0 ? ptDashIndex : -1
-}
-
 function timeToMinutes(value: string): number {
   const [hours, minutes] = value.slice(0, 5).split(":").map(Number)
   return hours * 60 + minutes
@@ -126,6 +107,26 @@ function minutesToTime(value: number): string {
 
 function rangesOverlap(startA: number, endA: number, startB: number, endB: number): boolean {
   return startA < endB && endA > startB
+}
+
+/** Conflito de horário com agendamentos já carregados no client (ex.: assistente IA). */
+export function isAppointmentSlotBusy(
+  appointments: Appointment[],
+  doctorId: string,
+  date: string,
+  time: string,
+  durationMinutes = 30,
+): boolean {
+  if (!doctorId || !date || !time) return false
+  const start = timeToMinutes(time.slice(0, 5))
+  const end = start + durationMinutes
+  return appointments.some((appointment) => {
+    if (appointment.doctorId !== doctorId || appointment.date !== date) return false
+    if (appointment.status === "cancelled") return false
+    const otherStart = timeToMinutes(appointment.time.slice(0, 5))
+    const otherEnd = otherStart + (appointment.duration ?? 30)
+    return rangesOverlap(start, end, otherStart, otherEnd)
+  })
 }
 
 function apiToAvailability(api: ApiDoctorAvailability): DoctorAvailability {
@@ -323,19 +324,33 @@ async function fetchAppointmentById(id: string): Promise<Appointment | null> {
   }
 }
 
+function appointmentConflictMessage(err: unknown): Error | null {
+  if (!(err instanceof ApiError) || err.status !== 409) return null
+  return new Error(
+    "Este horário já está ocupado para o médico. Escolha outro horário ou outra data.",
+  )
+}
+
 export async function createAppointment(
   data: Omit<Appointment, "id">
 ): Promise<Appointment> {
-  const created = await apiRequest<ApiAppointment[]>(
-    "/rest/v1/appointments",
-    {
-      method: "POST",
-      headers: {
-        Prefer: "return=representation",
+  let created: ApiAppointment[] | ApiAppointment
+  try {
+    created = await apiRequest<ApiAppointment[]>(
+      "/rest/v1/appointments",
+      {
+        method: "POST",
+        headers: {
+          Prefer: "return=representation",
+        },
+        body: appointmentToApi(data, true),
       },
-      body: appointmentToApi(data, true),
-    }
-  )
+    )
+  } catch (err) {
+    const conflict = appointmentConflictMessage(err)
+    if (conflict) throw conflict
+    throw err
+  }
 
   const raw = Array.isArray(created)
     ? created[0]
@@ -415,7 +430,7 @@ async function safeAvailabilitySlots(
   try {
     return await getAvailableSlotsFromAvailability(doctorId, date, appointmentType)
   } catch (err) {
-    if (err instanceof ApiError && [400, 404, 422, 500, 501, 502, 503].includes(err.status)) {
+    if (err instanceof ApiError && [0, 400, 404, 422, 500, 501, 502, 503].includes(err.status)) {
       return []
     }
     throw err
@@ -427,6 +442,8 @@ export interface GetAvailableSlotsOptions {
   allowDefaultFallback?: boolean
 }
 
+const EDGE_AVAILABLE_SLOTS_KEY = "edge:get-available-slots"
+
 export async function getAvailableSlots(
   doctorId: string,
   date: string,
@@ -437,17 +454,23 @@ export async function getAvailableSlots(
   if (!doctorId || !date) return []
   if (date < localDate(new Date())) return []
 
-  try {
-    const apiSlots = await getAvailableSlotsFromApi(doctorId, date, appointmentType)
-    if (apiSlots.length > 0) return apiSlots
-  } catch (err) {
-    if (!(err instanceof ApiError)) throw err
-    const fallbackStatuses = [400, 404, 422, 500, 501, 502, 503]
-    if (!fallbackStatuses.includes(err.status)) throw err
-  }
-
   const localSlots = await safeAvailabilitySlots(doctorId, date, appointmentType)
   if (localSlots.length > 0) return localSlots
+
+  if (
+    isEdgeAutomationEnabled() &&
+    !isEndpointUnavailable(EDGE_AVAILABLE_SLOTS_KEY)
+  ) {
+    try {
+      const apiSlots = await getAvailableSlotsFromApi(doctorId, date, appointmentType)
+      if (apiSlots.length > 0) return apiSlots
+    } catch (err) {
+      markEndpointUnavailableFromError(EDGE_AVAILABLE_SLOTS_KEY, err)
+      if (!(err instanceof ApiError)) throw err
+      const recoverable = [0, 400, 404, 422, 500, 501, 502, 503]
+      if (!recoverable.includes(err.status)) throw err
+    }
+  }
 
   if (!allowDefaultFallback) return []
 
@@ -475,23 +498,23 @@ async function getAvailableSlotsFromAvailability(
   if (date < today) return []
 
   const day = new Date(`${date}T00:00:00`).getDay()
-  const availabilityParams = new URLSearchParams({
-    doctor_id: `eq.${doctorId}`,
-    weekday: `eq.${day}`,
-    appointment_type: `eq.${appointmentType}`,
-    active: "eq.true",
-    select: "*",
-    order: "start_time.asc",
-  })
 
-  const [availability, exceptions, appointments] = await Promise.all([
-    apiRequest<ApiDoctorAvailability[]>(
-      `/rest/v1/doctor_availability?${availabilityParams.toString()}`,
-    ),
+  let availabilityRows: ApiDoctorAvailability[] = []
+  try {
+    availabilityRows = await apiRequest<ApiDoctorAvailability[]>(
+      `/rest/v1/doctor_availability?doctor_id=eq.${encodeURIComponent(doctorId)}&select=*&order=start_time.asc`,
+      { logErrors: false },
+    ) ?? []
+  } catch {
+    return []
+  }
+
+  const [exceptions, appointments] = await Promise.all([
     getDoctorExceptions({ doctorId, date, kind: "bloqueio" }).catch(() => []),
     apiRequest<ApiAppointment[]>(
       `/rest/v1/appointments?doctor_id=eq.${encodeURIComponent(doctorId)}&select=id,doctor_id,patient_id,scheduled_at,duration_minutes,status`,
-    ),
+      { logErrors: false },
+    ).catch(() => []),
   ])
 
   const busyRanges = (appointments ?? [])
@@ -510,7 +533,7 @@ async function getAvailableSlotsFromAvailability(
   const now = new Date()
   const nowMinutes = timeToMinutes(localTime(now))
 
-  return (availability ?? [])
+  return availabilityRows
     .filter((row) => row.active !== false)
     .filter((row) => normalizeWeekday(row.weekday) === day)
     .filter((row) => !row.appointment_type || row.appointment_type === appointmentType)
@@ -560,39 +583,16 @@ async function getAvailableSlotsFromApi(
   date: string,
   appointmentType: string,
 ): Promise<string[]> {
-  async function requestPrimary() {
-    return apiRequest<ApiAvailableSlotsResponse>("/functions/v1/get-available-slots", {
-      method: "POST",
-      body: {
-        doctor_id: doctorId,
-        start_date: date,
-        end_date: date,
-        appointment_type: appointmentType,
-      },
-      logErrors: false,
-    })
-  }
-
-  async function requestFallback() {
-    return apiRequest<ApiAvailableSlotsResponse>("/get-available-slots", {
-      method: "POST",
-      body: {
-        doctor_id: doctorId,
-        start_date: date,
-        end_date: date,
-        appointment_type: appointmentType,
-      },
-      logErrors: false,
-    })
-  }
-
-  let data: ApiAvailableSlotsResponse | undefined
-  try {
-    data = await requestPrimary()
-  } catch (err) {
-    if (!(err instanceof ApiError) || err.status !== 404) throw err
-    data = await requestFallback()
-  }
+  const data = await apiRequest<ApiAvailableSlotsResponse>("/functions/v1/get-available-slots", {
+    method: "POST",
+    body: {
+      doctor_id: doctorId,
+      start_date: date,
+      end_date: date,
+      appointment_type: appointmentType,
+    },
+    logErrors: false,
+  })
 
   const today = localDate(new Date())
   const nowMinutes = timeToMinutes(localTime(new Date()))

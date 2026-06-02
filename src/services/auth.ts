@@ -1,13 +1,14 @@
 import { SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_CONFIG_ERROR, apiRequest, ApiError } from "./api"
 import {
-  invokeRegisterPatient,
   invokeRegisterPatientWithPassword,
   isRegisterPatientConflict,
   RegisterPatientApiError,
 } from "./registerPatient"
 import { messageFromProblemDetails, parseProblemDetails } from "./problemDetails"
 import { isValidCpf, isValidEmail } from "../utils"
+import { translateApiError } from "../utils/apiErrors"
 import type { User, UserRole } from "../types"
+import { avatarUrlForUser, normalizeAvatarUrl } from "./patientPhoto"
 
 type ApiUserRole = "admin" | "gestor" | "medico" | "secretaria" | "paciente" | "user"
 
@@ -252,161 +253,39 @@ export async function createPatientAccount(payload: PatientSignupPayload): Promi
   if (!name || name.length < 3) throw new Error("Informe seu nome completo.")
   if (!email) throw new Error("Informe seu e-mail.")
   if (!isValidEmail(email)) throw new Error("E-mail inválido.")
-  if (password && password.length < 6) throw new Error("A senha deve ter pelo menos 6 caracteres.")
+  if (!password || password.length < 6) {
+    throw new Error("A senha é obrigatória e deve ter pelo menos 6 caracteres.")
+  }
   if (cpf.length !== 11) throw new Error("Informe um CPF válido com 11 dígitos.")
   if (!isValidCpf(cpf)) throw new Error("CPF inválido. Confira os números e os dígitos verificadores.")
   if (!phone) throw new Error("Informe seu telefone.")
   if (!/^\d{10,11}$/.test(phone)) throw new Error("Telefone inválido. Informe DDD + número (10-11 dígitos).")
 
-  if (password.length >= 6) {
-    return createPatientAccountWithPassword({
-      name, email, password, cpf, phone, dob: payload.dob,
-    })
-  }
-
-  return createPatientAccountMagicLink({
-    name, email, cpf, phone, dob: payload.dob,
+  return createPatientAccountWithPassword({
+    name, email, password, cpf, phone, dob: payload.dob,
   })
 }
 
-interface CreatePatientMagicLinkInput {
-  name:  string
+/** Credencial Auth pública para paciente já cadastrado na clínica (aba «Criar conta»). */
+export async function createExistingPatientPortalAccess(input: {
+  name: string
   email: string
-  cpf:   string
+  password: string
+  cpf: string
   phone: string
-  dob?:  string
-}
+  dob?: string
+}): Promise<PatientSignupResponse> {
+  const password = input.password.trim()
+  if (password.length < 6) throw new Error("A senha deve ter pelo menos 6 caracteres.")
 
-interface CreateUserMagicLinkResponse {
-  success?: boolean
-  user?: { id?: string; email?: string }
-  profile?: { patient_id?: string }
-  patient_id?: string
-  message?: string
-}
-
-async function sendMagicLinkOtp(email: string): Promise<void> {
-  const res = await fetchWithTimeout(`${SUPABASE_URL}/auth/v1/otp`, {
-    method: "POST",
-    headers: authHeaders(),
-    body: JSON.stringify({ email }),
+  return claimExistingPatientAccount({
+    name:     input.name.trim(),
+    email:    input.email.trim().toLowerCase(),
+    password,
+    cpf:      onlyDigits(input.cpf),
+    phone:    onlyDigits(input.phone),
+    dob:      input.dob,
   })
-
-  if (!res.ok) {
-    const raw = await res.text().catch(() => "")
-    const parsed = safeJsonParse(raw)
-    const message =
-      parsed.error_description ??
-      parsed.message ??
-      parsed.error ??
-      (res.status === 429
-        ? "Muitas tentativas para envio de link. Aguarde alguns instantes e tente novamente."
-        : "Não foi possível enviar o link de acesso por e-mail.")
-    throw new Error(message)
-  }
-}
-
-async function createPatientViaCreateUserMagicLink(
-  input: CreatePatientMagicLinkInput,
-): Promise<PatientSignupResponse> {
-  const redirect_url = typeof window !== "undefined" ? window.location.origin : undefined
-  const payload = {
-    email: input.email,
-    full_name: input.name,
-    phone: input.phone || undefined,
-    role: "paciente",
-    create_patient_record: true,
-    cpf: input.cpf,
-    phone_mobile: input.phone || undefined,
-    redirect_url,
-  }
-
-  async function post(path: string): Promise<Response> {
-    return fetchWithTimeout(`${SUPABASE_URL}${path}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Accept": "application/json, application/problem+json",
-        "apikey": SUPABASE_ANON_KEY,
-        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
-      },
-      body: JSON.stringify(payload),
-    })
-  }
-
-  let res = await post("/functions/v1/create-user")
-  if (res.status === 404) res = await post("/create-user")
-
-  if (!res.ok) {
-    const raw = await res.text().catch(() => "")
-    const parsed = safeJsonParse(raw)
-    const message =
-      parsed.error_description ??
-      parsed.message ??
-      parsed.error ??
-      "Não foi possível criar o usuário com Magic Link."
-    throw new Error(message)
-  }
-
-  const data = await res.json().catch(() => null) as CreateUserMagicLinkResponse | null
-  return {
-    success: data?.success ?? true,
-    patient_id: data?.patient_id ?? data?.profile?.patient_id,
-    user_id: data?.user?.id,
-    email: data?.user?.email ?? input.email,
-    message:
-      data?.message ??
-      "Enviamos um link de acesso para o seu e-mail. Abra a mensagem para concluir o primeiro acesso.",
-    magicLinkSent: true,
-  }
-}
-
-async function createPatientAccountMagicLink(input: CreatePatientMagicLinkInput): Promise<PatientSignupResponse> {
-  const redirect_url = typeof window !== "undefined" ? window.location.origin : undefined
-  try {
-    const data = await invokeRegisterPatient({
-      email: input.email,
-      full_name: input.name,
-      phone_mobile: input.phone,
-      cpf: input.cpf,
-      birth_date: input.dob || undefined,
-      redirect_url,
-    })
-
-    return {
-      success: data?.success ?? true,
-      patient_id: typeof data?.patient_id === "string" ? data.patient_id : undefined,
-      user_id:    typeof data?.user_id === "string" ? data.user_id : undefined,
-      email:      (typeof data?.email === "string" ? data.email : null) ?? input.email,
-      message:
-        (typeof data?.message === "string" ? data.message : null) ??
-        "Enviamos um link de acesso para o seu e-mail. Abra a mensagem para concluir o primeiro acesso.",
-      magicLinkSent: true,
-    }
-  } catch (err) {
-    if (!(err instanceof RegisterPatientApiError)) throw err
-
-    if (isRegisterPatientConflict(err)) {
-      throw new Error(
-        `${err.message} Se você já tem cadastro na clínica sem acesso ao portal, defina uma senha nos campos abaixo e tente de novo. ` +
-        "Caso já tenha senha, use «Esqueci minha senha» na aba Entrar.",
-      )
-    }
-    if (err.status === 404) {
-      try {
-        return await createPatientViaCreateUserMagicLink(input)
-      } catch {
-        await sendMagicLinkOtp(input.email)
-        return {
-          success: true,
-          email: input.email,
-          message: "Enviamos um link de acesso para o seu e-mail. Abra a mensagem para concluir o primeiro acesso.",
-          magicLinkSent: true,
-        }
-      }
-    }
-    throw new Error(err.message)
-  }
 }
 
 async function createPatientAccountWithPassword(input: ClaimPatientInput): Promise<PatientSignupResponse> {
@@ -438,84 +317,16 @@ async function createPatientAccountWithPassword(input: ClaimPatientInput): Promi
     }
 
     if (err.status === 404) {
-      return createPatientViaGenericEndpoint(input)
-    }
-
-    throw new Error(err.message)
-  }
-}
-
-// Fallback: cria conta de paciente via /functions/v1/create-user-with-password
-// quando register-patient nao esta disponivel no projeto.
-async function createPatientViaGenericEndpoint(input: ClaimPatientInput): Promise<PatientSignupResponse> {
-  const payload = {
-    email:                 input.email,
-    password:              input.password,
-    full_name:             input.name,
-    role:                  "paciente",
-    create_patient_record: true,
-    cpf:                   input.cpf,
-    phone_mobile:          input.phone || undefined,
-  }
-
-  async function post(path: string): Promise<Response> {
-    return fetchWithTimeout(`${SUPABASE_URL}${path}`, {
-      method: "POST",
-      headers: {
-        "Content-Type":  "application/json",
-        "Accept":        "application/json, application/problem+json",
-        "apikey":        SUPABASE_ANON_KEY,
-        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
-      },
-      body: JSON.stringify(payload),
-    })
-  }
-
-  let res = await post("/functions/v1/create-user-with-password")
-  if (res.status === 404) res = await post("/create-user-with-password")
-
-  if (!res.ok) {
-    const raw = await res.text().catch(() => "")
-    const problem = parseProblemDetails(raw)
-    const parsed = safeJsonParse(raw)
-
-    if (isExistingAuthUserError(parsed) || isExistingAuthUserError(problem)) {
-      throw new Error(
-        "Este e-mail já possui acesso ao portal. Use a opção \"Esqueci minha senha\" para redefinir o acesso.",
-      )
-    }
-
-    if (isExistingPatientError(parsed) || isExistingPatientError(problem)) {
       return claimExistingPatientAccount(input)
     }
 
-    const message =
-      messageFromProblemDetails(res.status, problem) ||
-      readableError(parsed) ||
-      raw ||
-      "Não foi possível criar sua conta. Verifique os dados e tente novamente."
-    throw new Error(message)
-  }
-
-  const data = await res.json().catch(() => null) as Partial<{
-    user_id: string
-    user: { id?: string; email?: string }
-    patient_id: string
-    profile: { patient_id?: string }
-    message: string
-  }> | null
-
-  return {
-    success: true,
-    user_id: data?.user_id ?? data?.user?.id,
-    patient_id: data?.patient_id ?? data?.profile?.patient_id,
-    email: data?.user?.email ?? input.email,
-    message: data?.message ?? "Conta criada com sucesso. Entre com seu e-mail e senha.",
+    throw new Error(translateApiError(err.message) || err.message)
   }
 }
 
 interface ParsedError {
   code?: string
+  error_code?: string
   error?: string
   message?: string
   detail?: string
@@ -535,24 +346,83 @@ function safeJsonParse(raw: string): ParsedError {
   }
 }
 
+function authErrorText(parsed: ParsedError & { error_code?: string }): string {
+  return [
+    parsed.error,
+    parsed.message,
+    parsed.detail,
+    parsed.error_description,
+    parsed.msg,
+    parsed.title,
+    parsed.error_code,
+    parsed.code,
+  ]
+    .filter((v): v is string => typeof v === "string" && v.length > 0)
+    .join(" ")
+}
+
 function readableError(parsed: ParsedError): string | undefined {
-  return parsed.detail ?? parsed.message ?? parsed.error_description ?? parsed.msg ?? parsed.title ?? parsed.error
+  const raw =
+    parsed.detail ??
+    parsed.message ??
+    parsed.error_description ??
+    parsed.msg ??
+    parsed.title ??
+    parsed.error
+  return raw ? translateApiError(raw) : undefined
 }
 
-// Detecta os codigos/mensagens que a API retorna quando o paciente ja consta no cadastro
-// (CPF ou e-mail), mas ainda nao possui credencial de acesso ao portal.
-function isExistingPatientError(parsed: ParsedError): boolean {
-  const code = (parsed.code ?? "").toUpperCase()
-  if (["CPF_EXISTS", "EMAIL_EXISTS", "PATIENT_EXISTS", "PATIENT_ALREADY_EXISTS"].includes(code)) return true
-  if ((parsed.type ?? "").includes("conflict")) return true
-
-  const text = `${parsed.error ?? ""} ${parsed.message ?? ""} ${parsed.detail ?? ""}`.toLowerCase()
-  return /cpf.*j[aá].*cadastrad|e-?mail.*j[aá].*cadastrad|paciente.*j[aá].*cadastrad|patient.*already/i.test(text)
+function isExistingAuthUserError(parsed: ParsedError & { error_code?: string }): boolean {
+  const text = authErrorText(parsed).toLowerCase()
+  const code = (parsed.error_code ?? parsed.code ?? "").toLowerCase()
+  return (
+    code === "user_already_exists" ||
+    /already.*registered|already.*exists|user.*exists|user_already_exists|email.*j[aá].*cadastrad|usu[aá]rio.*existe/i.test(text)
+  )
 }
 
-function isExistingAuthUserError(parsed: ParsedError): boolean {
-  const text = `${parsed.error ?? ""} ${parsed.message ?? ""} ${parsed.detail ?? ""} ${parsed.error_description ?? ""}`.toLowerCase()
-  return /already.*registered|already.*exists|user.*exists|email.*j[aá].*cadastrad|usu[aá]rio.*existe/i.test(text)
+/** Verifica se e-mail+senha já autenticam (sem montar sessão completa). */
+export async function verifyPatientCredentials(email: string, password: string): Promise<boolean> {
+  try {
+    const res = await passwordGrantResponse(email, password)
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+async function passwordGrantResponse(email: string, password: string): Promise<Response> {
+  return fetchWithTimeout(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({
+      email: email.trim().toLowerCase(),
+      password: password.trim(),
+    }),
+  })
+}
+
+/** Motivo legível quando grant_type=password falha (para login e criação de acesso). */
+export async function explainPasswordLoginFailure(
+  email: string,
+  password: string,
+): Promise<string> {
+  try {
+    const res = await passwordGrantResponse(email, password)
+    if (res.ok) return ""
+    const err = await res.json().catch(() => ({})) as ParsedError & { error_code?: string }
+    const message = err?.error_description ?? err?.message ?? err?.msg ?? ""
+    const code = (err?.error ?? err?.code ?? err?.error_code ?? "").toString().toLowerCase()
+    if (/email not confirmed|confirm/i.test(message) || code === "email_not_confirmed") {
+      return "A conta existe, mas o e-mail ainda não foi confirmado. Verifique a caixa de entrada ou peça nova senha em «Esqueci minha senha»."
+    }
+    if (/invalid login|invalid.*credential|invalid.*password|invalid_grant/i.test(`${message} ${code}`)) {
+      return "E-mail ou senha não conferem com o cadastro no servidor. Peça à secretária para salvar de novo o acesso ao portal no cadastro do paciente ou use «Esqueci minha senha»."
+    }
+    return translateApiError(message) || "Login recusado pelo servidor de autenticação."
+  } catch {
+    return "Não foi possível testar o login agora. Verifique sua conexão e tente de novo."
+  }
 }
 
 interface ClaimPatientInput {
@@ -564,68 +434,66 @@ interface ClaimPatientInput {
   dob?: string
 }
 
-// Cria credencial para paciente ja cadastrado (vinculo por CPF/e-mail no backend).
+/**
+ * Ativa login para paciente já cadastrado na clínica (CPF existente).
+ * Usa Supabase Auth público — create-user-with-password exige JWT de equipe (admin/gestor/secretaria).
+ */
 async function claimExistingPatientAccount(input: ClaimPatientInput): Promise<PatientSignupResponse> {
-  const payload = {
-    email:     input.email,
-    password:  input.password,
-    full_name: input.name,
-    phone:     input.phone || undefined,
-    cpf:       input.cpf,
-    role:      "paciente",
-  }
+  const email = input.email.trim().toLowerCase()
+  const password = input.password.trim()
 
-  async function post(path: string): Promise<Response> {
-    return fetchWithTimeout(`${SUPABASE_URL}${path}`, {
-      method: "POST",
-      headers: {
-        "Content-Type":  "application/json",
-        "Accept":        "application/json, application/problem+json",
-        "apikey":        SUPABASE_ANON_KEY,
-        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+  const res = await fetchWithTimeout(`${SUPABASE_URL}/auth/v1/signup`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({
+      email,
+      password,
+      data: {
+        full_name: input.name.trim(),
+        cpf:       input.cpf,
+        phone:     input.phone || undefined,
+        role:      "paciente",
       },
-      body: JSON.stringify(payload),
-    })
-  }
-
-  let res = await post("/functions/v1/create-user-with-password")
-  if (res.status === 404) res = await post("/create-user-with-password")
+    }),
+  })
 
   if (!res.ok) {
     const raw = await res.text().catch(() => "")
     const problem = parseProblemDetails(raw)
     const parsed = safeJsonParse(raw)
 
-    if (isExistingAuthUserError(parsed) || isExistingAuthUserError(problem)) {
+    if (isExistingAuthUserError(parsed) || isExistingAuthUserError(problem as ParsedError)) {
+      if (await verifyPatientCredentials(email, password)) {
+        return {
+          success: true,
+          email,
+          message: "Acesso confirmado. Entrando…",
+          loginReady: true,
+        }
+      }
       throw new Error(
-        "Este e-mail já possui acesso ao portal. Use a opção \"Esqueci minha senha\" para redefinir o acesso.",
+        "Este e-mail já está cadastrado. Use a aba «Entrar» com sua senha ou «Esqueci minha senha» para definir uma nova.",
       )
     }
 
     const message =
-      messageFromProblemDetails(res.status, problem) ||
       readableError(parsed) ||
-      raw ||
-      "Não foi possível criar o acesso para este paciente."
+      translateApiError(messageFromProblemDetails(res.status, problem) ?? "") ||
+      translateApiError(raw) ||
+      "Não foi possível ativar seu acesso."
     throw new Error(message)
   }
 
-  const data = await res.json().catch(() => null) as Partial<{
-    user_id: string
-    user: { id?: string; email?: string }
-    patient_id: string
-    profile: { patient_id?: string }
-    message: string
-  }> | null
+  const data = await res.json().catch(() => null) as {
+    user?: { id?: string; email?: string }
+  } | null
 
   return {
     success: true,
-    user_id: data?.user_id ?? data?.user?.id,
-    patient_id: data?.patient_id ?? data?.profile?.patient_id,
-    email: data?.user?.email ?? input.email,
-    message:
-      data?.message ??
-      "Cadastro já existente — criamos seu acesso ao portal. Entre com seu e-mail e senha.",
+    user_id: data?.user?.id,
+    email:   data?.user?.email ?? email,
+    message: "Acesso ativado. Entre com seu e-mail e senha.",
+    loginReady: true,
   }
 }
 
@@ -707,7 +575,7 @@ export async function requestPasswordReset(emailInput: string): Promise<Password
       const parsed = JSON.parse(raw)
       message = parsed?.detail ?? parsed?.message ?? parsed?.error_description ?? parsed?.msg ?? parsed?.title ?? message
     } catch { /* nao e json */ }
-    throw new Error(message)
+    throw new Error(translateApiError(message) || message)
   }
 
   return {
@@ -724,38 +592,186 @@ function normalizeRole(value?: string | null): string {
     .trim()
 }
 
-// Mapeamento tolerante de roles da API → frontend
-function mapRole(roles: unknown[], profileRole?: string | null): UserRole {
-  const normalized = [...roles, profileRole]
-    .flatMap((role) => {
-      if (!role) return []
-      if (typeof role === "string") return [normalizeRole(role)]
-      if (typeof role === "object" && "role" in role) {
-        return [normalizeRole((role as { role?: string }).role)]
-      }
-      return []
-    })
+function flattenRoleInputs(roles: unknown[], profileRole?: string | null): string[] {
+  const tokens: string[] = []
+  const push = (value?: string | null) => {
+    const n = normalizeRole(value)
+    if (n) tokens.push(n)
+  }
 
-  const apiRoles = new Set<ApiUserRole>(
-    normalized.filter((r): r is ApiUserRole =>
-      ["admin", "gestor", "medico", "secretaria", "paciente", "user"].includes(r),
-    ),
-  )
+  for (const role of roles) {
+    if (!role) continue
+    if (typeof role === "string") push(role)
+    else if (typeof role === "object" && role !== null && "role" in role) {
+      push((role as { role?: string }).role)
+    }
+  }
+  push(profileRole)
+  return tokens
+}
+
+/** Sinônimos vindos de `profiles.role`, `user_roles.role` e `/user-info`. */
+function expandRoleToken(token: string): ApiUserRole[] {
+  const out: ApiUserRole[] = []
+  const add = (role: ApiUserRole) => { if (!out.includes(role)) out.push(role) }
+
+  if (["admin", "administrador", "administrator", "adm", "superadmin", "super_admin", "root"].includes(token)) {
+    add("admin")
+  }
+  if (["gestor", "manager", "gerente", "coordenador", "coordenadora"].includes(token)) {
+    add("gestor")
+  }
+  if (["medico", "medica", "doctor", "doutor", "doutora", "dr"].includes(token)) {
+    add("medico")
+  }
+  if (["secretaria", "secretary", "secretario", "recepcao", "recepcionista", "atendimento"].includes(token)) {
+    add("secretaria")
+  }
+  if (["paciente", "patient", "cliente"].includes(token)) {
+    add("paciente")
+  }
+  // financeiro não existe em ApiUserRole; tratado em mapRoleFromTokens pelos tokens crus
+
+  // Valores já canônicos da API
+  if (["admin", "gestor", "medico", "secretaria", "paciente"].includes(token)) {
+    add(token as ApiUserRole)
+  }
+
+  return out
+}
+
+function collectApiRoles(tokens: string[]): Set<ApiUserRole> {
+  const set = new Set<ApiUserRole>()
+  for (const token of tokens) {
+    for (const role of expandRoleToken(token)) {
+      set.add(role)
+    }
+  }
+  return set
+}
+
+/** Escolhe o papel de maior privilégio quando o usuário tem vários em `user_roles`. */
+function mapRoleFromTokens(tokens: string[], options?: { hasCrm?: boolean }): UserRole {
+  const apiRoles = collectApiRoles(tokens)
 
   if (apiRoles.has("admin")) return "admin"
   if (apiRoles.has("gestor")) return "manager"
   if (apiRoles.has("medico")) return "doctor"
-  if (apiRoles.has("paciente") || apiRoles.has("user")) return "patient"
+  if (tokens.some((t) => ["financeiro", "financial", "financas"].includes(t))) return "financial"
   if (apiRoles.has("secretaria")) return "secretary"
+  if (apiRoles.has("paciente")) return "patient"
 
-  // fallback legado/tolerante para ambientes antigos
-  if (normalized.some((r) => ["administrador"].includes(r))) return "admin"
-  if (normalized.some((r) => ["manager"].includes(r))) return "manager"
-  if (normalized.some((r) => ["doctor"].includes(r))) return "doctor"
-  if (normalized.some((r) => ["patient"].includes(r))) return "patient"
-  if (normalized.some((r) => ["secretary"].includes(r))) return "secretary"
-  if (normalized.some((r) => ["financeiro", "financial"].includes(r))) return "financial"
+  if (options?.hasCrm) return "doctor"
   return "secretary"
+}
+
+const STAFF_ROLES = new Set<UserRole>(["admin", "manager", "doctor", "secretary", "financial"])
+
+export interface ResolveLoginRoleInput {
+  roles: unknown[]
+  profileRole?: string | null
+  userRoleRows?: string[]
+  permissions?: { isAdmin?: boolean; canManageUsers?: boolean }
+  linkedPatient?: PatientLinkResponse | null
+  hasCrm?: boolean
+}
+
+/**
+ * Decide o `UserRole` da sessão a partir dos papéis da API (`user_roles`,
+ * `/user-info`, `profiles.role`). Exportado para testes; não faz I/O.
+ */
+export function resolveLoginRole(input: ResolveLoginRoleInput): UserRole {
+  if (input.permissions?.isAdmin) return "admin"
+
+  const userRoleRows = (input.userRoleRows ?? [])
+    .map((r) => normalizeRole(r))
+    .filter(Boolean)
+
+  // `user_roles` é a fonte da verdade — não misturar com profiles.role desatualizado.
+  const tokens =
+    userRoleRows.length > 0
+      ? userRoleRows
+      : flattenRoleInputs(input.roles, input.profileRole)
+
+  const apiRoles = collectApiRoles(tokens)
+  const hasStaffInApi = ["admin", "gestor", "medico", "secretaria"].some((r) =>
+    apiRoles.has(r as ApiUserRole),
+  )
+
+  // Paciente com registro em `patients` e sem papel de equipe → portal (evita default "secretary").
+  if (input.linkedPatient && !hasStaffInApi) return "patient"
+
+  // `/user-info`: gestor sem linha em user_roles mas com permissão de gerir usuários.
+  if (userRoleRows.length === 0 && input.permissions?.canManageUsers) return "manager"
+
+  const mapped = mapRoleFromTokens(tokens, { hasCrm: input.hasCrm })
+
+  if (STAFF_ROLES.has(mapped)) return mapped
+  if (mapped === "patient") return "patient"
+
+  return mapped
+}
+
+async function fetchUserRoleNames(token: string, userId: string): Promise<string[]> {
+  if (!userId) return []
+  try {
+    const res = await fetchWithTimeout(
+      `${SUPABASE_URL}/rest/v1/user_roles?user_id=eq.${encodeURIComponent(userId)}&select=role`,
+      {
+        headers: {
+          "Content-Type":  "application/json",
+          "apikey":        SUPABASE_ANON_KEY,
+          "Authorization": `Bearer ${token}`,
+        },
+      },
+    )
+    if (!res.ok) return []
+    const rows = await res.json().catch(() => []) as Array<{ role?: string }>
+    return Array.isArray(rows) ? rows.map((r) => r.role).filter((r): r is string => Boolean(r)) : []
+  } catch {
+    return []
+  }
+}
+
+/** Revalida papel após login salvo em localStorage (corrige sessão com role errado). */
+export async function reconcileUserRole(token: string, user: User): Promise<User> {
+  if (!token || token.startsWith("local-dev:")) return user
+
+  const [info, userRoleRows, profileFallback] = await Promise.all([
+    fetchUserInfo(token),
+    fetchUserRoleNames(token, user.id),
+    fetchProfileFallback(token, user.id, user.email),
+  ])
+  const profile = info?.profile ?? profileFallback
+
+  const linkedPatient = user.role === "patient"
+    ? await fetchPatientLink(token, user.id, user.email, user.patientCpf, user.patientId)
+    : null
+
+  const role = resolveLoginRole({
+    roles: info?.roles ?? [],
+    profileRole: profile?.role,
+    userRoleRows,
+    permissions: info?.permissions,
+    linkedPatient,
+    hasCrm: Boolean(profile?.crm ?? user.crm),
+  })
+
+  const isPatientLogin = role === "patient"
+  return {
+    ...user,
+    role,
+    name: profile?.full_name ?? user.name,
+    crm: profile?.crm ?? user.crm,
+    specialty: profile?.specialty ?? user.specialty,
+    patientId: isPatientLogin ? (user.patientId ?? profile?.patient_id) : undefined,
+    patientCpf: isPatientLogin ? user.patientCpf : undefined,
+    phone: profile?.phone ?? user.phone,
+    photoUrl:
+      normalizeAvatarUrl(profile?.avatar_url, user.id) ??
+      avatarUrlForUser(user.id) ??
+      user.photoUrl,
+  }
 }
 
 interface SupabaseAuthResponse {
@@ -800,6 +816,7 @@ interface ProfileResponse {
   full_name?: string
   email?: string
   phone?: string
+  avatar_url?: string | null
   role?: string
   crm?: string
   specialty?: string
@@ -850,7 +867,6 @@ async function fetchPatientLink(
   const filters = [
     patientId ? `id.eq.${encodeURIComponent(patientId)}` : "",
     userId ? `user_id.eq.${encodeURIComponent(userId)}` : "",
-    userId ? `id.eq.${encodeURIComponent(userId)}` : "",
     email ? `email.eq.${encodeURIComponent(email)}` : "",
     cpf ? `cpf.eq.${encodeURIComponent(onlyDigits(cpf))}` : "",
   ].filter(Boolean)
@@ -939,10 +955,9 @@ async function fetchUserInfo(token: string): Promise<UserInfoResponse | null> {
   }
 
   try {
-    // Contrato documentado: `/user-info`.
-    // Fallback legado: `/functions/v1/user-info`.
-    let res = await post("/user-info")
-    if (res.status === 404) res = await post("/functions/v1/user-info")
+    // Edge Function primeiro — `/user-info` na raiz costuma falhar CORS no browser.
+    let res = await post("/functions/v1/user-info")
+    if (res.status === 404) res = await post("/user-info")
     if (!res.ok) return null
     return await res.json().catch(() => null) as UserInfoResponse | null
   } catch {
@@ -983,9 +998,10 @@ export async function login(payload: LoginPayload): Promise<LoginResponse> {
       )
     }
     if (/invalid login|invalid.*credential|invalid.*password|invalid_grant/i.test(`${message} ${code}`)) {
-      throw new Error("E-mail ou senha inválidos.")
+      const detail = await explainPasswordLoginFailure(normalizedEmail, normalizedPassword)
+      throw new Error(detail || "E-mail ou senha inválidos.")
     }
-    throw new Error(message || "E-mail ou senha inválidos.")
+    throw new Error(translateApiError(message) || "E-mail ou senha inválidos.")
   }
 
   const authData: SupabaseAuthResponse = await authRes.json()
@@ -1012,26 +1028,43 @@ export async function login(payload: LoginPayload): Promise<LoginResponse> {
     const fallbackEmail = (authUser.email ?? resolvedEmail).trim().toLowerCase()
     profile = await fetchProfileFallback(authData.access_token, fallbackUserId, fallbackEmail)
   }
-  const patient = await fetchPatientLink(
-    authData.access_token,
-    resolvedUserId,
-    resolvedEmail,
-    profile?.cpf,
-    profile?.patient_id,
-  )
+  const [userRoleRows, patient] = await Promise.all([
+    fetchUserRoleNames(authData.access_token, resolvedUserId),
+    fetchPatientLink(
+      authData.access_token,
+      resolvedUserId,
+      resolvedEmail,
+      profile?.cpf,
+      profile?.patient_id,
+    ),
+  ])
+
+  const role = resolveLoginRole({
+    roles: info?.roles ?? [],
+    profileRole: profile?.role,
+    userRoleRows,
+    permissions: info?.permissions,
+    linkedPatient: patient,
+    hasCrm: Boolean(profile?.crm),
+  })
+  const isPatientLogin = role === "patient"
 
   const user: User = {
     id: resolvedUserId,
     name: profile?.full_name ?? resolvedEmail,
-    // Prioriza `roles` do endpoint `/user-info` (fallback via linked patient).
-    role: patient ? "patient" : mapRole(info?.roles ?? [], null),
-    email: profile?.email ?? patient?.email ?? resolvedEmail,
+    role,
+    email: profile?.email ?? (isPatientLogin ? patient?.email : undefined) ?? resolvedEmail,
     crm: profile?.crm,
     specialty: profile?.specialty,
-    patientCpf: patient?.cpf ? onlyDigits(patient.cpf) : profile?.cpf ? onlyDigits(profile.cpf) : undefined,
-    patientId: patient?.id ?? profile?.patient_id,
-    phone: patient?.phone_mobile ?? profile?.phone,
-    dob: patient?.birth_date,
+    patientCpf: isPatientLogin
+      ? (patient?.cpf ? onlyDigits(patient.cpf) : profile?.cpf ? onlyDigits(profile.cpf) : undefined)
+      : undefined,
+    patientId: isPatientLogin ? (patient?.id ?? profile?.patient_id) : undefined,
+    phone: (isPatientLogin ? patient?.phone_mobile : undefined) ?? profile?.phone,
+    dob: isPatientLogin ? patient?.birth_date : undefined,
+    photoUrl:
+      normalizeAvatarUrl(profile?.avatar_url, resolvedUserId) ??
+      avatarUrlForUser(resolvedUserId),
   }
 
   return {

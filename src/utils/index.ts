@@ -127,6 +127,14 @@ export function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString("pt-BR")
 }
 
+/** Data calendário YYYY-MM-DD (ou ISO) sem deslocar fuso. */
+export function formatDateOnly(dateStr: string): string {
+  const iso = dateStr.trim().slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return formatDate(dateStr)
+  const [y, m, d] = iso.split("-").map(Number)
+  return new Date(y, m - 1, d).toLocaleDateString("pt-BR")
+}
+
 const APPOINTMENT_TYPE_LABELS: Record<string, string> = {
   consultation: "Consulta",
   exam:         "Exame",

@@ -9,6 +9,10 @@ alwaysApply: true
 
 # MediConnect — API e schema
 
+## Perfil do usuário (prioridade máxima)
+
+**Só front-end. Sem acesso a Supabase nem back-end.** Ver também `.cursor/rules/user-frontend-only.mdc`.
+
 ## Regra principal (não negociável)
 
 O usuário pede seguir **a API documentada**, não o tipo TypeScript nem “boas práticas” de performance.

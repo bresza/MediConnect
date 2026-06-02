@@ -17,6 +17,7 @@ import { WaitlistPanel, WaitlistSuggestionModal, type AddWaitlistInput } from ".
 import { ConsultationModal } from "../../components/ui/ConsultationModal/ConsultationModal"
 import { useWaitlist } from "../../hooks/useWaitlist"
 import { filterVisible, suggestForGap } from "../../services/waitlist"
+import { canManageAppointments, canManageWaitlist } from "../../utils/permissions"
 import { checkConflict, formatAppointmentType } from "../../utils"
 import { getAppointmentDoctors, getAvailableSlots, getDoctorAvailability } from "../../services/appointments"
 import type { DoctorAvailability } from "../../services/appointments"
@@ -165,18 +166,15 @@ export function Appointments({
   const calendarRef = useRef<FullCalendar | null>(null)
   const slotRequestRef = useRef(0)
   const isDoctor    = currentUser.role === "doctor"
-  const isManager   = currentUser.role === "manager" || currentUser.role === "admin"
-  const isSecretary = currentUser.role === "secretary"
-  const canManage = true
-  /** Gestor/admin tem visão completa mas (regra do produto) não edita a fila. */
-  const canManageWaitlist = isDoctor || isSecretary
+  const canManage = canManageAppointments(currentUser.role)
+  const canManageWaitlistEntries = canManageWaitlist(currentUser.role)
   const today = toDateStr(new Date())
   const [activeTab, setActiveTab] = useState<AppointmentsTab>("calendar")
   const [suggested, setSuggested] = useState<WaitlistEntry | null>(null)
   const [consultationFor, setConsultationFor] = useState<Appointment | null>(null)
 
   const waitlist = useWaitlist()
-  const canStartConsultation = isDoctor && !!onAddMedicalRecord && !!onAddFinancialRecord
+  const canStartConsultation = isDoctor && !!onAddMedicalRecord
 
   const [doctors, setDoctors] = useState<{ id: string; name: string }[]>([])
   const [isLoadingDoctors, setIsLoadingDoctors] = useState(true)
@@ -700,11 +698,6 @@ export function Appointments({
             </button>
           )
         })}
-        {isManager && (
-          <span style={{ marginLeft: "auto", alignSelf: "center", fontSize: 11, color: "var(--muted-foreground)" }}>
-            Visualização gerencial (somente leitura na fila)
-          </span>
-        )}
       </div>
 
       {activeTab === "waitlist" ? (
@@ -713,7 +706,7 @@ export function Appointments({
           patients={patients}
           doctors={doctors}
           currentUser={currentUser}
-          canManage={canManageWaitlist}
+          canManage={canManageWaitlistEntries}
           loading={waitlist.loading}
           error={waitlist.error}
           onAdd={handleAddToWaitlist}

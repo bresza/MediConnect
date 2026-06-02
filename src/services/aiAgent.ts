@@ -29,17 +29,17 @@ function extractActionFromText(text: string): { action: string; params: Record<s
 function buildAgentSystemAddon(toolsDescription: string, activePage: string): string {
   return [
     "",
-    "=== MODO AGENTE (EXECUTAR ACOES NO SISTEMA) ===",
-    "Voce pode EXECUTAR acoes reais no MediConnect, nao apenas orientar.",
-    `Pagina atual do usuario: ${activePage}.`,
-    "Quando o usuario pedir para FAZER algo (agendar, enviar mensagem, criar laudo, cancelar, navegar, etc.),",
-    "responda APENAS com um JSON valido (sem markdown, sem texto extra):",
+    "=== MODO AGENTE (EXECUTAR AÇÕES NO SISTEMA) ===",
+    "Você pode EXECUTAR ações reais no MediConnect, não apenas orientar.",
+    `Página atual do usuário: ${activePage}.`,
+    "Quando o usuário pedir para FAZER algo (agendar, enviar mensagem, criar laudo, cancelar, navegar, etc.),",
+    "responda APENAS com um JSON válido (sem markdown, sem texto extra):",
     '{"action":"nome_da_ferramenta","params":{...}}',
-    "Ferramentas disponiveis:",
+    "Ferramentas disponíveis:",
     toolsDescription,
-    "Apos receber [Resultado da acao: ...], responda em portugues de forma natural ao usuario.",
+    "Após receber [Resultado da ação: ...], responda em português de forma natural ao usuário.",
     "Se faltar dados (data, hora, nome do paciente), pergunte antes de emitir o JSON.",
-    "Para consultas medicas puramente informativas, responda em texto normal sem JSON.",
+    "Para consultas médicas puramente informativas, responda em texto normal sem JSON.",
   ].join("\n")
 }
 
@@ -65,7 +65,7 @@ export async function runAIAgentTurn(
     const followUp: ChatMessage[] = [
       { role: "system", content: baseSystemPrompt + buildAgentSystemAddon(actions.getToolsDescription(), actions.activePage) },
       ...conversation,
-      { role: "user", content: `[Resultado da acao confirmada: ${result.message}]` },
+      { role: "user", content: `[Resultado da ação confirmada: ${result.message}]` },
     ]
     const reply = await chatComplete(followUp, { signal: options.signal })
     return { reply, toolLog, pendingConfirmation: undefined }
@@ -88,7 +88,7 @@ export async function runAIAgentTurn(
 
     if (result.needsConfirmation && result.pendingAction) {
       return {
-        reply: `Preciso da sua confirmacao para: ${result.pendingAction.summary}`,
+        reply: `Preciso da sua confirmação para: ${result.pendingAction.summary}`,
         toolLog,
         pendingConfirmation: result.pendingAction,
       }
@@ -98,12 +98,12 @@ export async function runAIAgentTurn(
     messages = [
       ...messages,
       { role: "assistant", content: raw },
-      { role: "user", content: `[Resultado da acao: ${result.ok ? "sucesso" : "erro"} — ${result.message}]` },
+      { role: "user", content: `[Resultado da ação: ${result.ok ? "sucesso" : "erro"} — ${result.message}]` },
     ]
   }
 
   return {
-    reply: "Executei varias acoes. Verifique as telas do sistema e me diga se precisa de mais algo.",
+    reply: "Executei várias ações. Verifique as telas do sistema e me diga se precisa de mais algo.",
     toolLog,
     pendingConfirmation,
   }

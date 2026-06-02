@@ -46,7 +46,7 @@ export const SECTION_META: Record<PortalSection, { title: string; subtitle: stri
   },
   profile: {
     title: "Meu perfil",
-    subtitle: "Dados pessoais, foto e preferências de contato.",
+    subtitle: "Consulte seus dados cadastrais (somente leitura).",
   },
 }
 

@@ -19,6 +19,7 @@ export interface PatientIdentity {
 function buildIdentity(user: User, seed?: Patient | null): PatientIdentity {
   const portal = seed ?? null
   const patientId = resolveRememberedPatientId({
+    authUserId: user.id,
     name:  portal?.name ?? user.name,
     email: portal?.email ?? user.email,
     cpf:   portal?.cpf ?? user.patientCpf,

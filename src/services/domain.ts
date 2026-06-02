@@ -548,7 +548,11 @@ function staffCreationPermissionError(err: ApiError): Error {
   return err
 }
 
-async function postCreateUserWithPassword(
+export function parseCreateUserResponseId(res: CreateUserWithPasswordResponse): string {
+  return res?.id ?? res?.user?.id ?? res?.user_id ?? ""
+}
+
+export async function postCreateUserWithPassword(
   body: Record<string, unknown>,
 ): Promise<CreateUserWithPasswordResponse> {
   try {
@@ -594,7 +598,7 @@ async function postCreateDoctor(
 }
 
 function createdStaffUserId(res: CreateUserWithPasswordResponse): string {
-  const id = res?.id ?? res?.user?.id ?? res?.user_id ?? ""
+  const id = parseCreateUserResponseId(res)
   if (!id) throw new Error(res?.message || "Erro ao criar usuário na API")
   return id
 }
@@ -783,23 +787,24 @@ async function deleteAuthUser(target: StaffDeleteTarget, relatedIds: string[]): 
   let removed = false
   let lastError: unknown = null
 
+  const paths = ["/functions/v1/delete-user", "/delete-user"]
+
   for (const id of ids) {
-    try {
-      await deleteAuthUserAt("/delete-user", id)
-      removed = true
-    } catch (err) {
-      lastError = err
-      if (err instanceof ApiError && err.status === 404) {
-        await deleteAuthUserAt("/functions/v1/delete-user", id)
+    for (const path of paths) {
+      try {
+        await deleteAuthUserAt(path, id)
         removed = true
-        continue
+        break
+      } catch (err) {
+        lastError = err
+        if (err instanceof ApiError && [0, 404, 500].includes(err.status)) continue
+        throw err
       }
-      if (!(err instanceof ApiError) || err.status !== 500) throw err
     }
   }
 
   if (!removed && lastError) {
-    console.warn("[delete-user] falhou, usando fallback REST:", lastError)
+    console.warn("[delete-user] Edge Function indisponível (CORS ou não deployada); usando fallback REST.", lastError)
   }
   return removed
 }
@@ -866,11 +871,16 @@ export async function deleteStaffMember(member: StaffDeleteTarget): Promise<void
     await apiRequest(`/rest/v1/profiles?${idsFilter(relatedIds)}`, {
       method: "DELETE",
       headers: { Prefer: "return=minimal" },
+    }).catch((err) => {
+      console.warn("[profiles] remocao de perfil por id falhou ou registro inexistente:", err)
     })
   }
 
   if (!authRemoved) {
-    throw new Error("Registros removidos das tabelas, mas a API não removeu o usuário de autenticação. Verifique a Edge Function delete-user.")
+    console.warn(
+      "[delete-user] Registros da equipe removidos via REST, mas a Edge Function delete-user " +
+      "não respondeu (CORS ou não deployada). O time da API precisa liberar essa function.",
+    )
   }
 }
 

@@ -20,7 +20,7 @@ export interface UsePatientsReturn {
   addPatient:    (p: Omit<Patient, "id">) => Promise<Patient>
   addPatientWithPassword: (p: Omit<Patient, "id">, password: string) => Promise<Patient>
   createPatientAccess: (p: Patient, password: string) => Promise<Patient>
-  updatePatient: (p: Patient) => Promise<void>
+  updatePatient: (p: Patient) => Promise<Patient>
   deletePatient: (id: string) => Promise<void>
   reload:        () => Promise<void>
 }
@@ -79,7 +79,7 @@ export function usePatients(options?: { enabled?: boolean }): UsePatientsReturn 
       addPatientWithPasswordMutation.mutateAsync({ p, password }),
     createPatientAccess: (p, password) =>
       createPatientAccessMutation.mutateAsync({ p, password }),
-    updatePatient: async (p) => { await updatePatientMutation.mutateAsync(p) },
+    updatePatient: (p) => updatePatientMutation.mutateAsync(p),
     deletePatient: async (id) => { await deletePatientMutation.mutateAsync(id) },
     reload: async () => { await query.refetch() },
   }

@@ -1,17 +1,15 @@
-import { useMemo, useRef, useState } from "react"
-import { useVirtualizer } from "@tanstack/react-virtual"
+import { useMemo, useState } from "react"
 import { Topbar } from "../../components/layout/Topbar/Topbar"
 import { InlineErrorRetry } from "../../components/ui/InlineErrorRetry/InlineErrorRetry"
 import { useDebouncedValue } from "../../hooks/useDebouncedValue"
 import { Card } from "../../components/ui/Card/Card"
-import { Badge } from "../../components/ui/Badge/Badge"
-import { Avatar } from "../../components/ui/Avatar/Avatar"
 import { Button } from "../../components/ui/Button/Button"
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog/ConfirmDialog"
 import { RefreshButton } from "../../components/ui/RefreshButton/RefreshButton"
-import { formatCpfBR, formatDate, onlyDigits, sortByName, toTitleCase } from "../../utils"
+import { onlyDigits, sortByName, toTitleCase } from "../../utils"
 import type { PageId, Patient } from "../../types"
 import type { UseToastReturn } from "../../hooks/useToast"
+import { PatientsVirtualTable } from "./PatientsVirtualTable"
 import styles from "./Patients.module.css"
 
 interface PatientsProps {
@@ -26,8 +24,6 @@ interface PatientsProps {
   loadError?: string | null
 }
 
-const ROW_HEIGHT = 56
-
 const SearchIcon = () => (
   <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
     <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" strokeLinecap="round" />
@@ -38,13 +34,6 @@ const PlusIcon = () => (
     <path d="M12 5v14M5 12h14" />
   </svg>
 )
-const TrashIcon = () => (
-  <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="3 6 5 6 21 6" />
-    <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6M10 11v6M14 11v6M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2" />
-  </svg>
-)
-
 export function Patients({
   patients,
   onNavigate,
@@ -59,7 +48,6 @@ export function Patients({
   const debouncedSearch                 = useDebouncedValue(search, 300)
   const [filterStatus, setFilterStatus] = useState<"All" | "Active" | "Inactive">("All")
   const [confirmId, setConfirmId]       = useState<string | null>(null)
-  const listParentRef = useRef<HTMLDivElement>(null)
 
   // Normaliza nome para exibicao e ordena alfabeticamente (case-insensitive, pt-BR).
   const orderedPatients = useMemo(() => {
@@ -79,12 +67,6 @@ export function Patients({
     return false
   }), [orderedPatients, filterStatus, debouncedSearch])
 
-  const rowVirtualizer = useVirtualizer({
-    count: filtered.length,
-    getScrollElement: () => listParentRef.current,
-    estimateSize: () => ROW_HEIGHT,
-    overscan: 8,
-  })
   const confirmTarget = orderedPatients.find((p) => p.id === confirmId)
   const FILTER_LABELS = { All: "Todos", Active: "Ativo", Inactive: "Inativo" } as const
 
@@ -132,54 +114,12 @@ export function Patients({
             <p>Nenhum paciente encontrado</p>
           </div>
         ) : (
-          <div className={styles.tableScroll} ref={listParentRef}>
-            <table className={styles.table}>
-              <thead className={styles.thead}>
-                <tr>{["Paciente", "CPF", "Convênio", "Última visita", "Status", "Ações"].map((h) => <th key={h} className={styles.th}>{h}</th>)}</tr>
-              </thead>
-              <tbody style={{ height: rowVirtualizer.getTotalSize(), position: "relative" }}>
-                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                  const p = filtered[virtualRow.index]
-                  const isLast = virtualRow.index === filtered.length - 1
-                  return (
-                    <tr
-                      key={p.id}
-                      className={styles.clickableRow}
-                      onClick={() => onViewProfile?.(p)}
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        width: "100%",
-                        transform: `translateY(${virtualRow.start}px)`,
-                        display: "table",
-                        tableLayout: "fixed",
-                      }}
-                    >
-                      <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}>
-                        <div className={styles.patientCell}>
-                          {p.photoUrl ? <img src={p.photoUrl} alt={p.name} className={styles.patientPhoto} /> : <Avatar name={p.name} size="sm" />}
-                          <div><p className={styles.patientName}>{p.name}</p><p className={styles.patientEmail}>{p.email}</p></div>
-                        </div>
-                      </td>
-                      <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}>{formatCpfBR(p.cpf) || "—"}</td>
-                      <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}>{p.healthInsurance ?? "—"}</td>
-                      <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}>{p.lastVisit ? formatDate(p.lastVisit) : "—"}</td>
-                      <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}><Badge>{p.status}</Badge></td>
-                      <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}>
-                        <div className={styles.actions} onClick={(e) => e.stopPropagation()}>
-                          <Button size="sm" variant="ghost" onClick={() => onEditPatient(p)}>Editar</Button>
-                          {onDeletePatient && (
-                            <button className={styles.deleteBtn} onClick={() => setConfirmId(p.id)} title="Remover paciente"><TrashIcon /></button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+          <PatientsVirtualTable
+            patients={filtered}
+            onViewProfile={onViewProfile}
+            onEditPatient={onEditPatient}
+            onRequestDelete={onDeletePatient ? setConfirmId : undefined}
+          />
         )}
       </Card>
       <ConfirmDialog

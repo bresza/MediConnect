@@ -147,7 +147,7 @@
 .themeBtn:hover { background-color: var(--accent); color: var(--foreground); }
 
 /* ── User ─────────────────────────────────────────────────────── */
-.user { padding: 10px; border-top: 1px solid var(--sidebar-border); flex-shrink: 0; }
+.user { padding: 10px; flex-shrink: 0; }
 
 .userCard {
   display: flex; align-items: center; gap: 9px;

@@ -1,6 +1,14 @@
 import { ApiError, apiRequest, getApiUserId } from "./api"
-import { isEdgeAutomationEnabled, isMissingColumnError } from "./schemaSafe"
-import { isDataUrl, isRemotePhotoUrl, resolvePatientPhotoUrl, attachPatientPhotos, attachPatientPhoto, deletePatientPhotoFromStorage } from "./patientPhoto"
+import { requestPasswordReset, verifyPatientCredentials } from "./auth"
+import { isMissingColumnError } from "./schemaSafe"
+import {
+  isDataUrl,
+  isRemotePhotoUrl,
+  resolveAvatarPhotoUrl,
+  attachPatientPhotos,
+  attachPatientPhoto,
+  deleteAvatarFromStorage,
+} from "./patientPhoto"
 import { rememberPatientLink } from "./patientLinks"
 import type {
   Patient, Gender, PatientStatus, MaritalStatus,
@@ -17,6 +25,7 @@ interface ApiPatient {
   phone_mobile:             string
   birth_date?:              string
   gender?:                  string
+  sex?:                     string
   status?:                  string
   social_name?:             string
   rg?:                      string
@@ -52,22 +61,6 @@ interface ApiPatient {
   legacy_code?:             string
 }
 
-interface CreateUserWithPasswordResponse {
-  success?: boolean
-  user?: {
-    id: string
-    email: string
-    full_name: string
-    roles: string[]
-    email_confirmed_at?: string | null
-  }
-  user_id?: string
-  patient_id?: string
-  profile?: unknown
-  role?: string
-  message?: string
-}
-
 interface ApiProfile {
   id: string
   email?: string
@@ -83,6 +76,42 @@ export interface PatientIdentity {
   cpf?: string
 }
 
+/** Cadastro clínico ok, mas o teste de login com a senha informada falhou. */
+export class PatientPortalVerifyError extends Error {
+  readonly patient: Patient
+
+  constructor(message: string, patient: Patient) {
+    super(message)
+    this.name = "PatientPortalVerifyError"
+    this.patient = patient
+  }
+}
+
+function mapSexFromApi(sex?: string): Gender | undefined {
+  if (!sex?.trim()) return undefined
+  const normalized = sex.trim().toLowerCase()
+  if (
+    normalized.startsWith("masc") ||
+    normalized === "male" ||
+    normalized === "m" ||
+    normalized === "masculino"
+  ) {
+    return "Male"
+  }
+  if (
+    normalized.startsWith("fem") ||
+    normalized === "female" ||
+    normalized === "f" ||
+    normalized === "feminino"
+  ) {
+    return "Female"
+  }
+  if (normalized.startsWith("out") || normalized === "outro" || normalized === "other") {
+    return "Other"
+  }
+  return undefined
+}
+
 function apiToPatient(api: ApiPatient): Patient {
   return {
     id:                     api.id,
@@ -92,7 +121,7 @@ function apiToPatient(api: ApiPatient): Patient {
     email:                  api.email,
     phone:                  api.phone_mobile ?? "",
     dob:                    api.birth_date ?? "",
-    gender:                 api.gender as Gender | undefined,
+    gender:                 (api.gender as Gender | undefined) ?? mapSexFromApi(api.sex),
     status:                 (api.status as PatientStatus) ?? "Active",
     socialName:             api.social_name,
     rg:                     api.rg,
@@ -152,7 +181,7 @@ function patientToFullApi(p: Omit<Patient, "id"> | Patient): Record<string, unkn
     email:        p.email?.trim(),
     phone_mobile: onlyDigits(p.phone),
     birth_date:   p.dob,
-    gender:       p.gender,
+    sex:          mapGenderToSex(p.gender),
     status:       p.status ?? "Active",
 
     social_name:             p.socialName,
@@ -294,7 +323,34 @@ function patientToPatchApi(p: Patient): Record<string, unknown> {
     full_name: p.name?.trim(),
     email: p.email?.trim(),
     phone_mobile: onlyDigits(p.phone),
+    birth_date: p.dob,
+    sex: mapGenderToSex(p.gender),
   })
+}
+
+/** Mesmos campos do POST `create-patient` / Edge `update-patient` (contrato RiseUP). */
+function patientToExtendedPatchApi(p: Patient): Record<string, unknown> {
+  return patientToCreatePatientApi(p)
+}
+
+function uniquePayloadAttempts(payloads: Record<string, unknown>[]): Record<string, unknown>[] {
+  const seen = new Set<string>()
+  return payloads.filter((payload) => {
+    if (Object.keys(payload).length === 0) return false
+    const key = JSON.stringify(payload)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function buildPatientPatchPayloads(patient: Patient): Record<string, unknown>[] {
+  return uniquePayloadAttempts([
+    patientToExtendedPatchApi(patient),
+    patientToPatchApi(patient),
+    patientToFullApi(patient),
+    patientToApi(patient),
+  ])
 }
 
 function isSchemaMismatch(err: unknown): boolean {
@@ -302,8 +358,26 @@ function isSchemaMismatch(err: unknown): boolean {
     err.status === 400 &&
     (
       /schema cache|could not find|column|PGRST204|unexpected|unknown/i.test(err.message) ||
-      /invalid input value.*(gender|status|marital_status|ethnicity|preferred_channel|communication_frequency)/i.test(err.message)
+      /invalid input value.*(gender|sex|status|marital_status|ethnicity|preferred_channel|communication_frequency)/i.test(err.message)
     )
+}
+
+function sexFieldPayloads(gender?: Gender): Record<string, unknown>[] {
+  if (!gender) return []
+  const label = mapGenderToSex(gender)
+  const attempts: Record<string, unknown>[] = []
+  if (label) attempts.push({ sex: label })
+  attempts.push({ gender })
+  if (gender === "Male") {
+    attempts.push({ sex: "M" }, { sex: "male" }, { sex: "Masculino" })
+  }
+  if (gender === "Female") {
+    attempts.push({ sex: "F" }, { sex: "female" }, { sex: "Feminino" })
+  }
+  if (gender === "Other") {
+    attempts.push({ sex: "Outro" }, { sex: "other" })
+  }
+  return attempts.map((body) => compactPayload(body)).filter((body) => Object.keys(body).length > 0)
 }
 
 function isAuthDenied(err: unknown): boolean {
@@ -377,22 +451,20 @@ async function tryPersistWithFallbacks(
       const denied = isAuthDenied(err) ||
         (err instanceof ApiError && err.status === 403)
 
-      if (denied && isEdgeAutomationEnabled()) {
+      if (denied || isSchemaMismatch(err)) {
         try {
           await updatePatientViaEdgeFunction(patientId, body)
           return
         } catch (edgeErr) {
           lastErr = edgeErr
-          if (edgeErr instanceof ApiError && edgeErr.status === 404) continue
-          throw patientUpdateDeniedMessage(edgeErr)
+          if (edgeErr instanceof ApiError && edgeErr.status === 404) {
+            if (denied) throw patientUpdateDeniedMessage(err)
+            continue
+          }
+          if (denied) throw patientUpdateDeniedMessage(edgeErr)
         }
         continue
       }
-      if (denied) {
-        throw patientUpdateDeniedMessage(err)
-      }
-
-      if (isSchemaMismatch(err)) continue
       throw err
     }
   }
@@ -401,11 +473,69 @@ async function tryPersistWithFallbacks(
   throw patientUpdateDeniedMessage(lastErr)
 }
 
+async function persistPatientGender(patientId: string, gender?: Gender): Promise<void> {
+  if (!gender) return
+
+  const current = await findPatientById(patientId)
+  if (current && apiToPatient(current).gender === gender) return
+
+  for (const body of sexFieldPayloads(gender)) {
+    try {
+      await patchPatientOnRest(patientId, body)
+      return
+    } catch (err) {
+      if (isSchemaMismatch(err) || isAuthDenied(err)) {
+        try {
+          await updatePatientViaEdgeFunction(patientId, body)
+          return
+        } catch (edgeErr) {
+          if (!(edgeErr instanceof ApiError && edgeErr.status === 404)) continue
+        }
+        continue
+      }
+    }
+  }
+
+  throw new Error(
+    "Não foi possível gravar o sexo biológico no servidor. O time da API precisa liberar o campo sex/gender em patients ou publicar update-patient.",
+  )
+}
+
+async function assertPatientGenderPersisted(patientId: string, gender?: Gender): Promise<void> {
+  if (!gender) return
+  const row = await findPatientById(patientId)
+  if (row && apiToPatient(row).gender === gender) return
+  throw new Error(
+    "O sexo biológico não foi confirmado após salvar. Tente novamente; se persistir, peça ao time da API revisar o campo sex na tabela patients.",
+  )
+}
+
 async function persistPatientRecord(
   patientId: string,
-  patchPayload: Record<string, unknown>,
+  patient: Patient,
 ): Promise<void> {
-  await tryPersistWithFallbacks(patientId, [patchPayload])
+  const extended = patientToExtendedPatchApi(patient)
+
+  if (getApiUserId()) {
+    try {
+      await updatePatientViaEdgeFunction(patientId, extended)
+      if (patient.gender) {
+        await persistPatientGender(patientId, patient.gender)
+        await assertPatientGenderPersisted(patientId, patient.gender)
+      }
+      return
+    } catch (err) {
+      if (!(err instanceof ApiError && err.status === 404)) {
+        console.warn("[patients] update-patient edge falhou, tentando REST:", err)
+      }
+    }
+  }
+
+  await tryPersistWithFallbacks(patientId, buildPatientPatchPayloads(patient))
+  if (patient.gender) {
+    await persistPatientGender(patientId, patient.gender)
+    await assertPatientGenderPersisted(patientId, patient.gender)
+  }
 }
 
 function extractCreatedPatient(data: unknown): ApiPatient | null {
@@ -446,79 +576,60 @@ async function createPatientValidated(
 async function createPatientDirect(
   data: Omit<Patient, "id">,
 ): Promise<Patient> {
-  const basePayload = patientToApi(data)
-  const payload = compactPayload({
-    full_name: basePayload.full_name,
-    cpf: basePayload.cpf,
-    email: basePayload.email,
-    phone_mobile: basePayload.phone_mobile,
-    birth_date: basePayload.birth_date,
-    created_by: getApiUserId() ?? undefined,
-  })
-
-  if (!payload.created_by) {
+  const createdBy = getApiUserId() ?? undefined
+  if (!createdBy) {
     throw new Error("Sessão inválida. Faça login novamente para cadastrar pacientes.")
   }
-  if (!payload.full_name || !payload.cpf || !payload.email || !payload.phone_mobile) {
+
+  const required = compactPayload({
+    full_name: data.name?.trim(),
+    cpf: onlyDigits(data.cpf),
+    email: data.email?.trim(),
+    phone_mobile: onlyDigits(data.phone),
+  })
+  if (!required.full_name || !required.cpf || !required.email || !required.phone_mobile) {
     throw new Error("Nome, CPF, e-mail e celular são obrigatórios para criar paciente diretamente pela API.")
   }
 
+  const payloadAttempts = uniquePayloadAttempts([
+    compactPayload({ ...patientToFullApi(data), created_by: createdBy }),
+    compactPayload({ ...patientToApi(data), created_by: createdBy }),
+    compactPayload({ ...required, birth_date: data.dob || undefined, created_by: createdBy }),
+    compactPayload({ ...required, created_by: createdBy }),
+  ])
+
   let created: ApiPatient[] | ApiPatient | undefined
-  try {
-    created = await apiRequest<ApiPatient[] | ApiPatient | undefined>(
-      "/rest/v1/patients",
-      {
-        method: "POST",
-        headers: { Prefer: "return=minimal" },
-        body: payload,
-        logErrors: false,
-      },
-    )
-  } catch (err) {
-    if (!isSchemaMismatch(err)) throw err
-    created = await apiRequest<ApiPatient[] | ApiPatient | undefined>(
-      "/rest/v1/patients",
-      {
-        method: "POST",
-        headers: { Prefer: "return=minimal" },
-        body: payload,
-      },
-    )
+  let lastErr: unknown
+  for (const payload of payloadAttempts) {
+    try {
+      created = await apiRequest<ApiPatient[] | ApiPatient | undefined>(
+        "/rest/v1/patients",
+        {
+          method: "POST",
+          headers: { Prefer: "return=minimal" },
+          body: payload,
+          logErrors: false,
+        },
+      )
+      break
+    } catch (err) {
+      lastErr = err
+      if (isSchemaMismatch(err)) continue
+      throw err
+    }
   }
 
-  const raw = extractCreatedPatient(created) ?? await findPatientByCpf(payload.cpf)
+  if (!created) {
+    throw lastErr instanceof Error
+      ? lastErr
+      : new Error("Não foi possível criar o paciente pela API.")
+  }
+
+  const raw = extractCreatedPatient(created) ?? await findPatientByCpf(String(required.cpf))
   if (!raw) throw new Error("Paciente criado, mas a API não retornou o registro cadastrado.")
   const patient = apiToPatient(raw)
-  rememberPatientLink({ patientId: patient.id, name: patient.name, email: patient.email, cpf: patient.cpf })
-  if (data.photoUrl) {
-    return updatePatient({ ...patient, ...data, id: patient.id })
-  }
-  return patient
-}
-
-async function createPatientUserWithPassword(
-  path: string,
-  payload: Record<string, unknown>,
-): Promise<CreateUserWithPasswordResponse> {
-  return apiRequest<CreateUserWithPasswordResponse>(path, {
-    method: "POST",
-    body: payload,
-    logErrors: false,
-  })
-}
-
-async function createPatientUser(payload: Record<string, unknown>): Promise<CreateUserWithPasswordResponse> {
-  try {
-    return await createPatientUserWithPassword("/functions/v1/create-user-with-password", payload)
-  } catch (err) {
-    if (!(err instanceof ApiError) || err.status !== 404) throw err
-  }
-
-  return createPatientUserWithPassword("/create-user-with-password", payload)
-}
-
-function createdUserId(response: CreateUserWithPasswordResponse): string {
-  return response.user?.id ?? response.user_id ?? ""
+  rememberOwnPatientLink(patient)
+  return updatePatient({ ...patient, ...data, id: patient.id })
 }
 
 async function ensurePatientRole(userId: string): Promise<void> {
@@ -529,13 +640,20 @@ async function ensurePatientRole(userId: string): Promise<void> {
   ).catch(() => [])
   if (existing?.length) return
 
-  await apiRequest("/rest/v1/user_roles", {
-    method: "POST",
-    headers: { Prefer: "return=minimal" },
-    body: { user_id: userId, role: "paciente" },
-  }).catch((err) => {
-    console.warn("[user_roles] sincronizacao de paciente falhou:", err)
-  })
+  try {
+    await apiRequest("/rest/v1/user_roles", {
+      method: "POST",
+      headers: { Prefer: "return=minimal" },
+      body: { user_id: userId, role: "paciente" },
+      logErrors: false,
+    })
+  } catch (err) {
+    if (err instanceof ApiError && (err.status === 409 || err.status === 403)) {
+      return
+    }
+    const detail = err instanceof ApiError ? err.message : ""
+    console.warn("[user_roles] sincronizacao de paciente falhou:", detail || err)
+  }
 }
 
 async function ensurePatientProfile(
@@ -544,17 +662,19 @@ async function ensurePatientProfile(
 ): Promise<void> {
   if (!userId) return
 
+  const profileEmail = data.email?.trim().toLowerCase()
   const fullPayload = compactPayload({
     id: userId,
     full_name: data.name.trim(),
-    email: data.email?.trim(),
+    email: profileEmail,
     phone: onlyDigits(data.phone),
+    role: "paciente",
   })
 
   const minimalPayload = compactPayload({
     id: userId,
     full_name: data.name.trim(),
-    email: data.email?.trim(),
+    email: profileEmail,
     phone: onlyDigits(data.phone),
   })
 
@@ -583,16 +703,12 @@ async function ensurePatientProfile(
 
 async function findProfileByEmail(email?: string): Promise<ApiProfile | null> {
   if (!email) return null
+  const normalized = email.trim().toLowerCase()
   const rows = await apiRequest<ApiProfile[]>(
-    `/rest/v1/profiles?email=eq.${encodeURIComponent(email.trim())}&select=*&limit=1`,
+    `/rest/v1/profiles?email=eq.${encodeURIComponent(normalized)}&select=id,email,full_name,patient_id&limit=1`,
     { logErrors: false },
   ).catch(() => [])
   return rows?.[0] ?? null
-}
-
-function isAlreadyRegisteredError(err: unknown): boolean {
-  return err instanceof Error &&
-    /already been registered|already registered|email.*registered|email.*exists|usu[aá]rio.*existe|e-?mail.*cadastrado/i.test(err.message)
 }
 
 async function findPatientById(id?: string): Promise<ApiPatient | null> {
@@ -605,11 +721,23 @@ async function findPatientById(id?: string): Promise<ApiPatient | null> {
 
 async function findPatientByEmail(email?: string): Promise<ApiPatient | null> {
   if (!email) return null
+  const normalized = email.trim().toLowerCase()
   const rows = await apiRequest<ApiPatient[]>(
-    `/rest/v1/patients?email=eq.${encodeURIComponent(email)}&select=*&limit=1`,
+    `/rest/v1/patients?email=eq.${encodeURIComponent(normalized)}&select=*&limit=1`,
     { logErrors: false },
   ).catch(() => [])
   return rows?.[0] ?? null
+}
+
+/** E-mail da credencial Auth (perfil pode divergir da ficha). */
+async function authEmailForPortal(patient: Patient, formEmail: string): Promise<string> {
+  const userId = patient.userId?.trim()
+  if (!userId) return formEmail
+  const rows = await apiRequest<Array<{ email?: string }>>(
+    `/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=email&limit=1`,
+    { logErrors: false },
+  ).catch(() => [])
+  return rows?.[0]?.email?.trim().toLowerCase() || formEmail
 }
 
 function isDeleteBlockedByDependency(err: unknown): boolean {
@@ -624,6 +752,9 @@ function isMissingResource(err: unknown): boolean {
     (err.status === 404 || (err.status === 400 && /schema|cache|could not find|not found|relation|table/i.test(err.message)))
 }
 
+/** Celular válido (10–11 dígitos) — a API rejeita 00000000000 no paciente técnico. */
+const DELETED_PATIENT_PLACEHOLDER_PHONE = "11999990001"
+
 async function deletePatientAuthUser(userId?: string): Promise<boolean> {
   if (!userId) return false
 
@@ -633,28 +764,50 @@ async function deletePatientAuthUser(userId?: string): Promise<boolean> {
       body: { userId },
       logErrors: false,
     })
+    return true
   } catch (err) {
-    if (!(err instanceof ApiError) || err.status !== 404) throw err
+    if (err instanceof ApiError && err.status === 0) return false
+    if (!(err instanceof ApiError) || err.status !== 404) return false
+  }
+
+  try {
     await apiRequest("/functions/v1/delete-user", {
       method: "POST",
       body: { userId },
       logErrors: false,
     })
+    return true
+  } catch {
+    return false
   }
-  return true
+}
+
+async function ensurePlaceholderPatientPhone(patientId: string): Promise<void> {
+  await apiRequest(`/rest/v1/patients?id=eq.${encodeURIComponent(patientId)}`, {
+    method: "PATCH",
+    headers: { Prefer: "return=minimal" },
+    body: { phone_mobile: DELETED_PATIENT_PLACEHOLDER_PHONE },
+    logErrors: false,
+  }).catch(() => undefined)
 }
 
 async function getDeletedPatientPlaceholderId(): Promise<string> {
   const email = "paciente.removido@mediconnect.local"
   const cpf = "52998224725"
   const existing = await findPatientByEmail(email) ?? await findPatientByCpf(cpf)
-  if (existing?.id) return existing.id
+  if (existing?.id) {
+    const phone = onlyDigits(existing.phone_mobile)
+    if (!phone || phone === "00000000000" || !/^\d{10,11}$/.test(phone)) {
+      await ensurePlaceholderPatientPhone(existing.id)
+    }
+    return existing.id
+  }
 
   const payload = compactPayload({
     full_name: "Paciente removido",
     cpf,
     email,
-    phone_mobile: "00000000000",
+    phone_mobile: DELETED_PATIENT_PLACEHOLDER_PHONE,
     birth_date: "1900-01-01",
     created_by: getApiUserId() ?? undefined,
   })
@@ -675,7 +828,7 @@ async function getDeletedPatientPlaceholderId(): Promise<string> {
         full_name: "Paciente removido",
         cpf,
         email,
-        phone_mobile: "00000000000",
+        phone_mobile: DELETED_PATIENT_PLACEHOLDER_PHONE,
         birth_date: "1900-01-01",
       },
       logErrors: false,
@@ -685,6 +838,21 @@ async function getDeletedPatientPlaceholderId(): Promise<string> {
   const raw = extractCreatedPatient(created) ?? await findPatientByEmail(email) ?? await findPatientByCpf(cpf)
   if (!raw?.id) throw new Error("A API não permitiu criar o paciente técnico para preservar vínculos antigos.")
   return raw.id
+}
+
+/** Cache local só para o próprio login de paciente (não ao listar todos como staff). */
+function rememberOwnPatientLink(patient: Patient): void {
+  const sessionUserId = getApiUserId()
+  if (!sessionUserId) return
+  const ownerId = patient.userId ?? sessionUserId
+  if (ownerId !== sessionUserId) return
+  rememberPatientLink({
+    authUserId: sessionUserId,
+    patientId: patient.id,
+    name: patient.name,
+    email: patient.email,
+    cpf: patient.cpf,
+  })
 }
 
 function patientIdentityFilters(identity: PatientIdentity): string[] {
@@ -762,8 +930,16 @@ export async function getPatientByIdentity(identity: PatientIdentity): Promise<P
     .sort((a, b) => b.score - a.score)[0]?.row
 
   if (!best) return null
-  await syncResolvedPatientProfile(identity.userId, best)
-  return attachPatientPhoto(apiToPatient(best))
+
+  // Só grava user_id no paciente quando o vínculo é forte (evita “colar” admin em paciente alheio).
+  const matchScore = scorePatientMatch(best, identity)
+  if (identity.userId && matchScore >= 40) {
+    await syncResolvedPatientProfile(identity.userId, best)
+  }
+
+  const resolved = apiToPatient(best)
+  rememberOwnPatientLink(resolved)
+  return attachPatientPhoto(resolved)
 }
 
 export interface GetPatientsOptions {
@@ -782,7 +958,45 @@ export interface GetPatientsOptions {
  * Response base: id, full_name, cpf, email, phone_mobile
  */
 const CORE_PATIENT_SELECT =
-  "id,full_name,cpf,email,phone_mobile"
+  "id,user_id,full_name,cpf,email,phone_mobile,birth_date"
+
+function pickLatestDate(a?: string, b?: string): string | undefined {
+  if (!a?.trim()) return b?.trim()?.slice(0, 10) || undefined
+  if (!b?.trim()) return a.trim().slice(0, 10)
+  const dayA = a.trim().slice(0, 10)
+  const dayB = b.trim().slice(0, 10)
+  return dayA >= dayB ? dayA : dayB
+}
+
+/** Última consulta passada (não cancelada) por paciente, a partir de `appointments`. */
+async function fetchLastVisitByPatientId(): Promise<Map<string, string>> {
+  const now = new Date().toISOString()
+  try {
+    const rows = await apiRequest<Array<{ patient_id: string; scheduled_at: string }>>(
+      `/rest/v1/appointments?select=patient_id,scheduled_at&status=neq.cancelled&scheduled_at=lte.${encodeURIComponent(now)}&order=scheduled_at.desc`,
+      { logErrors: false },
+    )
+    const map = new Map<string, string>()
+    for (const row of rows ?? []) {
+      if (!row.patient_id || !row.scheduled_at) continue
+      if (map.has(row.patient_id)) continue
+      map.set(row.patient_id, row.scheduled_at.slice(0, 10))
+    }
+    return map
+  } catch {
+    return new Map()
+  }
+}
+
+async function enrichPatientsWithLastVisit(patients: Patient[]): Promise<Patient[]> {
+  if (patients.length === 0) return patients
+  const fromAppointments = await fetchLastVisitByPatientId()
+  return patients.map((patient) => {
+    const merged = pickLatestDate(patient.lastVisit, fromAppointments.get(patient.id))
+    if (!merged || merged === patient.lastVisit) return patient
+    return { ...patient, lastVisit: merged }
+  })
+}
 
 function buildPatientsListPath(
   select: string,
@@ -837,28 +1051,33 @@ export async function getPatients(options: GetPatientsOptions = {}): Promise<Pat
       ? lastError
       : new Error("Não foi possível carregar pacientes da API.")
   }
-  const patients = (data ?? []).map((row) => {
-    const patient = apiToPatient(row)
-    rememberPatientLink({ patientId: patient.id, name: patient.name, email: patient.email, cpf: patient.cpf })
-    return patient
-  })
-  if (skipPhotos || !fullSelect) return patients
-  return attachPatientPhotos(patients)
+  const patients = (data ?? []).map((row) => apiToPatient(row))
+  const withLastVisit = await enrichPatientsWithLastVisit(patients)
+  if (skipPhotos || !fullSelect) return withLastVisit
+  return attachPatientPhotos(withLastVisit)
 }
 
 export async function getPatientById(id: string): Promise<Patient | null> {
   if (!id) return null
-  try {
-    const data = await apiRequest<ApiPatient[]>(
-      `/rest/v1/patients?id=eq.${encodeURIComponent(id)}&select=*&limit=1`,
-      { logErrors: false },
-    )
-    const row = data?.[0]
-    if (!row) return null
-    return attachPatientPhoto(apiToPatient(row))
-  } catch {
-    return null
+  const selects = ["*", CORE_PATIENT_SELECT]
+  for (const select of selects) {
+    try {
+      const data = await apiRequest<ApiPatient[]>(
+        `/rest/v1/patients?id=eq.${encodeURIComponent(id)}&select=${select}&limit=1`,
+        { logErrors: false },
+      )
+      const row = data?.[0]
+      if (!row) continue
+      const patient = apiToPatient(row)
+      const withPhoto = select === "*" ? await attachPatientPhoto(patient) : patient
+      if (select === "*" || row.sex || row.gender) return withPhoto
+      continue
+    } catch (err) {
+      if (isMissingColumnError(err) && select !== "*") continue
+      if (select === "*") return null
+    }
   }
+  return null
 }
 
 export async function getPatientsForReports(): Promise<Patient[]> {
@@ -866,11 +1085,7 @@ export async function getPatientsForReports(): Promise<Patient[]> {
     "/rest/v1/patients?select=id,full_name,cpf,email,phone_mobile&order=full_name.asc",
     { logErrors: false },
   )
-  return (data ?? []).map((row) => {
-    const patient = apiToPatient(row)
-    rememberPatientLink({ patientId: patient.id, name: patient.name, email: patient.email, cpf: patient.cpf })
-    return patient
-  })
+  return (data ?? []).map((row) => apiToPatient(row))
 }
 
 export async function createPatient(
@@ -903,12 +1118,205 @@ export async function createPatientWithPassword(
   data: Omit<Patient, "id">,
   password: string,
 ): Promise<Patient> {
-  if (!password.trim()) throw new Error("Senha obrigatória para criar acesso do paciente.")
-  if (password.trim().length < 6) throw new Error("A senha deve ter pelo menos 6 caracteres.")
-  const created = await createPatient(data)
-  return createPatientPortalAccess(created, password)
+  const normalizedPassword = password.trim()
+  if (!normalizedPassword) throw new Error("Senha obrigatória para criar acesso do paciente.")
+  if (normalizedPassword.length < 6) throw new Error("A senha deve ter pelo menos 6 caracteres.")
+
+  const base = patientToApi(data)
+  const formEmail = String(base.email ?? data.email ?? "").trim().toLowerCase()
+  if (!formEmail) throw new Error("E-mail obrigatório para criar acesso do paciente.")
+
+  const cpf = onlyDigits(data.cpf)
+  if (!cpf || cpf.length !== 11) {
+    throw new Error("CPF do paciente é obrigatório (11 dígitos) para criar o acesso ao portal.")
+  }
+
+  const phoneMobile = onlyDigits(data.phone) || String(base.phone_mobile ?? "")
+  if (!/^\d{10,11}$/.test(phoneMobile)) {
+    throw new Error("Celular é obrigatório (10 ou 11 dígitos) para criar o acesso do portal.")
+  }
+
+  const payload: Record<string, unknown> = {
+    ...base,
+    email: formEmail,
+    password: normalizedPassword,
+    role: "paciente",
+    create_patient_record: true,
+    phone: phoneMobile,
+    phone_mobile: phoneMobile,
+  }
+  if (typeof window !== "undefined") {
+    payload.redirect_url = window.location.origin
+  }
+
+  const response = await createPatientUser(payload)
+  const userId = createdPatientUserId(response)
+  if (!userId) {
+    throw new Error(response.message || "Usuário paciente não foi criado pela API.")
+  }
+
+  let raw =
+    (response.patient_id ? await findPatientById(response.patient_id) : null) ??
+    (await findPatientByCpf(cpf)) ??
+    (await findPatientByEmail(formEmail))
+  if (!raw) {
+    throw new Error(response.message || "Usuário criado, mas o paciente não foi retornado pela API.")
+  }
+
+  await linkPatientToUser(raw.id, userId)
+  rememberPatientLink({
+    authUserId: userId,
+    patientId: raw.id,
+    name: data.name,
+    email: formEmail,
+    cpf: data.cpf,
+  })
+
+  const patient = await updatePatient({ ...apiToPatient(raw), ...data, id: raw.id, userId })
+  await assertPortalPasswordWorks(patient, formEmail, userId, normalizedPassword, false)
+  return patient
 }
 
+async function finalizePatientPortalAccess(
+  patient: Patient,
+  userId: string,
+  email: string,
+): Promise<void> {
+  await ensurePatientRole(userId)
+  await ensurePatientProfile(userId, patient)
+  await linkPatientToUser(patient.id, userId)
+  rememberPatientLink({
+    authUserId: userId,
+    patientId: patient.id,
+    name: patient.name,
+    email,
+    cpf: patient.cpf,
+  })
+}
+
+interface CreateUserWithPasswordResponse {
+  success?: boolean
+  id?: string
+  user?: { id?: string; email?: string }
+  user_id?: string
+  message?: string
+  patient_id?: string
+}
+
+function isAlreadyRegisteredError(err: unknown): boolean {
+  if (err instanceof ApiError) {
+    if (err.status === 409) return true
+    if (err.status === 400) {
+      return /already been registered|already registered|usu[aá]rio.*j[aá].*registrad|e-?mail.*j[aá].*cadastrad|e-?mail.*em uso|duplicate.*email/i.test(
+        err.message,
+      )
+    }
+    return false
+  }
+  if (!(err instanceof Error)) return false
+  return /already been registered|already registered|usu[aá]rio.*j[aá].*registrad|e-?mail.*j[aá].*cadastrad|e-?mail.*em uso/i.test(
+    err.message,
+  )
+}
+
+async function createPatientUserWithPassword(
+  path: string,
+  payload: Record<string, unknown>,
+): Promise<CreateUserWithPasswordResponse> {
+  return apiRequest<CreateUserWithPasswordResponse>(path, {
+    method: "POST",
+    body: payload,
+    logErrors: false,
+  })
+}
+
+async function createPatientUser(payload: Record<string, unknown>): Promise<CreateUserWithPasswordResponse> {
+  try {
+    return await createPatientUserWithPassword("/functions/v1/create-user-with-password", payload)
+  } catch (err) {
+    if (!(err instanceof ApiError) || err.status !== 404) throw err
+  }
+  return createPatientUserWithPassword("/create-user-with-password", payload)
+}
+
+function createdPatientUserId(response: CreateUserWithPasswordResponse): string {
+  return response.user?.id ?? response.user_id ?? response.id ?? ""
+}
+
+async function resolvePortalAuthUserId(
+  email: string,
+  patient: Patient,
+  response: CreateUserWithPasswordResponse | null,
+): Promise<string> {
+  const fromApi = response ? createdPatientUserId(response) : ""
+  if (fromApi) return fromApi
+  if (patient.userId?.trim()) return patient.userId.trim()
+  const profile = await findProfileByEmail(email)
+  if (profile?.id) return profile.id
+  const row = await findPatientById(patient.id)
+  return row?.user_id?.trim() ?? ""
+}
+
+async function emailsForPortalLoginCheck(
+  patient: Patient,
+  formEmail: string,
+  userId: string,
+): Promise<string[]> {
+  const out = new Set<string>()
+  out.add(formEmail)
+  if (userId) {
+    const rows = await apiRequest<Array<{ email?: string }>>(
+      `/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=email&limit=1`,
+      { logErrors: false },
+    ).catch(() => [])
+    const profileEmail = rows?.[0]?.email?.trim().toLowerCase()
+    if (profileEmail) out.add(profileEmail)
+  }
+  const profile = await findProfileByEmail(formEmail)
+  if (profile?.email) out.add(profile.email.trim().toLowerCase())
+  const row = await findPatientById(patient.id)
+  if (row?.email) out.add(row.email.trim().toLowerCase())
+  return [...out]
+}
+
+async function sendPortalPasswordRecovery(emails: string[]): Promise<string> {
+  const primary = emails[0]?.trim()
+  if (primary) {
+    try {
+      await requestPasswordReset(primary)
+      return `Enviamos um link para ${primary} redefinir a senha (verifique spam).`
+    } catch {
+      /* evita várias chamadas (429) */
+    }
+  }
+  return "Use «Esqueci minha senha» na tela de entrada para redefinir o acesso."
+}
+
+async function assertPortalPasswordWorks(
+  patient: Patient,
+  formEmail: string,
+  userId: string,
+  password: string,
+  hadExistingAccount: boolean,
+): Promise<void> {
+  const emails = await emailsForPortalLoginCheck(patient, formEmail, userId)
+  for (let attempt = 0; attempt < 3; attempt++) {
+    for (const addr of emails) {
+      if (await verifyPatientCredentials(addr, password)) return
+    }
+    if (attempt < 2) await new Promise((r) => setTimeout(r, 500))
+  }
+
+  const recovery = await sendPortalPasswordRecovery(emails)
+  const message = hadExistingAccount
+    ? "Este e-mail já tem conta e a senha não pôde ser definida da secretária. " + recovery
+    : "Paciente salvo na clínica, mas o login com esta senha não foi confirmado. " + recovery
+  throw new PatientPortalVerifyError(message, patient)
+}
+
+/**
+ * Acesso ao portal pela secretária/gestor/admin — `create-user-with-password` + teste de login.
+ */
 export async function createPatientPortalAccess(
   patient: Patient,
   password: string,
@@ -919,49 +1327,106 @@ export async function createPatientPortalAccess(
     throw new Error("CPF do paciente é obrigatório (11 dígitos) para criar o acesso ao portal.")
   }
 
-  const payload = {
-    email:      String(base.email ?? "").trim().toLowerCase(),
-    password:   password.trim(),
-    full_name:  String(base.full_name ?? patient.name).trim(),
-    cpf,
-    phone:      base.phone_mobile,
-    role:       "paciente",
+  const normalizedPassword = password.trim()
+  if (!normalizedPassword) throw new Error("Senha obrigatória para criar acesso do paciente.")
+  if (normalizedPassword.length < 6) throw new Error("A senha deve ter pelo menos 6 caracteres.")
+
+  const formEmail = String(base.email ?? patient.email ?? "").trim().toLowerCase()
+  if (!formEmail) throw new Error("E-mail obrigatório para criar acesso do paciente.")
+  const authEmail = await authEmailForPortal(patient, formEmail)
+
+  const phoneMobile = onlyDigits(patient.phone) || String(base.phone_mobile ?? "")
+  if (!/^\d{10,11}$/.test(phoneMobile)) {
+    throw new Error("Celular é obrigatório (10 ou 11 dígitos) para criar o acesso do portal.")
   }
 
-  if (!payload.email) throw new Error("E-mail obrigatório para criar acesso do paciente.")
-  if (!payload.password) throw new Error("Senha obrigatória para criar acesso do paciente.")
-  if (payload.password.length < 6) throw new Error("A senha deve ter pelo menos 6 caracteres.")
+  const buildPayload = (emailForAuth: string): Record<string, unknown> => {
+    const body: Record<string, unknown> = {
+      ...base,
+      email: emailForAuth,
+      patient_id: patient.id,
+      password: normalizedPassword,
+      role: "paciente",
+      create_patient_record: false,
+      phone: phoneMobile,
+      phone_mobile: phoneMobile,
+    }
+    if (typeof window !== "undefined") {
+      body.redirect_url = window.location.origin
+    }
+    return body
+  }
 
   let response: CreateUserWithPasswordResponse | null = null
-  let userId = ""
+  let hadExistingAccount = false
   try {
-    response = await createPatientUser(payload)
-    userId = createdUserId(response)
+    response = await createPatientUser(buildPayload(formEmail))
   } catch (err) {
     if (!isAlreadyRegisteredError(err)) throw err
-    userId = (await findProfileByEmail(String(base.email ?? "")))?.id ?? ""
+    hadExistingAccount = true
+    if (authEmail !== formEmail) {
+      try {
+        response = await createPatientUser(buildPayload(authEmail))
+        hadExistingAccount = false
+      } catch (retryErr) {
+        if (!isAlreadyRegisteredError(retryErr)) throw retryErr
+      }
+    }
+    if (!response) {
+      try {
+        response = await createPatientUser({
+          patient_id: patient.id,
+          email: authEmail,
+          password: normalizedPassword,
+          role: "paciente",
+          create_patient_record: false,
+        })
+      } catch {
+        /* mantém hadExistingAccount */
+      }
+    }
   }
 
-  if (!userId) throw new Error(response?.message || "Usuário paciente não foi criado pela API.")
+  if (!response && hadExistingAccount) {
+    throw new Error(
+      "Este e-mail já tem conta no sistema. Use «Esqueci minha senha» na tela de entrada para redefinir o acesso.",
+    )
+  }
+  if (!response) {
+    throw new Error("Não foi possível criar o acesso do paciente. Verifique os dados e tente novamente.")
+  }
 
-  await ensurePatientRole(userId)
-  await ensurePatientProfile(userId, patient)
-  await linkPatientToUser(patient.id, userId)
+  const userId = createdPatientUserId(response) || (await resolvePortalAuthUserId(formEmail, patient, response))
+  if (!userId) {
+    throw new Error(response.message || "Usuário paciente não foi criado pela API.")
+  }
+
+  await finalizePatientPortalAccess(patient, userId, formEmail)
+  await assertPortalPasswordWorks(patient, formEmail, userId, normalizedPassword, hadExistingAccount)
 
   return updatePatient({ ...patient, userId })
 }
 
 async function persistPatientPhoto(patient: Patient): Promise<Patient> {
+  const storageUserId = patient.userId?.trim()
   try {
     const clearing = patient.photoUrl === "" || patient.photoUrl === null
     if (clearing) {
-      await deletePatientPhotoFromStorage(patient.id).catch(() => undefined)
+      if (storageUserId) {
+        await deleteAvatarFromStorage(storageUserId).catch(() => undefined)
+      }
       return { ...patient, photoUrl: undefined }
     }
     if (!patient.photoUrl) return patient
-    if (!isDataUrl(patient.photoUrl) && isRemotePhotoUrl(patient.photoUrl)) return patient
+    if (!isDataUrl(patient.photoUrl) && isRemotePhotoUrl(patient.photoUrl)) {
+      return patient
+    }
+    if (!storageUserId) {
+      console.warn("[patients] foto ignorada: paciente sem user_id vinculado (Storage exige id do usuário auth).")
+      return { ...patient, photoUrl: undefined }
+    }
 
-    const photoUrl = await resolvePatientPhotoUrl(patient.id, patient.photoUrl)
+    const photoUrl = await resolveAvatarPhotoUrl(storageUserId, patient.photoUrl)
     return { ...patient, photoUrl }
   } catch (err) {
     console.warn("[patients] foto não salva; cadastro segue sem alterar a imagem:", err)
@@ -975,18 +1440,20 @@ export async function updatePatient(patient: Patient): Promise<Patient> {
   const patientWithUser = linkedProfile?.id ? { ...patient, userId: linkedProfile.id } : patient
   const patientWithPhoto = await persistPatientPhoto(patientWithUser)
 
-  await persistPatientRecord(
-    patientWithPhoto.id,
-    patientToPatchApi(patientWithPhoto),
-  )
+  await persistPatientRecord(patientWithPhoto.id, patientWithPhoto)
 
-  rememberPatientLink({
-    patientId: patientWithPhoto.id,
-    name: patientWithPhoto.name,
-    email: patientWithPhoto.email,
-    cpf: patientWithPhoto.cpf,
-  })
-  return patientWithPhoto
+  const fresh = await getPatientById(patientWithPhoto.id)
+  const result = fresh
+    ? {
+        ...fresh,
+        userId: patientWithPhoto.userId ?? fresh.userId,
+        photoUrl: patientWithPhoto.photoUrl ?? fresh.photoUrl,
+        gender: fresh.gender ?? patientWithPhoto.gender,
+      }
+    : patientWithPhoto
+
+  rememberOwnPatientLink(result)
+  return result
 }
 
 async function deletePatientDependencies(id: string): Promise<void> {
@@ -1025,29 +1492,42 @@ async function deletePatientDependencies(id: string): Promise<void> {
     const rows = await listDependencyRows(table, required)
 
     if (table === "appointments" && rows.length > 0) {
-      const placeholderPatientId = await getDeletedPatientPlaceholderId()
       await apiRequest(`/rest/v1/appointments?patient_id=eq.${patientId}`, {
-        method: "PATCH",
+        method: "DELETE",
         headers: { Prefer: "return=minimal" },
-        body: {
-          patient_id: placeholderPatientId,
-          status: "cancelled",
-          notes: "Paciente original removido pelo perfil gestor.",
-        },
         logErrors: false,
       }).catch((err) => {
         if (!isMissingResource(err)) {
-          console.warn("[patients] nao foi possivel desvincular agendamentos antes da exclusao:", err)
+          console.warn("[patients] exclusao em massa de agendamentos falhou, tentando desvincular:", err)
         }
       })
 
       let remaining = await listDependencyRows(table, required)
       if (remaining.length === 0) return
 
+      try {
+        const placeholderPatientId = await getDeletedPatientPlaceholderId()
+        await apiRequest(`/rest/v1/appointments?patient_id=eq.${patientId}`, {
+          method: "PATCH",
+          headers: { Prefer: "return=minimal" },
+          body: {
+            patient_id: placeholderPatientId,
+            status: "cancelled",
+          },
+          logErrors: false,
+        })
+        remaining = await listDependencyRows(table, required)
+        if (remaining.length === 0) return
+      } catch (err) {
+        if (!isMissingResource(err)) {
+          console.warn("[patients] nao foi possivel desvincular agendamentos para paciente tecnico:", err)
+        }
+      }
+
       await Promise.all(remaining.map((row) =>
         deleteRow(table, row.id, false).catch((err) => {
           if (!isMissingResource(err)) {
-            console.warn("[patients] exclusao de agendamento vinculado falhou, mantendo tentativa por paciente_id:", err)
+            console.warn("[patients] exclusao de agendamento vinculado falhou:", err)
           }
         }),
       ))
@@ -1060,8 +1540,8 @@ async function deletePatientDependencies(id: string): Promise<void> {
       remaining = await listDependencyRows(table, required)
       if (remaining.length > 0) {
         throw new Error(
-          `A API não removeu ${remaining.length} registro(s) de ${table} vinculados ao paciente. ` +
-          "O backend precisa permitir mover esses agendamentos para o paciente técnico de exclusão.",
+          `Ainda há ${remaining.length} agendamento(s) vinculados a este paciente. ` +
+          "A API precisa permitir excluir ou transferir esses registros (perfil admin/gestor).",
         )
       }
       return
@@ -1080,10 +1560,10 @@ async function deletePatientDependencies(id: string): Promise<void> {
 
     const remaining = await listDependencyRows(table, required)
 
-    if (remaining.length > 0) {
+    if (remaining.length > 0 && required) {
       throw new Error(
-        `A API não removeu ${remaining.length} registro(s) de ${table} vinculados ao paciente. ` +
-        "O perfil gestor precisa ter permissão de DELETE nessa tabela antes de excluir o paciente.",
+        `Ainda há ${remaining.length} registro(s) em ${table} vinculados ao paciente. ` +
+        "Verifique permissões de exclusão na API para admin/gestor.",
       )
     }
   }

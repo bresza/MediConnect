@@ -8,7 +8,7 @@ Fonte: uso estável no app (`getPatientsForReports`, `lookups`, auth).
 | Coluna        | Tipo (aprox.) | Uso no front                          |
 |---------------|---------------|----------------------------------------|
 | id            | uuid          | PK, vínculos                           |
-| user_id       | uuid          | dono do registro (RLS)                 |
+| user_id       | uuid          | dono do registro (RLS) + path do avatar no Storage |
 | full_name     | text          | nome exibido                           |
 | cpf           | text          | documento                              |
 | email         | text          | contato                                |
@@ -19,9 +19,10 @@ Fonte: uso estável no app (`getPatientsForReports`, `lookups`, auth).
 
 Se existirem no banco, podem ser pedidas com `fullSelect: true` ou em `getPatientById`:
 
-- `status`, `gender`, `health_insurance`, `last_visit`, `next_visit`, `photo_url`, endereço, etc.
+- `sex` (Masculino/Feminino/Outro — usado em `create-patient` / PATCH estendido), `status`, `gender`, `health_insurance`, `last_visit`, `next_visit`, `photo_url`, endereço, etc.
 
-O tipo `Patient` no TypeScript pode ter campos a mais; o `apiToPatient` usa defaults (`status: "Active"`) quando a API não envia.
+A coluna `last_visit` **não** entra no `select` da listagem (pode não existir no banco).
+A **Última visita** na tela vem do último `appointments.scheduled_at` passado (status ≠ `cancelled`).
 
 ## Select seguro para listas
 
@@ -29,4 +30,8 @@ O tipo `Patient` no TypeScript pode ter campos a mais; o `apiToPatient` usa defa
 id,user_id,full_name,cpf,email,phone_mobile,birth_date
 ```
 
-Implementado em `CORE_PATIENT_SELECT` em `src/services/patients.ts`.
+Implementado em `CORE_PATIENT_SELECT` em `src/services/patients.ts` (listagens incluem `user_id` para URL de avatar no Storage).
+
+## Avatar (Storage)
+
+Contrato: `POST/GET /storage/v1/object/avatars/{userId}/avatar.{ext}` — ver `src/services/patientPhoto.ts`.

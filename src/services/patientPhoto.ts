@@ -1,6 +1,7 @@
 import { ApiError, SUPABASE_ANON_KEY, SUPABASE_URL, getApiToken } from "./api"
 import type { Patient } from "../types"
 
+/** Bucket documentado: `POST/GET /storage/v1/object/avatars/{path}`. */
 const BUCKET = "avatars"
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024
 const PHOTO_EXTENSIONS = ["jpg", "jpeg", "png", "webp", "gif"] as const
@@ -20,12 +21,69 @@ function extensionFromMime(mime: string): string {
   return "jpg"
 }
 
-function patientPhotoObjectPath(patientId: string, ext: string): string {
-  return `patients/${patientId}.${ext}`
+/** Path no Storage conforme API: `{userId}/avatar.jpg`. */
+export function avatarObjectPath(userId: string, ext = "jpg"): string {
+  return `${userId}/avatar.${ext}`
 }
 
+/**
+ * URL de download documentada: `GET /storage/v1/object/avatars/{path}` (sem `/public/`).
+ */
+export function getAvatarDownloadUrl(objectPath: string, cacheBust?: number): string {
+  const encoded = objectPath.split("/").map(encodeURIComponent).join("/")
+  const base = `${SUPABASE_URL}/storage/v1/object/${BUCKET}/${encoded}`
+  return cacheBust ? `${base}?v=${cacheBust}` : base
+}
+
+/** @deprecated Use {@link getAvatarDownloadUrl}. */
 export function getPatientPhotoPublicUrl(objectPath: string): string {
-  return `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${objectPath}`
+  return getAvatarDownloadUrl(objectPath)
+}
+
+/** Converte URLs legadas (`/object/public/avatars/...`) para o endpoint documentado quando possível. */
+export function normalizeAvatarUrl(url?: string | null, userId?: string | null): string | undefined {
+  const trimmed = url?.trim()
+  if (trimmed) {
+    if (isDataUrl(trimmed)) return trimmed
+    if (/^https?:\/\//i.test(trimmed)) {
+      const withoutPublic = trimmed.replace(
+        /\/storage\/v1\/object\/public\/avatars\//i,
+        "/storage/v1/object/avatars/",
+      )
+      return withoutPublic
+    }
+  }
+
+  if (userId?.trim()) return getAvatarDownloadUrl(avatarObjectPath(userId.trim()))
+  return trimmed || undefined
+}
+
+/** Mensagem legível para erros do Supabase Storage (ex.: RLS 403). */
+export function storageErrorMessage(raw: string, status = 0): string {
+  let message = raw
+  try {
+    const parsed = JSON.parse(raw) as { message?: string; error?: string }
+    message = parsed.message ?? parsed.error ?? raw
+  } catch {
+    /* texto puro */
+  }
+
+  if (
+    status === 403 &&
+    /row-level security|rls|violates.*policy|unauthorized/i.test(message)
+  ) {
+    return (
+      "O servidor bloqueou o envio da foto (permissão no Storage). " +
+      "Seus outros dados do perfil ainda podem ser salvos. " +
+      "Se o problema continuar, o time da API precisa liberar upload no bucket avatars para usuários autenticados."
+    )
+  }
+
+  if (status === 403) {
+    return "Sem permissão para enviar a foto. Verifique se está logado."
+  }
+
+  return message || "Falha ao enviar a foto para o armazenamento."
 }
 
 function storageHeaders(extra?: Record<string, string>): Record<string, string> {
@@ -47,36 +105,30 @@ async function toUploadBlob(source: File | string): Promise<{ blob: Blob; mime: 
   return { blob: source, mime: source.type || "image/jpeg" }
 }
 
+/** Upload conforme API: `POST /storage/v1/object/avatars/{path}` multipart/form-data. */
 async function storageUpload(objectPath: string, blob: Blob): Promise<void> {
-  const url = `${SUPABASE_URL}/storage/v1/object/${BUCKET}/${objectPath}`
-  const multipartHeaders = storageHeaders({ "x-upsert": "true" })
+  const encoded = objectPath.split("/").map(encodeURIComponent).join("/")
+  const url = `${SUPABASE_URL}/storage/v1/object/${BUCKET}/${encoded}`
   const formData = new FormData()
   const filename = objectPath.split("/").pop() || "avatar.jpg"
   formData.append("file", blob, filename)
 
-  let response = await fetch(url, { method: "POST", headers: multipartHeaders, body: formData })
-
-  // Compatibilidade: alguns projetos Storage aceitam apenas payload binario bruto.
-  if (!response.ok && (response.status === 400 || response.status === 404 || response.status === 405 || response.status === 415 || response.status === 422)) {
-    const binaryHeaders = storageHeaders({
-      "Content-Type": blob.type || "image/jpeg",
-      "x-upsert": "true",
-    })
-    response = await fetch(url, { method: "PUT", headers: binaryHeaders, body: blob })
-    if (!response.ok && (response.status === 404 || response.status === 405)) {
-      response = await fetch(url, { method: "POST", headers: binaryHeaders, body: blob })
-    }
-  }
+  const response = await fetch(url, {
+    method: "POST",
+    headers: storageHeaders({ "x-upsert": "true" }),
+    body: formData,
+  })
 
   if (!response.ok) {
     const raw = await response.text().catch(() => response.statusText)
-    throw new ApiError(response.status, raw || "Falha ao enviar a foto para o armazenamento.")
+    throw new ApiError(response.status, storageErrorMessage(raw, response.status))
   }
 }
 
 async function storageDelete(objectPath: string): Promise<void> {
+  const encoded = objectPath.split("/").map(encodeURIComponent).join("/")
   const response = await fetch(
-    `${SUPABASE_URL}/storage/v1/object/${BUCKET}/${objectPath}`,
+    `${SUPABASE_URL}/storage/v1/object/${BUCKET}/${encoded}`,
     { method: "DELETE", headers: storageHeaders() },
   )
   if (!response.ok && response.status !== 404) {
@@ -85,87 +137,94 @@ async function storageDelete(objectPath: string): Promise<void> {
   }
 }
 
-interface StorageObjectRow {
-  name?: string
+export function avatarUrlForUser(userId?: string | null, ext = "jpg"): string | undefined {
+  if (!userId?.trim()) return undefined
+  return getAvatarDownloadUrl(avatarObjectPath(userId.trim(), ext))
 }
 
-/** Lista fotos salvas em `avatars/patients/*` e mapeia patientId -> URL publica. */
-export async function listPatientPhotoUrlMap(): Promise<Map<string, string>> {
-  const response = await fetch(`${SUPABASE_URL}/storage/v1/object/list/${BUCKET}`, {
-    method: "POST",
-    headers: storageHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ prefix: "patients/", limit: 1000 }),
-  })
-
-  if (!response.ok) return new Map()
-
-  const rows = await response.json().catch(() => []) as StorageObjectRow[]
-  const map = new Map<string, string>()
-
-  for (const row of rows ?? []) {
-    const name = row.name ?? ""
-    const match = name.match(/^patients\/([^/.]+)\.[^.]+$/i)
-    if (!match) continue
-    map.set(match[1], getPatientPhotoPublicUrl(name))
-  }
-
-  return map
+function resolveStorageUserId(patient: Patient): string | undefined {
+  return patient.userId?.trim() || undefined
 }
 
 export async function attachPatientPhotos(patients: Patient[]): Promise<Patient[]> {
-  if (patients.length === 0) return patients
-  const photoMap = await listPatientPhotoUrlMap().catch(() => new Map<string, string>())
-  return patients.map((patient) => ({
-    ...patient,
-    photoUrl: photoMap.get(patient.id) ?? patient.photoUrl,
-  }))
+  return patients.map((patient) => {
+    const userId = resolveStorageUserId(patient)
+    const fromUser = userId ? avatarUrlForUser(userId) : undefined
+    return {
+      ...patient,
+      photoUrl: normalizeAvatarUrl(fromUser ?? patient.photoUrl, userId),
+    }
+  })
 }
 
 export async function attachPatientPhoto(patient: Patient): Promise<Patient> {
-  const photoMap = await listPatientPhotoUrlMap().catch(() => new Map<string, string>())
+  const userId = resolveStorageUserId(patient)
+  const fromUser = userId ? avatarUrlForUser(userId) : undefined
   return {
     ...patient,
-    photoUrl: photoMap.get(patient.id) ?? patient.photoUrl,
+    photoUrl: normalizeAvatarUrl(fromUser ?? patient.photoUrl, userId),
   }
 }
 
-/** Envia a foto para o bucket `avatars` e retorna a URL publica persistivel. */
-export async function uploadPatientPhoto(
-  patientId: string,
+/** Envia avatar para `avatars/{userId}/avatar.{ext}` e retorna URL de download documentada. */
+export async function uploadAvatar(
+  userId: string,
   source: File | string,
 ): Promise<string> {
-  if (!patientId) throw new Error("Paciente sem identificador para salvar a foto.")
+  if (!userId.trim()) throw new Error("Usuário sem identificador para salvar a foto.")
   if (typeof source === "string" && !isDataUrl(source) && isRemotePhotoUrl(source)) {
-    return source
+    return normalizeAvatarUrl(source, userId) ?? source
   }
 
   const { blob, mime } = await toUploadBlob(source)
   if (blob.size > MAX_PHOTO_BYTES) {
-    throw new Error("A foto deve ter no maximo 5 MB.")
+    throw new Error("A foto deve ter no máximo 5 MB.")
   }
 
   const ext = extensionFromMime(mime)
-  const objectPath = patientPhotoObjectPath(patientId, ext)
+  const objectPath = avatarObjectPath(userId.trim(), ext)
   await storageUpload(objectPath, blob)
-  return getPatientPhotoPublicUrl(objectPath)
+  return getAvatarDownloadUrl(objectPath, Date.now())
 }
 
-export async function deletePatientPhotoFromStorage(patientId: string): Promise<void> {
-  if (!patientId) return
+/** @deprecated Prefer {@link uploadAvatar} com `userId`. */
+export async function uploadPatientPhoto(
+  patientId: string,
+  source: File | string,
+): Promise<string> {
+  return uploadAvatar(patientId, source)
+}
+
+export async function deleteAvatarFromStorage(userId: string): Promise<void> {
+  if (!userId.trim()) return
+  const uid = userId.trim()
   await Promise.all(
     PHOTO_EXTENSIONS.map((ext) =>
-      storageDelete(patientPhotoObjectPath(patientId, ext)).catch(() => undefined),
+      storageDelete(avatarObjectPath(uid, ext)).catch(() => undefined),
     ),
   )
 }
 
-/** Converte data URL local em URL remota no Storage (sem coluna `photo_url` no banco). */
-export async function resolvePatientPhotoUrl(
-  patientId: string,
+/** @deprecated Prefer {@link deleteAvatarFromStorage}. */
+export async function deletePatientPhotoFromStorage(patientId: string): Promise<void> {
+  return deleteAvatarFromStorage(patientId)
+}
+
+/** Converte data URL local em URL remota no Storage. */
+export async function resolveAvatarPhotoUrl(
+  userId: string,
   photoUrl?: string | null,
 ): Promise<string | undefined> {
   const trimmed = photoUrl?.trim()
   if (!trimmed) return undefined
-  if (isDataUrl(trimmed)) return uploadPatientPhoto(patientId, trimmed)
-  return trimmed
+  if (isDataUrl(trimmed)) return uploadAvatar(userId, trimmed)
+  return normalizeAvatarUrl(trimmed, userId)
+}
+
+/** @deprecated Prefer {@link resolveAvatarPhotoUrl} com `userId`. */
+export async function resolvePatientPhotoUrl(
+  patientId: string,
+  photoUrl?: string | null,
+): Promise<string | undefined> {
+  return resolveAvatarPhotoUrl(patientId, photoUrl)
 }

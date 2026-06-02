@@ -33,21 +33,21 @@ export async function generateReportContentWithAI(input: {
     {
       role: "system",
       content:
-        "Voce e um medico redator de laudos. Responda APENAS com JSON valido no formato: " +
+        "Você é um médico redator de laudos. Responda APENAS com JSON válido no formato: " +
         '{"diagnosis":"...","conclusion":"...","contentHtml":"<p>...</p>"}. ' +
-        "contentHtml deve usar tags simples: p, h2, ul, li, strong. Portugues do Brasil.",
+        "contentHtml deve usar tags simples: p, h2, ul, li, strong. Português do Brasil.",
     },
     {
       role: "user",
       content:
-        `Gere laudo do exame "${input.examType}".\n${patientBlock}\nMedico: ${input.doctorName}\n` +
-        `Informacoes clinicas: ${input.clinicalNotes}`,
+        `Gere laudo do exame "${input.examType}".\n${patientBlock}\nMédico: ${input.doctorName}\n` +
+        `Informações clínicas: ${input.clinicalNotes}`,
     },
   ]
 
   const raw = await chatComplete(messages, { signal: input.signal, maxTokens: 1200 })
   const jsonStr = extractJsonBlock(raw)
-  if (!jsonStr) throw new Error("A IA nao retornou JSON estruturado para o laudo.")
+  if (!jsonStr) throw new Error("A IA não retornou JSON estruturado para o laudo.")
 
   const parsed = JSON.parse(jsonStr) as Partial<ReportAICompletion>
   return {

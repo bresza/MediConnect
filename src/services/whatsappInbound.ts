@@ -1,5 +1,10 @@
 import { ApiError, apiRequest } from "./api"
-import { isEdgeAutomationEnabled } from "./schemaSafe"
+import {
+  isEdgeAutomationEnabled,
+  isInboundRestEnabled,
+  markEndpointUnavailable,
+  markEndpointUnavailableFromError,
+} from "./schemaSafe"
 import { getPatients } from "./patients"
 import { sendWhatsApp, toE164BR } from "./messaging"
 import {
@@ -36,6 +41,15 @@ interface ProcessInboundApiResponse {
 }
 
 const PROCESSED_LOCAL_KEY = "mediconnect:whatsapp-inbound:processed"
+const INBOUND_REST_KEY = "rest:inbound-messages"
+
+const EMPTY_RESULT: ProcessInboundResult = {
+  processed: 0,
+  replied: 0,
+  skipped: 0,
+  errors: [],
+  replies: [],
+}
 
 function loadLocalProcessed(): Set<string> {
   try {
@@ -55,24 +69,39 @@ function saveLocalProcessed(ids: Set<string>): void {
   }
 }
 
+/**
+ * Tabelas `whatsapp_messages` / `patient_messages` não constam na API documentada.
+ * Só consultamos quando `VITE_ENABLE_EDGE_AUTOMATION=true` e ainda não falharam com 404.
+ */
 async function fetchPendingInbound(): Promise<InboundWhatsAppMessage[]> {
+  if (!isInboundRestEnabled()) return []
+
   const paths = [
     "/rest/v1/whatsapp_messages?direction=eq.inbound&processed=eq.false&order=created_at.asc&limit=50",
     "/rest/v1/patient_messages?direction=eq.inbound&processed=eq.false&order=created_at.asc&limit=50",
   ]
 
+  let sawUnavailable = false
   for (const path of paths) {
     try {
       const rows = await apiRequest<InboundWhatsAppMessage[]>(path, { logErrors: false })
       if (Array.isArray(rows) && rows.length > 0) return rows
     } catch (err) {
-      if (err instanceof ApiError && (err.status === 404 || err.status === 400)) continue
+      if (markEndpointUnavailableFromError(INBOUND_REST_KEY, err)) {
+        sawUnavailable = true
+        continue
+      }
+      if (err instanceof ApiError && err.status === 400) continue
     }
   }
+
+  if (sawUnavailable) markEndpointUnavailable(INBOUND_REST_KEY)
   return []
 }
 
 async function markInboundProcessed(id: string): Promise<void> {
+  if (!isInboundRestEnabled()) return
+
   const bodies = [{ processed: true }, { status: "processed" }]
   const paths = [
     `/rest/v1/whatsapp_messages?id=eq.${encodeURIComponent(id)}`,
@@ -127,22 +156,22 @@ export async function processInboundViaServer(): Promise<ProcessInboundResult | 
   }
 }
 
-/** Processa inbound localmente (quando a API expõe fila REST). */
+/** Processa inbound (Edge Function ou fila REST, se habilitado). */
 export async function processInboundWhatsAppReplies(
   appointments: Appointment[],
   patients?: Patient[],
   clinicName?: string,
 ): Promise<ProcessInboundResult> {
+  if (!isEdgeAutomationEnabled() && !isInboundRestEnabled()) {
+    return EMPTY_RESULT
+  }
+
   const serverResult = await processInboundViaServer()
   if (serverResult && serverResult.replied > 0) return serverResult
 
-  const result: ProcessInboundResult = {
-    processed: 0,
-    replied: 0,
-    skipped: 0,
-    errors: [],
-    replies: [],
-  }
+  if (!isInboundRestEnabled()) return EMPTY_RESULT
+
+  const result: ProcessInboundResult = { ...EMPTY_RESULT, errors: [], replies: [] }
 
   const allPatients = patients ?? await getPatients().catch(() => [])
   const pending = await fetchPendingInbound()

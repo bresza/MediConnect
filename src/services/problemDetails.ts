@@ -1,3 +1,5 @@
+import { translateApiError } from "../utils/apiErrors"
+
 /** Problem Details (RFC 7807) e variantes usadas pela API RiseUP. */
 export interface ProblemDetails {
   type?:     string
@@ -92,5 +94,6 @@ export function messageFromProblemDetails(status: number, p: ProblemDetails): st
     return validationSummary || raw || "Erro interno ao processar o cadastro. Tente novamente em instantes."
   }
 
-  return validationSummary || raw || ""
+  const out = validationSummary || raw || ""
+  return translateApiError(out) || out
 }

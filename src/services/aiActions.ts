@@ -1,4 +1,10 @@
 import { canAccess, canDo } from "../utils/permissions"
+import { ApiError } from "./api"
+import {
+  getAppointmentDoctors,
+  getAvailableSlots,
+  isAppointmentSlotBusy,
+} from "./appointments"
 import { createReport, sendMessage } from "./domain"
 import { generateReportContentWithAI } from "./reportAI"
 import { runAppointmentReminders } from "./appointmentReminders"
@@ -86,21 +92,84 @@ function findAppointment(appointments: Appointment[], idOrHint: string): Appoint
   return appointments.find((a) => normalize(a.patientName).includes(q))
 }
 
-function resolveDoctor(
+async function resolveDoctor(
   deps: CreateAppAIActionsDeps,
   doctorName?: string,
-): { doctorId: string; doctorName: string } {
-  const doctors = deps.staff.filter((s) => s.role === "doctor")
+): Promise<{ doctorId: string; doctorName: string }> {
+  const doctorsFromStaff = deps.staff.filter((s) => s.role === "doctor")
   if (doctorName) {
-    const match = doctors.find((d) => normalize(d.name).includes(normalize(doctorName)))
-    if (match) return { doctorId: match.id, doctorName: match.name }
+    const q = normalize(doctorName)
+    const matchStaff = doctorsFromStaff.find((d) => normalize(d.name).includes(q))
+    if (matchStaff) return { doctorId: matchStaff.id, doctorName: matchStaff.name }
   }
+
+  const apiDoctors = await getAppointmentDoctors()
+  if (doctorName) {
+    const q = normalize(doctorName)
+    const matchApi = apiDoctors.find((d) => normalize(d.name).includes(q))
+    if (matchApi) return { doctorId: matchApi.id, doctorName: matchApi.name }
+  }
+
   if (deps.currentUser.role === "doctor") {
+    const self = apiDoctors.find(
+      (d) =>
+        d.id === deps.currentUser.id ||
+        normalize(d.name) === normalize(deps.currentUser.name),
+    )
+    if (self) return { doctorId: self.id, doctorName: self.name }
     return { doctorId: deps.currentUser.id, doctorName: deps.currentUser.name }
   }
-  const first = doctors[0]
-  if (first) return { doctorId: first.id, doctorName: first.name }
+
+  const firstApi = apiDoctors[0]
+  if (firstApi) return { doctorId: firstApi.id, doctorName: firstApi.name }
+
+  const firstStaff = doctorsFromStaff[0]
+  if (firstStaff) return { doctorId: firstStaff.id, doctorName: firstStaff.name }
+
   return { doctorId: deps.currentUser.id, doctorName: deps.currentUser.name }
+}
+
+async function validateAppointmentSlot(
+  deps: CreateAppAIActionsDeps,
+  doctorId: string,
+  date: string,
+  time: string,
+): Promise<AIToolResult> {
+  const normalizedTime = time.slice(0, 5)
+  if (isAppointmentSlotBusy(deps.appointments, doctorId, date, normalizedTime)) {
+    return {
+      ok: false,
+      message: `O horário ${normalizedTime} em ${date} já está ocupado na agenda deste profissional.`,
+    }
+  }
+
+  try {
+    const slots = await getAvailableSlots(doctorId, date, "presencial", {
+      allowDefaultFallback: false,
+    })
+    if (slots.length > 0 && !slots.includes(normalizedTime)) {
+      const sample = slots.slice(0, 6).join(", ")
+      return {
+        ok: false,
+        message:
+          `Horário ${normalizedTime} não está livre em ${date}. ` +
+          `Horários disponíveis: ${sample}${slots.length > 6 ? "…" : ""}.`,
+      }
+    }
+    return { ok: true, message: "" }
+  } catch {
+    return { ok: true, message: "" }
+  }
+}
+
+function appointmentCreateErrorResult(err: unknown): AIToolResult {
+  const message =
+    err instanceof Error
+      ? err.message
+      : err instanceof ApiError
+        ? err.message
+        : "Não foi possível agendar a consulta."
+  return { ok: false, message: message || "Não foi possível agendar a consulta." }
 }
 
 function buildToolsDescription(role: UserRole): string {
@@ -157,7 +226,7 @@ export function createAppAIActions(deps: CreateAppAIActionsDeps): AppAIActions {
       const summary = describePendingAction(name, params, deps)
       return {
         ok: true,
-        message: "Aguardando confirmacao do usuario.",
+        message: "Aguardando confirmação do usuário.",
         needsConfirmation: true,
         pendingAction: { action: name, params, summary },
       }
@@ -168,7 +237,7 @@ export function createAppAIActions(deps: CreateAppAIActionsDeps): AppAIActions {
         case "navigate": {
           const page = String(params.page ?? "") as PageId
           if (!canAccess(deps.role, page)) {
-            return { ok: false, message: `Sem permissao para a pagina "${page}".` }
+            return { ok: false, message: `Sem permissão para a página "${page}".` }
           }
           deps.navigate(page)
           return { ok: true, message: `Navegou para ${page}.` }
@@ -178,7 +247,7 @@ export function createAppAIActions(deps: CreateAppAIActionsDeps): AppAIActions {
           const section = String(params.section ?? "overview") as PortalSection
           deps.setPortalSection?.(section)
           deps.navigate("patient-portal")
-          return { ok: true, message: `Portal: secao ${section}.` }
+          return { ok: true, message: `Portal: seção ${section}.` }
         }
 
         case "list_appointments": {
@@ -211,40 +280,46 @@ export function createAppAIActions(deps: CreateAppAIActionsDeps): AppAIActions {
 
         case "create_appointment": {
           if (!canDo(deps.role, "create_appointments") && !canAccess(deps.role, "appointments")) {
-            return { ok: false, message: "Sem permissao para criar agendamentos." }
+            return { ok: false, message: "Sem permissão para criar agendamentos." }
           }
           const patient = findPatient(deps.patients, String(params.patientName ?? params.patientId ?? ""))
-          if (!patient) return { ok: false, message: "Paciente nao encontrado." }
-          const { doctorId, doctorName } = resolveDoctor(deps, params.doctorName ? String(params.doctorName) : undefined)
+          if (!patient) return { ok: false, message: "Paciente não encontrado." }
+          const { doctorId, doctorName } = await resolveDoctor(deps, params.doctorName ? String(params.doctorName) : undefined)
           const date = String(params.date ?? "")
           const time = String(params.time ?? "").slice(0, 5)
           if (!date || !time) return { ok: false, message: "Informe date e time." }
           const type = (String(params.type ?? "consultation") as AppointmentType) || "consultation"
-          await deps.addAppointment({
-            patientId: patient.id,
-            patientName: patient.name,
-            doctorId,
-            doctorName,
-            date,
-            time,
-            duration: 30,
-            type,
-            status: "scheduled",
-          })
+          const slotCheck = await validateAppointmentSlot(deps, doctorId, date, time)
+          if (!slotCheck.ok) return slotCheck
+          try {
+            await deps.addAppointment({
+              patientId: patient.id,
+              patientName: patient.name,
+              doctorId,
+              doctorName,
+              date,
+              time,
+              duration: 30,
+              type,
+              status: "confirmed",
+            })
+          } catch (err) {
+            return appointmentCreateErrorResult(err)
+          }
           deps.navigate("appointments")
           return { ok: true, message: `Consulta agendada: ${patient.name}, ${date} ${time}, Dr(a). ${doctorName}.` }
         }
 
         case "cancel_appointment": {
           const appt = findAppointment(deps.appointments, String(params.appointmentId ?? ""))
-          if (!appt) return { ok: false, message: "Agendamento nao encontrado." }
+          if (!appt) return { ok: false, message: "Agendamento não encontrado." }
           await deps.updateAppointment({ ...appt, status: "cancelled", observations: String(params.reason ?? "Cancelado via assistente IA") })
           return { ok: true, message: `Consulta de ${appt.patientName} em ${appt.date} cancelada.` }
         }
 
         case "reschedule_appointment": {
           const appt = findAppointment(deps.appointments, String(params.appointmentId ?? ""))
-          if (!appt) return { ok: false, message: "Agendamento nao encontrado." }
+          if (!appt) return { ok: false, message: "Agendamento não encontrado." }
           const date = String(params.date ?? "")
           const time = String(params.time ?? "").slice(0, 5)
           await deps.updateAppointment({ ...appt, date, time, status: "scheduled" })
@@ -253,36 +328,43 @@ export function createAppAIActions(deps: CreateAppAIActionsDeps): AppAIActions {
 
         case "book_my_appointment": {
           if (!deps.bookPatientAppointment || !deps.portalPatient) {
-            return { ok: false, message: "Agendamento pelo portal indisponivel." }
+            return { ok: false, message: "Agendamento pelo portal indisponível." }
           }
-          const { doctorId, doctorName } = resolveDoctor(deps, params.doctorName ? String(params.doctorName) : undefined)
+          const { doctorId, doctorName } = await resolveDoctor(deps, params.doctorName ? String(params.doctorName) : undefined)
           const date = String(params.date ?? "")
           const time = String(params.time ?? "").slice(0, 5)
-          await deps.bookPatientAppointment({
-            patientId: deps.portalPatient.id,
-            patientName: deps.portalPatient.name,
-            doctorId,
-            doctorName,
-            date,
-            time,
-            duration: 30,
-            type: (String(params.type ?? "consultation") as AppointmentType) || "consultation",
-            status: "scheduled",
-          })
+          if (!date || !time) return { ok: false, message: "Informe data e horário." }
+          const slotCheck = await validateAppointmentSlot(deps, doctorId, date, time)
+          if (!slotCheck.ok) return slotCheck
+          try {
+            await deps.bookPatientAppointment({
+              patientId: deps.portalPatient.id,
+              patientName: deps.portalPatient.name,
+              doctorId,
+              doctorName,
+              date,
+              time,
+              duration: 30,
+              type: (String(params.type ?? "consultation") as AppointmentType) || "consultation",
+              status: "confirmed",
+            })
+          } catch (err) {
+            return appointmentCreateErrorResult(err)
+          }
           deps.setPortalSection?.("consultations")
           return { ok: true, message: `Sua consulta foi agendada para ${date} ${time} com ${doctorName}.` }
         }
 
         case "cancel_my_appointment": {
-          if (!deps.cancelPatientAppointment) return { ok: false, message: "Cancelamento indisponivel." }
+          if (!deps.cancelPatientAppointment) return { ok: false, message: "Cancelamento indisponível." }
           const appt = findAppointment(deps.appointments, String(params.appointmentId ?? ""))
-          if (!appt) return { ok: false, message: "Consulta nao encontrada." }
+          if (!appt) return { ok: false, message: "Consulta não encontrada." }
           await deps.cancelPatientAppointment(appt, String(params.reason ?? "Cancelado pelo paciente via assistente"))
           return { ok: true, message: "Consulta cancelada." }
         }
 
         case "send_message": {
-          if (!canDo(deps.role, "send_messages")) return { ok: false, message: "Sem permissao para enviar mensagens." }
+          if (!canDo(deps.role, "send_messages")) return { ok: false, message: "Sem permissão para enviar mensagens." }
           const patient = findPatient(deps.patients, String(params.patientName ?? params.patientId ?? ""))
           if (!patient?.phone) return { ok: false, message: "Paciente sem telefone." }
           const channel = (String(params.channel ?? patient.preferredChannel ?? "WhatsApp") as CommunicationChannel)
@@ -301,11 +383,11 @@ export function createAppAIActions(deps: CreateAppAIActionsDeps): AppAIActions {
 
         case "create_report": {
           if (!canDo(deps.role, "create_reports") && !canDo(deps.role, "view_reports")) {
-            return { ok: false, message: "Sem permissao para laudos." }
+            return { ok: false, message: "Sem permissão para laudos." }
           }
           const patient = findPatient(deps.patients, String(params.patientName ?? ""))
-          if (!patient) return { ok: false, message: "Paciente nao encontrado." }
-          const examType = String(params.examType ?? "Laudo Medico")
+          if (!patient) return { ok: false, message: "Paciente não encontrado." }
+          const examType = String(params.examType ?? "Laudo Médico")
           const clinicalNotes = String(params.clinicalNotes ?? params.symptoms ?? "")
           const aiContent = await generateReportContentWithAI({
             examType,
@@ -332,7 +414,7 @@ export function createAppAIActions(deps: CreateAppAIActionsDeps): AppAIActions {
 
         case "create_consultation_note": {
           const patient = findPatient(deps.patients, String(params.patientName ?? ""))
-          if (!patient) return { ok: false, message: "Paciente nao encontrado." }
+          if (!patient) return { ok: false, message: "Paciente não encontrado." }
           const symptoms = String(params.symptoms ?? "")
           let diagnosis = String(params.diagnosis ?? "")
           let treatmentPlan = String(params.treatment ?? "")
@@ -345,7 +427,7 @@ export function createAppAIActions(deps: CreateAppAIActionsDeps): AppAIActions {
                 {
                   role: "system",
                   content:
-                    "Medico assistente. Responda JSON: {\"diagnosis\":\"...\",\"history\":\"...\",\"plan\":\"...\"}. Portugues BR.",
+                    "Médico assistente. Responda JSON: {\"diagnosis\":\"...\",\"history\":\"...\",\"plan\":\"...\"}. Português BR.",
                 },
                 { role: "user", content: `Queixa: ${symptoms}. Paciente: ${patient.name}` },
               ])
@@ -361,7 +443,7 @@ export function createAppAIActions(deps: CreateAppAIActionsDeps): AppAIActions {
             }
           }
 
-          if (!diagnosis) diagnosis = "A definir apos avaliacao presencial"
+          if (!diagnosis) diagnosis = "A definir após avaliação presencial"
 
           const record = await deps.addMedicalRecord({
             patientId: patient.id,
@@ -377,7 +459,7 @@ export function createAppAIActions(deps: CreateAppAIActionsDeps): AppAIActions {
             createdAt: new Date().toISOString(),
           })
           deps.navigate("patient-profile")
-          return { ok: true, message: `Consulta com IA registrada para ${patient.name}. Revise o prontuario.`, data: record }
+          return { ok: true, message: `Consulta com IA registrada para ${patient.name}. Revise o prontuário.`, data: record }
         }
 
         case "run_reminders": {
@@ -387,14 +469,14 @@ export function createAppAIActions(deps: CreateAppAIActionsDeps): AppAIActions {
 
         case "process_whatsapp": {
           const result = await processInboundWhatsAppReplies(deps.appointments, deps.patients, deps.clinicName)
-          return { ok: true, message: `${result.replied} resposta(s) automatica(s) no WhatsApp.` }
+          return { ok: true, message: `${result.replied} resposta(s) automática(s) no WhatsApp.` }
         }
 
         default:
           return { ok: false, message: `Ferramenta desconhecida: ${action}` }
       }
     } catch (err) {
-      return { ok: false, message: err instanceof Error ? err.message : "Erro ao executar acao." }
+      return { ok: false, message: err instanceof Error ? err.message : "Erro ao executar ação." }
     }
   }
 

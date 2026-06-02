@@ -31,11 +31,11 @@ export function buildAIApiContextFromAppState(input: AIContextFromAppStateInput)
   const { role, activePage, patients, appointments, prescriptions, staff, reports = [] } = input
 
   const lines: string[] = []
-  lines.push("[Contexto da API — dados desta sessao, mesmo backend Supabase do MediConnect]")
+  lines.push("[Contexto da API — dados desta sessão, mesmo backend Supabase do MediConnect]")
   lines.push(`Perfil: ${role}`)
   if (activePage) lines.push(`Tela atual: ${activePage}`)
   lines.push(
-    `Totais: ${patients.length} paciente(s) na visao, ${appointments.length} agendamento(s), ` +
+    `Totais: ${patients.length} paciente(s) na visão, ${appointments.length} agendamento(s), ` +
     `${prescriptions.length} receita(s)` +
     (role === "patient" ? `, ${reports.length} laudo(s).` : "."),
   )
@@ -43,12 +43,12 @@ export function buildAIApiContextFromAppState(input: AIContextFromAppStateInput)
   if (role !== "patient") {
     const doctors = staff.filter((m) => m.role === "doctor").length
     const others    = staff.length - doctors
-    lines.push(`Equipe carregada: ${staff.length} perfil(is) (${doctors} medico(s), ${others} demais).`)
+    lines.push(`Equipe carregada: ${staff.length} perfil(is) (${doctors} médico(s), ${others} demais).`)
   }
 
   if (patients.length > 0) {
     lines.push("")
-    lines.push(`Pacientes (ate ${MAX_PATIENTS}, sem CPF completo):`)
+    lines.push(`Pacientes (até ${MAX_PATIENTS}, sem CPF completo):`)
     for (const p of patients.slice(0, MAX_PATIENTS)) {
       const cpfMask = p.cpf?.replace(/\D/g, "").length === 11 ? "***.***.***-**" : "—"
       lines.push(`- ${p.name} | status: ${p.status} | CPF: ${cpfMask}`)
@@ -57,7 +57,7 @@ export function buildAIApiContextFromAppState(input: AIContextFromAppStateInput)
 
   if (appointments.length > 0) {
     lines.push("")
-    lines.push(`Agendamentos (ate ${MAX_APPOINTMENTS}):`)
+    lines.push(`Agendamentos (até ${MAX_APPOINTMENTS}):`)
     const sorted = [...appointments].sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`))
     for (const a of sorted.slice(0, MAX_APPOINTMENTS)) {
       lines.push(
@@ -68,13 +68,13 @@ export function buildAIApiContextFromAppState(input: AIContextFromAppStateInput)
 
   if (prescriptions.length > 0 && role !== "patient") {
     lines.push("")
-    lines.push(`Receitas recentes (ate ${MAX_RX}, titulo/resumo):`)
+    lines.push(`Receitas recentes (até ${MAX_RX}, título/resumo):`)
     for (const r of prescriptions.slice(0, MAX_RX)) {
       lines.push(`- ${r.date} | paciente: ${r.patientName} | Dr(a). ${r.doctorName}`)
     }
   } else if (prescriptions.length > 0 && role === "patient") {
     lines.push("")
-    lines.push(`Suas receitas (ate ${MAX_RX}):`)
+    lines.push(`Suas receitas (até ${MAX_RX}):`)
     for (const r of prescriptions.slice(0, MAX_RX)) {
       const meds = r.medications?.slice(0, 3).map((m) => m.name).filter(Boolean).join(", ")
       lines.push(`- ${r.date} | Dr(a). ${r.doctorName}${meds ? ` | medicamentos: ${meds}` : ""}`)
@@ -91,7 +91,7 @@ export function buildAIApiContextFromAppState(input: AIContextFromAppStateInput)
 
   if (role === "patient" && appointments.length > 0) {
     lines.push("")
-    lines.push("Proximas consultas do paciente:")
+    lines.push("Próximas consultas do paciente:")
     const upcoming = [...appointments]
       .filter((a) => a.status !== "cancelled")
       .sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`))
@@ -103,7 +103,7 @@ export function buildAIApiContextFromAppState(input: AIContextFromAppStateInput)
 
   if (role !== "patient" && staff.length > 0) {
     lines.push("")
-    lines.push(`Equipe (ate ${MAX_STAFF}):`)
+    lines.push(`Equipe (até ${MAX_STAFF}):`)
     for (const m of staff.slice(0, MAX_STAFF)) {
       const extra = m.role === "doctor" && m.specialty ? ` | ${m.specialty}` : m.department ? ` | ${m.department}` : ""
       lines.push(`- ${m.name} (${m.role})${extra}`)
@@ -112,7 +112,7 @@ export function buildAIApiContextFromAppState(input: AIContextFromAppStateInput)
 
   lines.push("")
   lines.push(
-    "Estes dados refletem o que a API devolveu para esta sessao; podem estar desatualizados ate o usuario atualizar a tela.",
+    "Estes dados refletem o que a API devolveu para esta sessão; podem estar desatualizados até o usuário atualizar a tela.",
   )
 
   return clip(lines.join("\n"), MAX_SNAPSHOT_CHARS)

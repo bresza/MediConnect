@@ -28,6 +28,8 @@ interface TeamProps {
   onAdd:    UseStaffReturn["addStaff"]
   onUpdate: UseStaffReturn["updateStaff"]
   onDelete: UseStaffReturn["deleteStaff"]
+  canManage?: boolean
+  canDelete?: boolean
   toast:    UseToastReturn["toast"]
   onRefresh?: () => void | Promise<unknown>
 }
@@ -142,7 +144,9 @@ function PasswordInput({ label, value, show, onToggle, onChange, error, placehol
 }
 
 // ─── Main component ───────────────────────────────────────────────
-export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: TeamProps) {
+export function Team({
+  staff, onAdd, onUpdate, onDelete, canManage = true, canDelete = false, toast, onRefresh,
+}: TeamProps) {
   const [activeTab,     setActiveTab]     = useState<TabId>("doctor")
   const [search,        setSearch]        = useState("")
   const [modalOpen,     setModalOpen]     = useState(false)
@@ -282,7 +286,9 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: Tea
         action={
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
             {onRefresh && <RefreshButton onRefresh={onRefresh} />}
-            <Button onClick={openCreate} icon={<PlusIcon />}>Novo {currentTab.singular}</Button>
+            {canManage && (
+              <Button onClick={openCreate} icon={<PlusIcon />}>Novo {currentTab.singular}</Button>
+            )}
           </div>
         }
       />
@@ -352,10 +358,16 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: Tea
                     <td><p className={styles.cellMain}>{displayMaskedPhone(member.phone)}</p></td>
                     <td><Badge>{member.status}</Badge></td>
                     <td>
-                      <div className={styles.actions}>
-                        <button className={styles.actionBtn} onClick={() => openEdit(member)} title="Editar"><EditIcon /></button>
-                        <button className={`${styles.actionBtn} ${styles.actionBtnDanger}`} onClick={() => setConfirmId(member.id)} title="Remover"><TrashIcon /></button>
-                      </div>
+                      {(canManage || canDelete) && (
+                        <div className={styles.actions}>
+                          {canManage && (
+                            <button className={styles.actionBtn} onClick={() => openEdit(member)} title="Editar"><EditIcon /></button>
+                          )}
+                          {canDelete && (
+                            <button className={`${styles.actionBtn} ${styles.actionBtnDanger}`} onClick={() => setConfirmId(member.id)} title="Remover"><TrashIcon /></button>
+                          )}
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}

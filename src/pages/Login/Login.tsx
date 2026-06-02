@@ -1,5 +1,10 @@
 import { useState } from "react"
-import { createPatientAccount, login as authLogin, requestPasswordReset } from "../../services/auth"
+import {
+  createPatientAccount,
+  explainPasswordLoginFailure,
+  login as authLogin,
+  requestPasswordReset,
+} from "../../services/auth"
 import type { LoginResponse } from "../../services/auth"
 import { formatCpfBR, formatPhoneBR, hasAtLeastTwoNames, isValidCpf, isValidEmail } from "../../utils"
 import styles from "./Login.module.css"
@@ -54,11 +59,12 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
     if (mode === "signup" && cpf.replace(/\D/g, "").length !== 11) { setError("CPF deve ter 11 dígitos."); return }
     if (mode === "signup" && !isValidCpf(cpf)) { setError("CPF inválido."); return }
     if (mode === "signup" && phone.replace(/\D/g, "").length !== 11) { setError("Telefone deve estar no formato (00) 00000-0000."); return }
-    if (mode === "signup" && password.trim() && password.trim().length < 6) {
+    if (mode === "signup" && !password.trim()) { setError("Defina uma senha para acessar o portal."); return }
+    if (mode === "signup" && password.trim().length < 6) {
       setError("A senha deve ter pelo menos 6 caracteres.")
       return
     }
-    if (mode === "signup" && password.trim() && password !== confirmPassword) {
+    if (mode === "signup" && password !== confirmPassword) {
       setError("As senhas não coincidem.")
       return
     }
@@ -71,31 +77,8 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
           cpf,
           phone,
           dob,
-          password: password.trim() || undefined,
+          password: password.trim(),
         })
-
-        if (signupResult.magicLinkSent) {
-          setSuccess(
-            signupResult.message ??
-              "Enviamos um link de acesso para o seu e-mail. Abra a mensagem para concluir o primeiro acesso.",
-          )
-          setMode("login")
-          setPassword("")
-          setConfirmPassword("")
-          setName("")
-          setCpf("")
-          setPhone("")
-          setDob("")
-          return
-        }
-
-        if (!password.trim()) {
-          setSuccess(signupResult.message ?? "Conta criada. Use a aba Entrar para acessar.")
-          setMode("login")
-          setPassword("")
-          setConfirmPassword("")
-          return
-        }
 
         try {
           onLogin(await authLogin({ email, password: password.trim() }))
@@ -104,15 +87,15 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
           const msg = loginErr instanceof Error ? loginErr.message : ""
           if (signupResult.loginReady) {
             setSuccess(
-              "Conta criada! Tente entrar novamente em alguns segundos — o servidor está finalizando seu cadastro.",
+              "Acesso criado! Tente entrar novamente em alguns segundos.",
             )
           } else if (/confirma|n[ãa]o foi confirmada|email not confirmed/i.test(msg)) {
             setSuccess(
-              "Conta criada! Confirme seu e-mail clicando no link enviado para sua caixa de entrada e depois entre normalmente.",
+              "Acesso criado! Confirme seu e-mail pelo link enviado e depois entre com sua senha.",
             )
           } else {
             setSuccess(
-              "Conta criada com sucesso. Entre com seu e-mail e senha.",
+              signupResult.message ?? "Acesso criado. Entre com seu e-mail e senha na aba «Entrar».",
             )
           }
           setMode("login")
@@ -128,7 +111,14 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
 
       onLogin(await authLogin({ email, password }))
     }
-    catch (err) { setError(err instanceof Error ? err.message : "E-mail ou senha inválidos.") }
+    catch (err) {
+      let msg = err instanceof Error ? err.message : "E-mail ou senha inválidos."
+      if (mode === "login") {
+        const detail = await explainPasswordLoginFailure(email, password)
+        if (detail) msg = detail
+      }
+      setError(msg)
+    }
     finally { setIsLoading(false) }
   }
 
@@ -196,12 +186,10 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
           </div>
 
           <div className={styles.formHeader}>
-            <p className={styles.formTitle}>{mode === "login" ? "Bem-vindo de volta" : "Criar conta de paciente"}</p>
-            <p className={styles.formSub}>
-              {mode === "login"
-                ? "Faça login para acessar o sistema"
-                : "Informe seus dados. Você receberá um link por e-mail para o primeiro acesso. Se a clínica já cadastrou você sem portal, defina também uma senha para vincular o acesso."}
-            </p>
+            <p className={styles.formTitle}>{mode === "login" ? "Bem-vindo de volta" : "Criar conta"}</p>
+            {mode === "login" && (
+              <p className={styles.formSub}>Faça login para acessar o sistema</p>
+            )}
           </div>
 
           <div className={styles.modeTabs} role="tablist" aria-label="Tipo de acesso">
@@ -225,9 +213,6 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
           <form onSubmit={handleSubmit} className={styles.form}>
             {mode === "signup" && (
               <>
-                <p className={styles.signupHint}>
-                  O cadastro usa o endpoint público da API e envia o link de acesso para o e-mail do paciente.
-                </p>
                 <div className={styles.fieldGroup}>
                   <label className={styles.label}>Nome completo</label>
                   <input
@@ -277,7 +262,7 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
             {mode === "signup" && (
               <div className={styles.signupGrid}>
                 <div className={styles.fieldGroup}>
-                  <label className={styles.label}>Senha <span style={{ fontWeight: 400, opacity: 0.75 }}>(opcional)</span></label>
+                  <label className={styles.label}>Senha</label>
                   <div className={styles.passwordWrapper}>
                     <input
                       type={showPassword ? "text" : "password"} placeholder="Mínimo 6 caracteres" value={password}
@@ -292,7 +277,7 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
                   </div>
                 </div>
                 <div className={styles.fieldGroup}>
-                  <label className={styles.label}>Confirmar <span style={{ fontWeight: 400, opacity: 0.75 }}>(se definiu senha)</span></label>
+                  <label className={styles.label}>Confirmar senha</label>
                   <div className={styles.passwordWrapper}>
                     <input
                       type={showConfirmPassword ? "text" : "password"} placeholder="Repita a senha" value={confirmPassword}
@@ -343,12 +328,6 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
               {isLoading ? (mode === "signup" ? "Criando..." : "Entrando...") : (mode === "signup" ? "Criar conta" : "Entrar")}
             </button>
           </form>
-
-          {mode === "login" && (
-            <p style={{ fontSize: 11, color: "var(--muted-foreground)", marginTop: 10, textAlign: "center" }}>
-              Pacientes podem criar a própria conta acima. Outros perfis são criados pelo gestor em <strong>Equipe</strong>.
-            </p>
-          )}
         </div>
       </div>
 

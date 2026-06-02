@@ -1,4 +1,4 @@
-import { apiRequest, getApiUserId } from "./api"
+import { ApiError, apiRequest, getApiUserId } from "./api"
 import { formatSpecialtyLabel } from "../utils"
 
 export interface DoctorAvailability {
@@ -105,6 +105,7 @@ export interface UpdateDoctorAvailabilityPatch {
 
 const VALID_APPOINTMENT_TYPES = new Set(["presencial", "telemedicina"])
 const HH_MM_REGEX = /^\d{2}:\d{2}$/
+const HH_MM_SS_REGEX = /^\d{2}:\d{2}:\d{2}$/
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const VALID_EXCEPTION_KINDS = new Set<DoctorExceptionKind>(["bloqueio", "disponibilidade_extra"])
 
@@ -113,8 +114,104 @@ export const DOCTOR_EXCEPTION_KIND_LABELS: Record<DoctorExceptionKind, string> =
   disponibilidade_extra: "Disponibilidade extra",
 }
 
-const WEEKDAY_PT_VALUES = ["domingo", "segunda", "terca", "quarta", "quinta", "sexta", "sabado"] as const
-const WEEKDAY_PT_DASH_VALUES = ["domingo", "segunda-feira", "terca-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sabado"] as const
+/** Enum `weekday` (Postgres) — português, sem acento. */
+export const WEEKDAY_API_ENUM = [
+  "domingo",
+  "segunda",
+  "terca",
+  "quarta",
+  "quinta",
+  "sexta",
+  "sabado",
+] as const
+
+/** Variante em inglês (alguns ambientes Supabase usam este enum). */
+export const WEEKDAY_ENGLISH_ENUM = [
+  "sunday",
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+] as const
+
+export type WeekdayApiFormat = "pt" | "en"
+export type WeekdayApiEnum = (typeof WEEKDAY_API_ENUM)[number]
+
+const WEEKDAY_PT_VALUES = WEEKDAY_API_ENUM
+const WEEKDAY_PT_DASH_VALUES = [
+  "domingo",
+  "segunda-feira",
+  "terca-feira",
+  "quarta-feira",
+  "quinta-feira",
+  "sexta-feira",
+  "sabado",
+] as const
+
+/** Formato de escrita inferido a partir dos registros já salvos do médico. */
+const weekdayFormatByDoctor = new Map<string, WeekdayApiFormat>()
+
+/** Converte índice JS (0=domingo … 6=sábado) para o valor do enum na API. */
+export function weekdayToApiEnum(weekday: number, format: WeekdayApiFormat = "pt"): string {
+  if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6) {
+    throw new Error("Dia da semana inválido.")
+  }
+  const list = format === "en" ? WEEKDAY_ENGLISH_ENUM : WEEKDAY_API_ENUM
+  return list[weekday]
+}
+
+/** Candidatos para POST (PT primeiro, salvo preferência EN do médico). */
+export function weekdayWriteCandidates(
+  weekday: number,
+  preferred?: WeekdayApiFormat,
+): string[] {
+  const order: WeekdayApiFormat[] = preferred === "en" ? ["en", "pt"] : ["pt", "en"]
+  const out: string[] = []
+  for (const format of order) {
+    const value = weekdayToApiEnum(weekday, format)
+    if (!out.includes(value)) out.push(value)
+  }
+  return out
+}
+
+export function isInvalidWeekdayEnumError(err: unknown): boolean {
+  return (
+    err instanceof ApiError &&
+    err.status === 400 &&
+    /invalid input value for enum weekday/i.test(err.message)
+  )
+}
+
+function detectWeekdayWriteFormat(rows: ApiDoctorAvailability[]): WeekdayApiFormat | undefined {
+  for (const row of rows) {
+    if (typeof row.weekday !== "string") continue
+    const normalized = normalizeText(row.weekday)
+    if ((WEEKDAY_ENGLISH_ENUM as readonly string[]).includes(normalized)) return "en"
+    if ((WEEKDAY_API_ENUM as readonly string[]).includes(normalized)) return "pt"
+  }
+  return undefined
+}
+
+/** Lê weekday da API (número, PT ou EN) → índice JS 0–6. */
+export function normalizeWeekday(value: number | string): number {
+  if (typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 6) {
+    return value
+  }
+  const numeric = Number(value)
+  if (Number.isInteger(numeric) && numeric >= 0 && numeric <= 6) return numeric
+
+  const normalized = normalizeText(String(value))
+  const enIndex = (WEEKDAY_ENGLISH_ENUM as readonly string[]).indexOf(normalized)
+  if (enIndex >= 0) return enIndex
+
+  const ptIndex = WEEKDAY_PT_VALUES.indexOf(normalized as (typeof WEEKDAY_PT_VALUES)[number])
+  if (ptIndex >= 0) return ptIndex
+
+  const ptDashIndex = WEEKDAY_PT_DASH_VALUES.indexOf(normalized as (typeof WEEKDAY_PT_DASH_VALUES)[number])
+  return ptDashIndex >= 0 ? ptDashIndex : 0
+}
 
 function normalizeText(value: string): string {
   return value
@@ -122,19 +219,6 @@ function normalizeText(value: string): string {
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .trim()
-}
-
-function normalizeWeekday(value: number | string): number {
-  if (typeof value === "number") return value
-  const numeric = Number(value)
-  if (Number.isInteger(numeric)) return numeric
-
-  const normalized = normalizeText(value)
-  const ptIndex = WEEKDAY_PT_VALUES.indexOf(normalized as (typeof WEEKDAY_PT_VALUES)[number])
-  if (ptIndex >= 0) return ptIndex
-
-  const ptDashIndex = WEEKDAY_PT_DASH_VALUES.indexOf(normalized as (typeof WEEKDAY_PT_DASH_VALUES)[number])
-  return ptDashIndex >= 0 ? ptDashIndex : 0
 }
 
 function apiToException(api: ApiDoctorException): DoctorException {
@@ -147,8 +231,8 @@ function apiToException(api: ApiDoctorException): DoctorException {
     doctorId: api.doctor_id,
     date: api.date,
     kind,
-    startTime: api.start_time ? formatTimeForApi(api.start_time) : null,
-    endTime: api.end_time ? formatTimeForApi(api.end_time) : null,
+    startTime: api.start_time ? (parseTimeToHHmm(api.start_time) ?? api.start_time) : null,
+    endTime: api.end_time ? (parseTimeToHHmm(api.end_time) ?? api.end_time) : null,
     reason: api.reason ?? null,
     createdAt: api.created_at,
     createdBy: api.created_by,
@@ -178,8 +262,8 @@ function validateCreateExceptionInput(input: CreateDoctorExceptionInput): void {
   if (input.endTime !== undefined && input.endTime !== null && !/^\d{2}:\d{2}/.test(input.endTime)) {
     throw new Error("end_time deve estar no formato HH:mm ou null.")
   }
-  const start = input.startTime ? formatTimeForApi(input.startTime) : null
-  const end = input.endTime ? formatTimeForApi(input.endTime) : null
+  const start = input.startTime ? parseTimeToHHmm(input.startTime) : null
+  const end = input.endTime ? parseTimeToHHmm(input.endTime) : null
   if ((start && !end) || (!start && end)) {
     throw new Error("start_time e end_time devem ser ambos preenchidos ou ambos null.")
   }
@@ -212,10 +296,10 @@ export function exceptionBlockedMinuteRange(
 export function formatDoctorExceptionSchedule(exception: DoctorException): string {
   if (!exception.startTime && !exception.endTime) return "Dia inteiro"
   if (exception.startTime && exception.endTime) {
-    return `${formatTimeForApi(exception.startTime)} - ${formatTimeForApi(exception.endTime)}`
+    return `${parseTimeToHHmm(exception.startTime) ?? exception.startTime} - ${parseTimeToHHmm(exception.endTime) ?? exception.endTime}`
   }
-  if (exception.startTime) return `A partir de ${formatTimeForApi(exception.startTime)}`
-  if (exception.endTime) return `Até ${formatTimeForApi(exception.endTime)}`
+  if (exception.startTime) return `A partir de ${parseTimeToHHmm(exception.startTime) ?? exception.startTime}`
+  if (exception.endTime) return `Até ${parseTimeToHHmm(exception.endTime) ?? exception.endTime}`
   return "Dia inteiro"
 }
 
@@ -238,8 +322,14 @@ async function findException(input: CreateDoctorExceptionInput): Promise<ApiDoct
     order: "created_at.desc",
     limit: "1",
   })
-  if (input.startTime) params.set("start_time", `eq.${formatTimeForApi(input.startTime)}`)
-  if (input.endTime) params.set("end_time", `eq.${formatTimeForApi(input.endTime)}`)
+  if (input.startTime) {
+    const t = parseTimeToHHmm(input.startTime)
+    if (t) params.set("start_time", `eq.${t}`)
+  }
+  if (input.endTime) {
+    const t = parseTimeToHHmm(input.endTime)
+    if (t) params.set("end_time", `eq.${t}`)
+  }
 
   const data = await apiRequest<ApiDoctorException[]>(`/rest/v1/doctor_exceptions?${params.toString()}`)
   return data?.[0] ?? null
@@ -257,8 +347,8 @@ export async function createDoctorException(input: CreateDoctorExceptionInput): 
     doctor_id: input.doctorId,
     date: input.date,
     kind: input.kind,
-    start_time: input.startTime ? formatTimeForApi(input.startTime) : null,
-    end_time: input.endTime ? formatTimeForApi(input.endTime) : null,
+    start_time: input.startTime ? parseTimeToHHmm(input.startTime) : null,
+    end_time: input.endTime ? parseTimeToHHmm(input.endTime) : null,
     reason: input.reason?.trim() || null,
     created_by: createdBy,
   }
@@ -290,16 +380,28 @@ function apiToAvailability(api: ApiDoctorAvailability): DoctorAvailability {
     id: api.id,
     doctorId: api.doctor_id,
     weekday: normalizeWeekday(api.weekday),
-    startTime: api.start_time,
-    endTime: api.end_time,
+    startTime: parseTimeToHHmm(api.start_time) ?? api.start_time,
+    endTime: parseTimeToHHmm(api.end_time) ?? api.end_time,
     slotMinutes: api.slot_minutes ?? 30,
     appointmentType,
     active: api.active !== false,
   }
 }
 
-function formatTimeForApi(value: string): string {
-  return value.slice(0, 5)
+/** Normaliza entrada da UI ou resposta da API para HH:mm. */
+export function parseTimeToHHmm(value: string): string | null {
+  const trimmed = value.trim()
+  if (HH_MM_REGEX.test(trimmed)) return trimmed
+  if (HH_MM_SS_REGEX.test(trimmed)) return trimmed.slice(0, 5)
+  const hhmm = trimmed.slice(0, 5)
+  return HH_MM_REGEX.test(hhmm) ? hhmm : null
+}
+
+/** Valor enviado ao PostgREST na coluna `time` (contrato: HH:mm). */
+function timeForApi(value: string): string {
+  const parsed = parseTimeToHHmm(value)
+  if (!parsed) throw new Error("start_time e end_time devem estar no formato HH:mm.")
+  return parsed
 }
 
 function validateUpdatePatch(patch: UpdateDoctorAvailabilityPatch): void {
@@ -314,16 +416,18 @@ function validateUpdatePatch(patch: UpdateDoctorAvailabilityPatch): void {
     throw new Error("Informe ao menos um campo para atualizar a disponibilidade.")
   }
 
-  if (patch.startTime !== undefined && !HH_MM_REGEX.test(formatTimeForApi(patch.startTime))) {
+  const patchStart = patch.startTime !== undefined ? parseTimeToHHmm(patch.startTime) : null
+  const patchEnd = patch.endTime !== undefined ? parseTimeToHHmm(patch.endTime) : null
+  if (patch.startTime !== undefined && !patchStart) {
     throw new Error("start_time deve estar no formato HH:mm.")
   }
-  if (patch.endTime !== undefined && !HH_MM_REGEX.test(formatTimeForApi(patch.endTime))) {
+  if (patch.endTime !== undefined && !patchEnd) {
     throw new Error("end_time deve estar no formato HH:mm.")
   }
   if (
-    patch.startTime !== undefined &&
-    patch.endTime !== undefined &&
-    formatTimeForApi(patch.startTime) >= formatTimeForApi(patch.endTime)
+    patchStart &&
+    patchEnd &&
+    patchStart >= patchEnd
   ) {
     throw new Error("start_time deve ser menor que end_time.")
   }
@@ -343,8 +447,8 @@ function validateUpdatePatch(patch: UpdateDoctorAvailabilityPatch): void {
 
 function patchToApiBody(patch: UpdateDoctorAvailabilityPatch): Record<string, unknown> {
   const body: Record<string, unknown> = {}
-  if (patch.startTime !== undefined) body.start_time = formatTimeForApi(patch.startTime)
-  if (patch.endTime !== undefined) body.end_time = formatTimeForApi(patch.endTime)
+  if (patch.startTime !== undefined) body.start_time = parseTimeToHHmm(patch.startTime)
+  if (patch.endTime !== undefined) body.end_time = parseTimeToHHmm(patch.endTime)
   if (patch.slotMinutes !== undefined) body.slot_minutes = patch.slotMinutes
   if (patch.appointmentType !== undefined) body.appointment_type = patch.appointmentType
   if (patch.active !== undefined) body.active = patch.active
@@ -357,11 +461,11 @@ function validateCreateInput(input: CreateDoctorAvailabilityInput): void {
     throw new Error("doctor_id deve ser um UUID válido.")
   }
   if (!Number.isInteger(input.weekday) || input.weekday < 0 || input.weekday > 6) {
-    throw new Error("weekday deve ser um inteiro entre 0 e 6.")
+    throw new Error("Dia da semana inválido.")
   }
-  const start = formatTimeForApi(input.startTime)
-  const end = formatTimeForApi(input.endTime)
-  if (!HH_MM_REGEX.test(start) || !HH_MM_REGEX.test(end)) {
+  const start = parseTimeToHHmm(input.startTime)
+  const end = parseTimeToHHmm(input.endTime)
+  if (!start || !end) {
     throw new Error("start_time e end_time devem estar no formato HH:mm.")
   }
   if (start >= end) {
@@ -402,13 +506,13 @@ function extractAvailability(data: unknown): ApiDoctorAvailability | null {
 
 async function findAvailability(
   input: CreateDoctorAvailabilityInput,
-  weekday: number | string,
+  weekdayApi: string,
 ): Promise<ApiDoctorAvailability | null> {
   const params = new URLSearchParams({
     doctor_id: `eq.${input.doctorId}`,
-    weekday: `eq.${weekday}`,
-    start_time: `eq.${input.startTime}`,
-    end_time: `eq.${input.endTime}`,
+    weekday: `eq.${weekdayApi}`,
+    start_time: `eq.${timeForApi(input.startTime)}`,
+    end_time: `eq.${timeForApi(input.endTime)}`,
     appointment_type: `eq.${input.appointmentType}`,
     order: "created_at.desc",
     limit: "1",
@@ -499,7 +603,10 @@ export async function getDoctorAvailability(doctorId: string): Promise<DoctorAva
   })
 
   const data = await apiRequest<ApiDoctorAvailability[]>(`/rest/v1/doctor_availability?${params.toString()}`)
-  return (data ?? []).map(apiToAvailability)
+  const rows = data ?? []
+  const detected = detectWeekdayWriteFormat(rows)
+  if (detected) weekdayFormatByDoctor.set(doctorId, detected)
+  return rows.map(apiToAvailability)
 }
 
 export async function createDoctorAvailability(
@@ -507,27 +614,50 @@ export async function createDoctorAvailability(
 ): Promise<DoctorAvailability> {
   validateCreateInput(input)
 
-  const basePayload = {
+  const createdBy = getApiUserId()
+  const basePayload: Record<string, unknown> = {
     doctor_id: input.doctorId,
-    start_time: input.startTime,
-    end_time: input.endTime,
+    start_time: timeForApi(input.startTime),
+    end_time: timeForApi(input.endTime),
     slot_minutes: input.slotMinutes,
     appointment_type: input.appointmentType,
     active: true,
   }
+  if (createdBy) basePayload.created_by = createdBy
 
-  const created = await apiRequest<ApiDoctorAvailability[] | ApiDoctorAvailability>(
-    "/rest/v1/doctor_availability",
-    {
-      method: "POST",
-      headers: { Prefer: "return=representation" },
-      body: { ...basePayload, weekday: input.weekday },
-    },
-  )
+  const preferred = weekdayFormatByDoctor.get(input.doctorId)
+  const candidates = weekdayWriteCandidates(input.weekday, preferred)
 
-  const raw = extractAvailability(created) ?? await findAvailability(input, input.weekday)
-  if (!raw) throw new Error("Disponibilidade criada, mas a API não retornou o registro cadastrado.")
-  return apiToAvailability(raw)
+  let lastError: unknown
+  for (const weekdayApi of candidates) {
+    try {
+      const created = await apiRequest<ApiDoctorAvailability[] | ApiDoctorAvailability>(
+        "/rest/v1/doctor_availability",
+        {
+          method: "POST",
+          headers: { Prefer: "return=representation" },
+          body: { ...basePayload, weekday: weekdayApi },
+        },
+      )
+
+      weekdayFormatByDoctor.set(
+        input.doctorId,
+        weekdayApi === weekdayToApiEnum(input.weekday, "en") ? "en" : "pt",
+      )
+
+      const raw = extractAvailability(created) ?? await findAvailability(input, weekdayApi)
+      if (!raw) {
+        throw new Error("Disponibilidade criada, mas a API não retornou o registro cadastrado.")
+      }
+      return apiToAvailability(raw)
+    } catch (err) {
+      if (!isInvalidWeekdayEnumError(err)) throw err
+      lastError = err
+    }
+  }
+
+  if (lastError instanceof Error) throw lastError
+  throw new Error("Dia da semana não aceito pela API. Peça ao time da API a lista do enum weekday.")
 }
 
 export async function updateDoctorAvailability(
