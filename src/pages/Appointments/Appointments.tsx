@@ -151,6 +151,29 @@ function shortName(name: string): string {
   return `${parts[0]} ${parts[1][0]}.`
 }
 
+function monthWeekRowIndex(date: Date, firstDay: number): number {
+  const firstOfMonth = new Date(date.getFullYear(), date.getMonth(), 1)
+  const startOffset = (firstOfMonth.getDay() - firstDay + 7) % 7
+  return Math.floor((date.getDate() + startOffset - 1) / 7)
+}
+
+function formatWeekOfMonth(date: Date, firstDay: number): string {
+  return `${monthWeekRowIndex(date, firstDay) + 1}ª sem.`
+}
+
+function isFirstDayOfWeekRow(date: Date, firstDay: number): boolean {
+  return ((date.getDay() - firstDay + 7) % 7) === 0
+}
+
+function isSameMonth(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth()
+}
+
+function formatVisibleMonth(date: Date): string {
+  const label = date.toLocaleDateString("pt-BR", { month: "long", year: "numeric" })
+  return label.charAt(0).toUpperCase() + label.slice(1)
+}
+
 export function Appointments({
   appointments,
   patients,
@@ -164,8 +187,11 @@ export function Appointments({
   onAddFinancialRecord,
 }: AppointmentsProps) {
   const calendarRef = useRef<FullCalendar | null>(null)
+  const pageRef = useRef<HTMLDivElement>(null)
+  const calendarShellRef = useRef<HTMLDivElement>(null)
   const slotRequestRef = useRef(0)
   const isDoctor    = currentUser.role === "doctor"
+  const isManager   = currentUser.role === "manager" || currentUser.role === "admin"
   const canManage = canManageAppointments(currentUser.role)
   const canManageWaitlistEntries = canManageWaitlist(currentUser.role)
   const today = toDateStr(new Date())
@@ -181,6 +207,7 @@ export function Appointments({
   const [doctorsError, setDoctorsError] = useState<string | null>(null)
   const [calendarView, setCalendarView] = useState<CalendarView>("dayGridMonth")
   const [calendarTitle, setCalendarTitle] = useState("")
+  const [visibleMonth, setVisibleMonth] = useState(() => new Date())
   const [filterDoctorId, setFilterDoctorId] = useState("")
   const [selected, setSelected] = useState<Appointment | null>(null)
   const [showModal, setShowModal] = useState(false)
@@ -193,6 +220,8 @@ export function Appointments({
   const [availabilityRows, setAvailabilityRows] = useState<DoctorAvailability[]>([])
   const [isLoadingAvailability, setIsLoadingAvailability] = useState(false)
   const [availabilityError, setAvailabilityError] = useState<string | null>(null)
+  const [pageHeight, setPageHeight] = useState<number>()
+  const [calendarHeight, setCalendarHeight] = useState(480)
 
   useEffect(() => {
     let active = true
@@ -318,10 +347,40 @@ export function Appointments({
     return [
       { label: "Hoje", value: todayAppointments.length, cls: styles.summaryBlue },
       { label: "Confirmados", value: todayAppointments.filter((appointment) => appointment.status === "confirmed").length, cls: styles.summaryGreen },
-      { label: "Pendentes", value: todayAppointments.filter((appointment) => appointment.status === "pending" || appointment.status === "scheduled").length, cls: styles.summaryAmber },
+      { label: "Pendentes", value: todayAppointments.filter((appointment) => appointment.status === "pending" || appointment.status === "scheduled" || appointment.status === "requested").length, cls: styles.summaryAmber },
       { label: "Cancelados", value: todayAppointments.filter((appointment) => appointment.status === "cancelled").length, cls: styles.summaryRed },
     ]
   }, [today, visibleAppointments])
+
+  const isViewingToday = useMemo(() => {
+    if (calendarView === "timeGridDay") {
+      return toDateStr(visibleMonth) === today
+    }
+    if (calendarView === "dayGridMonth") {
+      return isSameMonth(visibleMonth, new Date())
+    }
+    const weekEnd = new Date(visibleMonth)
+    weekEnd.setDate(weekEnd.getDate() + 6)
+    weekEnd.setHours(23, 59, 59, 999)
+    const now = new Date()
+    return now >= visibleMonth && now <= weekEnd
+  }, [calendarView, visibleMonth, today])
+
+  const navCenterLabel = useMemo(() => {
+    if (isViewingToday) return "Hoje"
+    if (calendarView === "timeGridDay") {
+      const label = visibleMonth.toLocaleDateString("pt-BR", {
+        weekday: "short",
+        day: "2-digit",
+        month: "short",
+      })
+      return label.charAt(0).toUpperCase() + label.slice(1)
+    }
+    if (calendarView === "dayGridMonth") {
+      return visibleMonth.toLocaleDateString("pt-BR", { month: "short", year: "numeric" })
+    }
+    return calendarTitle || formatVisibleMonth(visibleMonth)
+  }, [isViewingToday, calendarView, visibleMonth, calendarTitle])
 
   const conflict = useMemo(() => {
     if (!modal.doctorName || !modal.time || !modal.date) return null
@@ -650,27 +709,79 @@ export function Appointments({
 
   const slotOptions = modal.doctorId && modal.date ? availableSlots : []
 
-  return (
-    <div>
-      <Topbar
-        title="Agendamento"
-        subtitle={calendarTitle ? `Agenda da clínica · ${calendarTitle}` : "Agenda da clínica"}
-        action={
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            {onRefresh && <RefreshButton onRefresh={onRefresh} />}
-            {canManage && activeTab === "calendar" && (
-              <Button onClick={() => openModal()} icon={<span aria-hidden="true">+</span>}>
-                Novo agendamento
-              </Button>
-            )}
-          </div>
-        }
-      />
+  const measureLayout = useCallback(() => {
+    const pageEl = pageRef.current
+    if (pageEl) {
+      const parent = pageEl.parentElement
+      const parentStyle = parent ? getComputedStyle(parent) : null
+      const paddingBottom = parentStyle ? parseFloat(parentStyle.paddingBottom) : 16
+      const pageTop = pageEl.getBoundingClientRect().top
+      setPageHeight(Math.max(420, Math.floor(window.innerHeight - pageTop - paddingBottom)))
+    }
 
-      <div role="tablist" aria-label="Visualização" style={{
-        display: "flex", gap: 8, padding: "0 0 12px", borderBottom: "1px solid var(--border, rgba(148,163,184,0.18))",
-        marginBottom: 12,
-      }}>
+    if (activeTab === "calendar" && calendarShellRef.current) {
+      setCalendarHeight(Math.max(300, calendarShellRef.current.clientHeight))
+    }
+  }, [activeTab])
+
+  useEffect(() => {
+    measureLayout()
+    const raf = window.requestAnimationFrame(measureLayout)
+    window.addEventListener("resize", measureLayout)
+
+    const observers: ResizeObserver[] = []
+    const observe = (node: Element | null | undefined) => {
+      if (!node) return
+      const observer = new ResizeObserver(measureLayout)
+      observer.observe(node)
+      observers.push(observer)
+    }
+
+    observe(pageRef.current?.parentElement ?? null)
+    observe(calendarShellRef.current)
+
+    return () => {
+      window.cancelAnimationFrame(raf)
+      window.removeEventListener("resize", measureLayout)
+      observers.forEach((observer) => observer.disconnect())
+    }
+  }, [measureLayout, calendarView, activeTab, selected, doctorsError, availabilityError, calendarTitle])
+
+  useEffect(() => {
+    if (activeTab !== "calendar") return
+    calendarRef.current?.getApi().updateSize()
+  }, [calendarHeight, calendarView, activeTab])
+
+  return (
+    <div
+      ref={pageRef}
+      className={styles.page}
+      style={pageHeight ? { height: pageHeight, maxHeight: pageHeight } : undefined}
+    >
+      <div className={styles.pageHeader}>
+        <Topbar
+          title="Agendamento"
+          subtitle={
+            calendarView === "dayGridMonth"
+              ? formatVisibleMonth(visibleMonth)
+              : calendarTitle
+                ? `Agenda da clínica · ${calendarTitle}`
+                : "Agenda da clínica"
+          }
+          action={
+            <div className={styles.headerActions}>
+              {onRefresh && <RefreshButton onRefresh={onRefresh} />}
+              {canManage && activeTab === "calendar" && (
+                <Button onClick={() => openModal()} icon={<span aria-hidden="true">+</span>}>
+                  Novo agendamento
+                </Button>
+              )}
+            </div>
+          }
+        />
+      </div>
+
+      <div className={styles.tabs} role="tablist" aria-label="Visualização">
         {([
           { id: "calendar", label: "Agenda" },
           { id: "waitlist", label: `Fila de espera${visibleWaitlist.length ? ` (${visibleWaitlist.length})` : ""}` },
@@ -683,74 +794,104 @@ export function Appointments({
               aria-selected={active}
               type="button"
               onClick={() => setActiveTab(t.id)}
-              style={{
-                padding: "8px 14px",
-                background: "transparent",
-                border: "none",
-                borderBottom: active ? "2px solid var(--primary, #2563eb)" : "2px solid transparent",
-                color: active ? "var(--foreground, inherit)" : "var(--muted-foreground)",
-                fontWeight: active ? 600 : 500,
-                fontSize: 13,
-                cursor: "pointer",
-              }}
+              className={`${styles.tab} ${active ? styles.tabActive : ""}`}
             >
               {t.label}
             </button>
           )
         })}
+        {isManager && (
+          <span className={styles.managerHint}>
+            Visualização gerencial (somente leitura na fila)
+          </span>
+        )}
       </div>
 
       {activeTab === "waitlist" ? (
-        <WaitlistPanel
-          entries={visibleWaitlist}
-          patients={patients}
-          doctors={doctors}
-          currentUser={currentUser}
-          canManage={canManageWaitlistEntries}
-          loading={waitlist.loading}
-          error={waitlist.error}
-          onAdd={handleAddToWaitlist}
-          onUpdate={async (entry) => { await waitlist.update(entry) }}
-          onRemove={async (id) => { await waitlist.remove(id) }}
-          onScheduleFromEntry={handleScheduleFromWaitlist}
-        />
+        <div className={styles.waitlistShell}>
+          <WaitlistPanel
+            entries={visibleWaitlist}
+            patients={patients}
+            doctors={doctors}
+            currentUser={currentUser}
+            canManage={canManageWaitlistEntries}
+            loading={waitlist.loading}
+            error={waitlist.error}
+            onAdd={handleAddToWaitlist}
+            onUpdate={async (entry) => { await waitlist.update(entry) }}
+            onRemove={async (id) => { await waitlist.remove(id) }}
+            onScheduleFromEntry={handleScheduleFromWaitlist}
+          />
+        </div>
       ) : (
       <div className={styles.layout}>
         <Card className={styles.calendarCard}>
           <div className={styles.toolbar}>
-            <div className={styles.viewSwitcher}>
-              {(Object.keys(VIEW_LABELS) as CalendarView[]).map((view) => (
+            <div className={styles.toolbarRow}>
+              <div className={styles.viewSwitcher}>
+                {(Object.keys(VIEW_LABELS) as CalendarView[]).map((view) => (
+                  <button
+                    key={view}
+                    type="button"
+                    onClick={() => changeView(view)}
+                    className={`${styles.viewBtn} ${calendarView === view ? styles.viewBtnActive : ""}`}
+                  >
+                    {VIEW_LABELS[view]}
+                  </button>
+                ))}
+              </div>
+
+              {!isDoctor && (
+                <Select
+                  options={doctors.map((doctor) => ({ value: doctor.id, label: doctor.name }))}
+                  placeholder={isLoadingDoctors ? "Carregando médicos..." : "Todos os profissionais"}
+                  value={filterDoctorId}
+                  onChange={(event) => { setFilterDoctorId(event.target.value); setSelected(null) }}
+                  className={styles.toolbarSelect}
+                />
+              )}
+
+              {isDoctor && <div className={styles.lockedProfile}>{currentUser.name}</div>}
+
+              {calendarView === "dayGridMonth" && (
+                <div className={styles.monthContext} aria-live="polite">
+                  <span className={styles.monthContextLabel}>{formatVisibleMonth(visibleMonth)}</span>
+                  <span className={styles.monthContextHint}>
+                    {isSameMonth(visibleMonth, new Date()) ? "Mês atual" : "Outro mês"}
+                  </span>
+                </div>
+              )}
+
+              <div className={styles.toolbarSpacer} />
+
+              <div className={styles.navControls}>
+                <button type="button" className={styles.navButton} onClick={() => navigateCalendar("prev")} aria-label="Anterior">‹</button>
                 <button
-                  key={view}
                   type="button"
-                  onClick={() => changeView(view)}
-                  className={`${styles.viewBtn} ${calendarView === view ? styles.viewBtnActive : ""}`}
+                  className={`${styles.todayBtn} ${isViewingToday ? styles.todayBtnActive : ""}`}
+                  onClick={() => navigateCalendar("today")}
+                  aria-label={isViewingToday ? "Ir para hoje" : `Ir para hoje (exibindo ${navCenterLabel})`}
                 >
-                  {VIEW_LABELS[view]}
+                  {navCenterLabel}
                 </button>
-              ))}
+                <button type="button" className={styles.navButton} onClick={() => navigateCalendar("next")} aria-label="Próximo">›</button>
+              </div>
             </div>
 
-            {!isDoctor && (
-              <Select
-                options={doctors.map((doctor) => ({ value: doctor.id, label: doctor.name }))}
-                placeholder={isLoadingDoctors ? "Carregando médicos..." : "Todos os profissionais"}
-                value={filterDoctorId}
-                onChange={(event) => { setFilterDoctorId(event.target.value); setSelected(null) }}
-                className={styles.toolbarSelect}
-              />
-            )}
-
-            {isDoctor && <div className={styles.lockedProfile}>{currentUser.name}</div>}
-            <div className={styles.spacer} />
-            <div className={styles.navControls}>
-              <button type="button" className={styles.navButton} onClick={() => navigateCalendar("prev")} aria-label="Anterior">‹</button>
-              <button type="button" className={styles.todayBtn} onClick={() => navigateCalendar("today")}>Hoje</button>
-              <button type="button" className={styles.navButton} onClick={() => navigateCalendar("next")} aria-label="Próximo">›</button>
+            <div className={styles.mobileSummary}>
+              {summary.map((item) => (
+                <div key={item.label} className={styles.mobileSummaryItem}>
+                  <strong className={item.cls}>{item.value}</strong>
+                  <span>{item.label}</span>
+                </div>
+              ))}
             </div>
           </div>
 
-          <div className={styles.calendarShell}>
+          <div
+            className={`${styles.calendarShell} ${calendarView === "dayGridMonth" ? styles.calendarMonthView : ""}`}
+            ref={calendarShellRef}
+          >
             {doctorsError && <p className={styles.availabilityNotice}>Não foi possível carregar médicos: {doctorsError}</p>}
             {availabilityError && <p className={styles.availabilityNotice}>Não foi possível carregar disponibilidade: {availabilityError}</p>}
             <FullCalendar
@@ -760,7 +901,7 @@ export function Appointments({
               initialView={calendarView}
               headerToolbar={false}
               events={events}
-              height="auto"
+              height={calendarHeight}
               slotMinTime={calendarSlotMin}
               slotMaxTime={calendarSlotMax}
               slotDuration="00:30:00"
@@ -778,10 +919,71 @@ export function Appointments({
               slotEventOverlap={false}
               expandRows
               dayCellClassNames={(arg) => {
-                if (toDateStr(arg.date) < today) return [styles.pastDay]
-                return hasAvailabilityOnDate(arg.date, scopedCalendarDoctorId) ? [styles.availableDay] : [styles.unavailableDay]
+                const classes: string[] = []
+                if (toDateStr(arg.date) < today) classes.push(styles.pastDay)
+                else {
+                  classes.push(
+                    hasAvailabilityOnDate(arg.date, scopedCalendarDoctorId)
+                      ? styles.availableDay
+                      : styles.unavailableDay,
+                  )
+                }
+
+                if (arg.view.type === "dayGridMonth") {
+                  const now = new Date()
+                  if (isSameMonth(arg.date, now)) {
+                    const firstDay = (arg.view.calendar.getOption("firstDay") as number | undefined) ?? 0
+                    const todayRow = monthWeekRowIndex(now, firstDay)
+                    if (monthWeekRowIndex(arg.date, firstDay) === todayRow) {
+                      classes.push(styles.monthCurrentWeek)
+                    }
+                    if (toDateStr(arg.date) === today) {
+                      classes.push(styles.monthTodayCell)
+                    }
+                  }
+                }
+
+                return classes
               }}
-              dayHeaderClassNames={(arg) => toDateStr(arg.date) < today ? [styles.pastHeader] : []}
+              dayCellContent={(arg) => {
+                if (arg.view.type !== "dayGridMonth") return undefined
+
+                const now = new Date()
+                if (!isSameMonth(arg.date, now)) {
+                  return (
+                    <div className={styles.monthDayTop}>
+                      <span className={styles.monthDayNumber}>{arg.dayNumberText}</span>
+                    </div>
+                  )
+                }
+
+                const firstDay = (arg.view.calendar.getOption("firstDay") as number | undefined) ?? 0
+                const isToday = toDateStr(arg.date) === today
+                const inCurrentWeek = monthWeekRowIndex(arg.date, firstDay) === monthWeekRowIndex(now, firstDay)
+                const showWeekLabel = inCurrentWeek && isFirstDayOfWeekRow(arg.date, firstDay)
+
+                return (
+                  <div className={styles.monthDayTop}>
+                    {showWeekLabel && (
+                      <span className={styles.monthWeekLabel}>{formatWeekOfMonth(now, firstDay)}</span>
+                    )}
+                    <span className={`${styles.monthDayNumber} ${isToday ? styles.monthDayNumberToday : ""}`}>
+                      {arg.dayNumberText}
+                    </span>
+                    {isToday && (
+                      <span className={styles.monthDayTodayLabel}>Hoje</span>
+                    )}
+                  </div>
+                )
+              }}
+              dayHeaderClassNames={(arg) => {
+                const classes: string[] = []
+                if (toDateStr(arg.date) < today) classes.push(styles.pastHeader)
+                if (arg.view.type === "dayGridMonth" && toDateStr(arg.date) === today) {
+                  classes.push(styles.monthTodayHeader)
+                }
+                return classes
+              }}
               slotLaneClassNames={(arg) => {
                 if (!arg.date) return []
                 if (arg.date <= new Date()) return [styles.pastSlot]
@@ -789,6 +991,7 @@ export function Appointments({
               }}
               datesSet={(arg) => {
                 setCalendarTitle(arg.view.title)
+                setVisibleMonth(new Date(arg.view.currentStart))
               }}
               dateClick={handleDateClick}
               eventClick={handleEventClick}
@@ -808,7 +1011,7 @@ export function Appointments({
           </div>
         </Card>
 
-        <aside className={styles.sidePanel}>
+        <aside className={`${styles.sidePanel} ${selected ? styles.sidePanelSelected : ""}`}>
           {selected ? (
             <Card className={styles.detailCard}>
               <div className={styles.detailHeader}>
@@ -857,9 +1060,11 @@ export function Appointments({
           <Card className={styles.legendCard}>
             <p className={styles.summaryTitle}>Status</p>
             <div className={styles.legendItem}><span className={styles.legendConfirmed} />Confirmado</div>
-            <div className={styles.legendItem}><span className={styles.legendPending} />Pendente ou agendado</div>
+            <div className={styles.legendItem}><span className={styles.legendScheduled} />Agendado</div>
+            <div className={styles.legendItem}><span className={styles.legendPending} />Pendente / solicitado</div>
             <div className={styles.legendItem}><span className={styles.legendCompleted} />Concluído</div>
-            <div className={styles.legendItem}><span className={styles.legendCancelled} />Cancelado ou ausente</div>
+            <div className={styles.legendItem}><span className={styles.legendCancelled} />Cancelado</div>
+            <div className={styles.legendItem}><span className={styles.legendAbsent} />Ausente</div>
           </Card>
         </aside>
       </div>

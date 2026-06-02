@@ -93,7 +93,33 @@ function localTime(value: Date): string {
 function localDateTimeIso(date: string, time: string): string {
   const [year, month, day] = date.split("-").map(Number)
   const [hours, minutes] = time.slice(0, 5).split(":").map(Number)
-  return new Date(year, month - 1, day, hours, minutes, 0).toISOString()
+  const local = new Date(year, month - 1, day, hours, minutes, 0)
+  const offsetMin = -local.getTimezoneOffset()
+  const sign = offsetMin >= 0 ? "+" : "-"
+  const abs = Math.abs(offsetMin)
+  return `${date}T${pad(hours)}:${pad(minutes)}:00${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`
+}
+
+function hasTimezone(value: string): boolean {
+  return /Z$/i.test(value) || /[+-]\d{2}:\d{2}$/.test(value) || /[+-]\d{4}$/.test(value)
+}
+
+/** Interpreta `scheduled_at` da API preservando data/hora locais escolhidas pelo paciente. */
+function parseScheduledAt(scheduledAt: string): { date: string; time: string } {
+  const trimmed = scheduledAt.trim()
+  const wallClock = trimmed.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/)
+
+  if (wallClock && !hasTimezone(trimmed)) {
+    return { date: wallClock[1], time: wallClock[2] }
+  }
+
+  const dt = new Date(trimmed)
+  if (Number.isNaN(dt.getTime())) {
+    const now = new Date()
+    return { date: localDate(now), time: localTime(now) }
+  }
+
+  return { date: localDate(dt), time: localTime(dt) }
 }
 
 function timeToMinutes(value: string): number {
@@ -181,14 +207,7 @@ function apiToAppointment(
   api: ApiAppointment,
   doctorName = ""
 ): Appointment {
-  const dt = api.scheduled_at
-    ? new Date(api.scheduled_at)
-    : new Date()
-
-  // Mantemos data e hora no mesmo fuso (local do navegador) para evitar deslocamento
-  // perto da meia-noite quando o servidor responde em UTC.
-  const date = localDate(dt)
-  const time = localTime(dt)
+  const { date, time } = parseScheduledAt(api.scheduled_at ?? "")
 
   // O backend so guarda a modalidade em `appointment_type`. O tipo de visita
   // (consulta/exame/retorno/procedimento) e recuperado do prefixo em `notes`.
@@ -332,7 +351,8 @@ function appointmentConflictMessage(err: unknown): Error | null {
 }
 
 export async function createAppointment(
-  data: Omit<Appointment, "id">
+  data: Omit<Appointment, "id">,
+  options?: { skipConfirmationSms?: boolean },
 ): Promise<Appointment> {
   let created: ApiAppointment[] | ApiAppointment
   try {
@@ -356,7 +376,7 @@ export async function createAppointment(
     ? created[0]
     : (created as ApiAppointment)
 
-  const appointment = {
+  const appointment: Appointment = {
     ...apiToAppointment(
       raw,
       data.doctorName
@@ -364,7 +384,10 @@ export async function createAppointment(
     patientName: data.patientName,
   }
 
-  notifyAppointmentBooked(appointment)
+  if (!options?.skipConfirmationSms) {
+    notifyAppointmentBooked(appointment)
+  }
+
   return appointment
 }
 
@@ -518,10 +541,14 @@ async function getAvailableSlotsFromAvailability(
   ])
 
   const busyRanges = (appointments ?? [])
-    .filter((appointment) => localDate(new Date(appointment.scheduled_at)) === date)
-    .filter((appointment) => appointment.status !== "cancelled")
     .map((appointment) => {
-      const start = timeToMinutes(localTime(new Date(appointment.scheduled_at)))
+      const { date: apptDate, time: apptTime } = parseScheduledAt(appointment.scheduled_at)
+      return { apptDate, apptTime, appointment }
+    })
+    .filter(({ apptDate }) => apptDate === date)
+    .filter(({ appointment }) => appointment.status !== "cancelled")
+    .map(({ apptTime, appointment }) => {
+      const start = timeToMinutes(apptTime)
       return {
         start,
         end: start + (appointment.duration_minutes ?? 30),
@@ -557,12 +584,19 @@ async function getAvailableSlotsFromAvailability(
     .sort()
 }
 
-function slotToTime(slot: string | ApiAvailableSlot): string | null {
+function slotToTime(slot: string | ApiAvailableSlot, contextDate?: string): string | null {
   const raw = typeof slot === "string"
     ? slot
     : slot.time ?? slot.start_time ?? slot.start ?? slot.scheduled_at ?? ""
   if (!raw) return null
   if (/^\d{2}:\d{2}/.test(raw)) return raw.slice(0, 5)
+
+  const wallClock = raw.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/)
+  if (wallClock) {
+    if (!contextDate || wallClock[1] === contextDate) {
+      return wallClock[2]
+    }
+  }
 
   const parsed = new Date(raw)
   if (Number.isNaN(parsed.getTime())) return null
@@ -598,7 +632,7 @@ async function getAvailableSlotsFromApi(
   const nowMinutes = timeToMinutes(localTime(new Date()))
 
   return extractSlots(data)
-    .map(slotToTime)
+    .map((slot) => slotToTime(slot, date))
     .filter((time): time is string => Boolean(time))
     .filter((time) => date !== today || timeToMinutes(time) > nowMinutes)
     .filter((time, index, all) => all.indexOf(time) === index)
@@ -724,6 +758,11 @@ export async function createPatientAppointment(
       "Não encontramos seu cadastro de paciente vinculado a esta conta. " +
       "Peça à recepção para vincular seu acesso ao cadastro.",
     )
+  }
+
+  const scheduledAt = new Date(`${data.date}T${data.time}:00`)
+  if (Number.isNaN(scheduledAt.getTime()) || scheduledAt <= new Date()) {
+    throw new Error("Escolha uma data e horário futuros para agendar.")
   }
 
   return createAppointment({

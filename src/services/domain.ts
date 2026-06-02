@@ -1,4 +1,4 @@
-import { apiRequest, ApiError, getApiUserId } from "./api"
+import { apiRequest, ApiError, getApiToken, getApiUserId } from "./api"
 import { formatSpecialtyLabel } from "../utils"
 import type {
   CommunicationChannel,
@@ -64,6 +64,9 @@ interface ApiReport {
 }
 
 function reportStatusFromApi(s?: string): ReportStatus {
+  const normalized = s?.trim().toLowerCase()
+  if (normalized === "delivered" || normalized === "completed" || normalized === "finalized") return "Finalized"
+  if (normalized === "sent") return "Sent"
   if (isReportApiCompleted(s)) return "Finalized"
   return "Draft"
 }
@@ -1185,6 +1188,10 @@ function deliveryToMessageStatus(status: "sent" | "pending" | "failed"): Message
   return "Pending"
 }
 
+function isLocalAuthSession(): boolean {
+  return getApiToken()?.startsWith("local-") ?? false
+}
+
 function channelLabel(channel: "sms" | "whatsapp"): CommunicationChannel {
   return channel === "whatsapp" ? "WhatsApp" : "SMS"
 }
@@ -1200,6 +1207,15 @@ export async function sendMessage(
     fallbackSms?: boolean
   },
 ): Promise<Message> {
+  if (isLocalAuthSession()) {
+    throw new Error(
+      "Envio de SMS exige login real no Supabase. Contas de desenvolvimento local (token local-dev) não autenticam na Edge Function send-sms.",
+    )
+  }
+  if (!getApiToken()) {
+    throw new Error("Sessão não autenticada. Faça login novamente para enviar SMS.")
+  }
+
   const channel = d.channel === "WhatsApp" ? "WhatsApp" : "SMS"
   const result = await sendOutboundMessage(
     channel,

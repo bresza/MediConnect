@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { Avatar } from "../../components/ui/Avatar/Avatar"
 import { Button } from "../../components/ui/Button/Button"
+import { getStatusLabel } from "../../components/ui/Badge/Badge"
 import { formatCpfBR, formatDate, formatPhoneBR } from "../../utils"
 import { canViewClinicalData } from "../../utils/permissions"
 import { PrescriptionEditor } from "./PrescriptionEditor"
@@ -39,6 +40,7 @@ const RX_TYPE_MAP: Record<string, string> = {
 const APPT_STATUS_COLOR: Record<string, string> = {
   confirmed: "#059669", completed: "#059669", scheduled: "#0284c7",
   cancelled: "#dc2626", absent: "#dc2626", blocked: "#6b7280", pending: "#d97706",
+  requested: "#d97706",
 }
 
 function calcAge(dob: string): number | null {
@@ -267,7 +269,7 @@ export function PatientProfile({
                       className={styles.nextApptStatus}
                       style={{ color: APPT_STATUS_COLOR[nextAppt.status] ?? "#6b7280" }}
                     >
-                      {nextAppt.status}
+                      {getStatusLabel(nextAppt.status)}
                     </span>
                   </div>
                 </SectionCard>

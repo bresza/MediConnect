@@ -41,7 +41,7 @@ export function useAppointments(options?: { enabled?: boolean }): UseAppointment
   }
 
   const addMutation = useMutation({
-    mutationFn: createAppointment,
+    mutationFn: (data: Omit<Appointment, "id">) => createAppointment(data),
     onSuccess: async () => { await invalidate() },
   })
 

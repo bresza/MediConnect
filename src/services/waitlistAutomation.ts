@@ -1,8 +1,6 @@
 import type { Appointment, WaitlistEntry } from "../types"
 import { createAppointment } from "./appointments"
-import { sendOutboundMessage } from "./messaging"
-import { resolveOutboundChannel } from "./messagingChannel"
-import { getPatientById } from "./patients"
+import { sendPatientSmsNotification } from "./appointmentNotifications"
 import {
   enrollPatientInWaitlist,
   getWaitlist,
@@ -24,22 +22,11 @@ export interface WaitlistFillResult {
 
 async function sendPatientNotification(
   patientId: string,
+  patientName: string,
   content: string,
+  sentBy = "Sistema — fila de espera",
 ): Promise<boolean> {
-  try {
-    const patient = await getPatientById(patientId)
-    const phone = patient?.phone?.trim()
-    if (!phone || patient?.optIn === false) return false
-    const channel = resolveOutboundChannel(patient?.preferredChannel)
-    await sendOutboundMessage(
-      channel,
-      { phoneNumber: phone, message: content, patientId },
-      { fallbackSms: false },
-    )
-    return true
-  } catch {
-    return false
-  }
+  return sendPatientSmsNotification({ patientId, patientName, content, sentBy })
 }
 
 export async function notifyWaitlistEnrollment(
@@ -53,7 +40,7 @@ export async function notifyWaitlistEnrollment(
   const target = specialty ? `${doctorName} (${specialty})` : doctorName
   const priorityLabel = WAITLIST_COLOR_LABEL[priorityColor]
   const sms = `Olá ${firstName}, você entrou na fila de espera para consulta com ${target}. Prioridade: ${priorityLabel}. Avisaremos por SMS quando surgir vaga.`
-  await sendPatientNotification(patientId, sms)
+  await sendPatientNotification(patientId, patientName, sms)
 }
 
 /** Inscreve o paciente na fila e envia confirmação por SMS quando houver telefone. */
@@ -129,7 +116,7 @@ export async function fillGapFromWaitlist(
       type: freed.type,
       status: "scheduled",
       observations,
-    })
+    }, { skipConfirmationSms: true })
 
     await updateWaitlistEntry({
       ...candidate,

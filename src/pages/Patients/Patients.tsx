@@ -6,7 +6,7 @@ import { Card } from "../../components/ui/Card/Card"
 import { Button } from "../../components/ui/Button/Button"
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog/ConfirmDialog"
 import { RefreshButton } from "../../components/ui/RefreshButton/RefreshButton"
-import { onlyDigits, sortByName, toTitleCase } from "../../utils"
+import { isRemovedPatientPlaceholder, onlyDigits, sortByName, toTitleCase } from "../../utils"
 import type { PageId, Patient } from "../../types"
 import type { UseToastReturn } from "../../hooks/useToast"
 import { PatientsVirtualTable } from "./PatientsVirtualTable"
@@ -51,7 +51,9 @@ export function Patients({
 
   // Normaliza nome para exibicao e ordena alfabeticamente (case-insensitive, pt-BR).
   const orderedPatients = useMemo(() => {
-    const normalized = patients.map((p) => ({ ...p, name: toTitleCase(p.name) }))
+    const normalized = patients
+      .filter((p) => !isRemovedPatientPlaceholder(p))
+      .map((p) => ({ ...p, name: toTitleCase(p.name) }))
     return sortByName(normalized, (p) => p.name)
   }, [patients])
 
@@ -88,7 +90,7 @@ export function Patients({
     <div>
       <Topbar
         title="Pacientes"
-        subtitle={`${patients.length} pacientes cadastrados`}
+        subtitle={`${orderedPatients.length} pacientes cadastrados`}
         action={headerAction}
       />
       <div className={styles.filters}>

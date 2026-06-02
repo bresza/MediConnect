@@ -71,12 +71,19 @@
   padding: 0 20px;
   border-bottom: 1px solid var(--border);
   background: var(--card);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .tab {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
   padding: 14px 18px;
   border: none;
   border-bottom: 2px solid transparent;
@@ -136,6 +143,51 @@
   min-height: 200px;
 }
 
+.groupedList {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.listGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.groupHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 2px;
+}
+
+.groupHeader h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+}
+
+.groupHeader span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+}
+
 .appointmentList {
   margin: 0;
   padding: 0;
@@ -158,17 +210,52 @@
 }
 
 .listRowMuted {
-  opacity: 0.88;
+  opacity: 0.92;
   background: color-mix(in srgb, var(--muted) 35%, var(--card));
+}
+
+.listRowMuted .listWhen span {
+  color: var(--muted-foreground);
+}
+
+.listRowMuted .listInfo p {
+  color: var(--muted-foreground);
 }
 
 .listMain {
   display: grid;
-  grid-template-columns: minmax(100px, auto) minmax(0, 1fr) auto;
-  gap: 12px;
+  grid-template-columns: 88px minmax(0, 1fr) auto;
+  gap: 16px;
   align-items: center;
   flex: 1;
   min-width: 0;
+}
+
+.listAside {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.manageBtn {
+  background: #14b8a6 !important;
+  border: none !important;
+  color: #fff !important;
+  box-shadow: 0 2px 8px rgb(20 184 166 / 0.28);
+  min-width: 118px;
+  justify-content: center;
+}
+
+.manageBtn:hover:not(:disabled) {
+  background: #0d9488 !important;
+}
+
+.listWhen {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .listWhen strong {
@@ -233,6 +320,93 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.modalBody {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.modalSummary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 12px;
+  background: color-mix(in srgb, #14b8a6 10%, var(--background));
+  border: 1px solid color-mix(in srgb, #14b8a6 24%, var(--border));
+  text-align: center;
+}
+
+.modalSummaryLabel {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #0d9488;
+  font-family: var(--font-sans);
+}
+
+.modalSummary strong {
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+.modalSummary p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+  line-height: 1.45;
+}
+
+.modalHint {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+  text-align: center;
+}
+
+.modalFooter {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.modalPrimaryBtn {
+  justify-content: center;
+  min-height: 48px;
+  font-size: 14px !important;
+  background: #14b8a6 !important;
+  border: none !important;
+  box-shadow: 0 3px 12px rgb(20 184 166 / 0.32);
+}
+
+.modalPrimaryBtn:hover:not(:disabled) {
+  background: #0d9488 !important;
+}
+
+.modalDangerBtn {
+  justify-content: center;
+  min-height: 48px;
+  font-size: 14px !important;
+}
+
+.modalError {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, #ef4444 35%, var(--border));
+  background: color-mix(in srgb, #ef4444 10%, var(--background));
+  font-size: 13px;
+  color: var(--foreground);
+  font-family: var(--font-sans);
 }
 
 .drawerSummary {
@@ -329,12 +503,23 @@
   }
 
   .listRow {
-    flex-direction: column;
-    align-items: stretch;
+    padding: 14px 16px;
   }
 
   .listMain {
     grid-template-columns: 1fr;
-    gap: 8px;
+    gap: 10px;
+  }
+
+  .listAside {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .manageBtn {
+    flex: 1;
+    max-width: 160px;
   }
 }

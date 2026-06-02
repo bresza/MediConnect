@@ -38,6 +38,8 @@ import {
   canViewFinancial,
   getDefaultPage,
 } from "./utils/permissions"
+import { enrichPatientsWithVisits } from "./utils"
+import { isRemovedPatientPlaceholder, withoutRemovedPatientPlaceholders } from "./utils/removedPatient"
 import { buildAIApiContextFromAppState } from "./services/aiContext"
 import { createAppAIActions } from "./services/aiActions"
 import { useAuth }          from "./contexts/authStore"
@@ -201,7 +203,7 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
     [isDoctor, doctorAppts],
   )
 
-  const visiblePatients = useMemo(() => {
+  const visiblePatientsRaw = useMemo(() => {
     if (isPatient) return portalPatient ? [portalPatient] : []
     if (isDoctor && doctorPatientIds) return patients.filter((p) => doctorPatientIds.has(p.id))
     return patients
@@ -211,6 +213,13 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
     if (isPatient) return patientAIData.appointments
     return doctorAppts
   }, [isPatient, patientAIData.appointments, doctorAppts])
+
+  const visiblePatients = useMemo(
+    () => withoutRemovedPatientPlaceholders(
+      enrichPatientsWithVisits(visiblePatientsRaw, visibleAppointments),
+    ),
+    [visiblePatientsRaw, visibleAppointments],
+  )
 
   const visiblePrescriptions = useMemo(() => {
     if (isPatient) return patientAIData.prescriptions
@@ -289,6 +298,7 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
   }
 
   function handleViewProfile(patient: Patient) {
+    if (isRemovedPatientPlaceholder(patient)) return
     setViewingPatient(patient)
     setActivePage("patient-profile")
     setSidebarOpen(false)
@@ -298,6 +308,10 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
   }
 
   function handleEditPatient(patient: Patient) {
+    if (isRemovedPatientPlaceholder(patient)) {
+      toast("Paciente removido não pode ser editado.", "error")
+      return
+    }
     setEditingPatient(patient)
     setActivePage("register")
     setSidebarOpen(false)
@@ -344,6 +358,10 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
     return saved
   }
   async function handleUpdatePatient(p: Patient): Promise<Patient> {
+    if (isRemovedPatientPlaceholder(p)) {
+      toast("Paciente removido não pode ser editado.", "error")
+      throw new Error("Paciente removido não pode ser editado.")
+    }
     try {
       const saved = await updatePatient(p)
       setEditingPatient((current) => (current?.id === saved.id ? saved : current))
@@ -357,6 +375,10 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
   }
   async function handleDeletePatient(id: string) {
     const target = patients.find((p) => p.id === id)
+    if (target && isRemovedPatientPlaceholder(target)) {
+      toast("Este registro não pode ser removido.", "error")
+      return
+    }
     await deletePatient(id)
     if (target) toast(`Paciente ${target.name} removido.`, "info")
   }
