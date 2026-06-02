@@ -21,6 +21,8 @@ import { Financial }      from "./pages/Financial/Financial"
 import { Settings }       from "./pages/Settings/Settings"
 import { Team }           from "./pages/Team/Team"
 import { canAccess, canDo, getDefaultPage } from "./utils/permissions"
+import { enrichPatientsWithVisits } from "./utils"
+import { isRemovedPatientPlaceholder, withoutRemovedPatientPlaceholders } from "./utils/removedPatient"
 import { buildAIApiContextFromAppState } from "./services/aiContext"
 import { useAuth }          from "./contexts/authStore"
 import { usePatients }      from "./hooks/usePatients"
@@ -117,12 +119,15 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
     ? new Set(doctorAppts.map((a) => a.patientId))
     : null
 
-  const visiblePatients      = isPatient
+  const visiblePatientsRaw   = isPatient
     ? (portalPatient ? [portalPatient] : [])
     : isDoctor ? patients.filter((p) => doctorPatientIds!.has(p.id)) : patients
   const visibleAppointments  = isPatient
     ? appointments.filter((a) => a.patientId === linkedPatientId)
     : doctorAppts
+  const visiblePatients      = withoutRemovedPatientPlaceholders(
+    enrichPatientsWithVisits(visiblePatientsRaw, visibleAppointments),
+  )
   const visiblePrescriptions = isPatient
     ? prescriptions.filter((p) => p.patientId === linkedPatientId)
     : isDoctor ? prescriptions.filter((p) => doctorPatientIds!.has(p.patientId)) : prescriptions
@@ -190,12 +195,17 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
   }
 
   function handleViewProfile(patient: Patient) {
+    if (isRemovedPatientPlaceholder(patient)) return
     setViewingPatient(patient)
     setActivePage("patient-profile")
     setSidebarOpen(false)
   }
 
   function handleEditPatient(patient: Patient) {
+    if (isRemovedPatientPlaceholder(patient)) {
+      toast("Paciente removido não pode ser editado.", "error")
+      return
+    }
     setEditingPatient(patient)
     setActivePage("register")
     setSidebarOpen(false)
@@ -218,11 +228,19 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
     return saved
   }
   async function handleUpdatePatient(p: Patient) {
+    if (isRemovedPatientPlaceholder(p)) {
+      toast("Paciente removido não pode ser editado.", "error")
+      return
+    }
     await updatePatient(p)
     toast(`Dados de ${p.name} atualizados.`, "success")
   }
   async function handleDeletePatient(id: string) {
     const target = patients.find((p) => p.id === id)
+    if (target && isRemovedPatientPlaceholder(target)) {
+      toast("Este registro não pode ser removido.", "error")
+      return
+    }
     await deletePatient(id)
     if (target) toast(`Paciente ${target.name} removido.`, "info")
   }

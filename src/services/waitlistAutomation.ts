@@ -1,7 +1,6 @@
 import type { Appointment, WaitlistEntry } from "../types"
 import { createAppointment } from "./appointments"
-import { sendMessage } from "./domain"
-import { getPatientById } from "./patients"
+import { sendPatientSmsNotification } from "./appointmentNotifications"
 import {
   enrollPatientInWaitlist,
   getWaitlist,
@@ -53,24 +52,7 @@ async function sendPatientSms(
   content: string,
   sentBy: string,
 ): Promise<boolean> {
-  try {
-    const patient = await getPatientById(patientId)
-    const phone = patient?.phone?.trim()
-    if (!phone) return false
-    await sendMessage({
-      patientId,
-      patientName,
-      content,
-      status: "Pending",
-      date: new Date().toISOString().slice(0, 10),
-      channel: "SMS",
-      sentBy,
-      phoneNumber: phone,
-    })
-    return true
-  } catch {
-    return false
-  }
+  return sendPatientSmsNotification({ patientId, patientName, content, sentBy })
 }
 
 async function notifyPromotedPatient(
@@ -172,7 +154,7 @@ export async function fillGapFromWaitlist(
       type: freed.type,
       status: "scheduled",
       observations,
-    })
+    }, { skipConfirmationSms: true })
 
     await updateWaitlistEntry({
       ...candidate,

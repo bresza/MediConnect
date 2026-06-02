@@ -26,7 +26,7 @@ export const SECTION_META: Record<PortalSection, { title: string; subtitle: stri
   },
   consultations: {
     title: "Minhas consultas",
-    subtitle: "Consultas agendadas e canceladas.",
+    subtitle: "Consultas agendadas, ausências e cancelamentos.",
   },
   exams: {
     title: "Exames e procedimentos",
@@ -34,7 +34,7 @@ export const SECTION_META: Record<PortalSection, { title: string; subtitle: stri
   },
   reports: {
     title: "Laudos",
-    subtitle: "Documentos liberados pela equipe médica.",
+    subtitle: "Exames e documentos liberados pela equipe médica.",
   },
   prescriptions: {
     title: "Receitas",

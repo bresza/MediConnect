@@ -56,7 +56,7 @@ export interface Patient {
 }
 
 // ─── APPOINTMENT ──────────────────────────────────────────────────
-export type AppointmentStatus = "scheduled" | "confirmed" | "completed" | "cancelled" | "absent" | "blocked" | "pending"
+export type AppointmentStatus = "scheduled" | "confirmed" | "completed" | "cancelled" | "absent" | "blocked" | "pending" | "requested"
 export type AppointmentType   = "consultation" | "exam" | "return" | "procedure"
 
 export interface Appointment {

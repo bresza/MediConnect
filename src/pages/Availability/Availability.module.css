@@ -1,26 +1,80 @@
-/* ── Toolbar (header card: seletor de medico + badge) ────────────── */
-.toolbar {
-  padding: 18px 20px;
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.intro {
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border));
+  background: color-mix(in srgb, var(--primary) 7%, var(--background));
+}
+
+.intro p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+.intro strong {
+  color: var(--primary);
+}
+
+.feedbackError,
+.feedbackSuccess {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  font-weight: 700;
+  font-family: var(--font-sans);
+}
+
+.feedbackError {
+  color: var(--destructive);
+  background: color-mix(in srgb, var(--destructive) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--destructive) 25%, transparent);
+}
+
+.feedbackSuccess {
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--primary) 25%, transparent);
+}
+
+.filterCard {
+  padding: 16px 18px;
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 16px;
-  margin-bottom: 16px;
+  overflow: visible;
 }
 
-.doctorField {
+.filterMain {
   flex: 1 1 280px;
   min-width: 0;
-  width: min(420px, 100%);
+  max-width: 420px;
 }
 
-.label {
+.fieldLabel {
   display: block;
-  color: var(--foreground);
+  margin-bottom: 6px;
   font-size: 12px;
   font-weight: 700;
-  margin-bottom: 6px;
+  color: var(--foreground);
+  font-family: var(--font-sans);
 }
 
 .lockedDoctor {
@@ -28,117 +82,100 @@
   display: flex;
   align-items: center;
   padding: 0 12px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   border: 1px solid var(--border);
-  background: var(--muted);
-  color: var(--foreground);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  color: var(--primary);
   font-size: 13px;
   font-weight: 700;
+  font-family: var(--font-sans);
 }
 
-.summary {
-  margin-left: auto;
-  min-height: 38px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 16px;
-  border-radius: var(--radius-md);
-  border: 1px solid color-mix(in srgb, var(--primary) 26%, transparent);
-  background: color-mix(in srgb, var(--primary) 10%, transparent);
-  color: var(--muted-foreground);
+.specialtyHint {
+  margin: 6px 0 0;
   font-size: 12px;
-  font-weight: 700;
-  white-space: nowrap;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
 }
 
-.summary span {
-  color: var(--primary);
-  font-size: 18px;
-  font-weight: 900;
-  line-height: 1;
-}
-
-/* ── Layout principal (form + lista) ───────────────────────────── */
-.grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
+.stats {
+  display: flex;
   align-items: stretch;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
-@media (min-width: 960px) {
-  .grid {
-    grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
-  }
-}
-
-.formCard,
-.listCard {
-  padding: 20px;
+.stat {
+  min-width: 72px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--background);
   display: flex;
   flex-direction: column;
-  min-height: 0;
-  height: 100%;
+  align-items: center;
+  gap: 2px;
 }
 
-@media (min-width: 1024px) {
-  .formCard,
-  .listCard {
-    padding: 22px 24px;
-  }
+.stat span {
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--primary);
+  font-family: var(--font-sans);
 }
 
-.cardTitle {
-  margin: 0 0 16px;
-  color: var(--foreground);
+.stat small {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+}
+
+.listCard {
+  padding: 0;
+  overflow: hidden;
+}
+
+.listHeader {
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.listHeader h2 {
+  margin: 0;
   font-size: 15px;
   font-weight: 800;
-  letter-spacing: -0.01em;
+  color: var(--foreground);
+  font-family: var(--font-sans);
 }
 
-/* ── Form ──────────────────────────────────────────────────────── */
-.formGrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  column-gap: 14px;
-  row-gap: 12px;
-  margin-bottom: 18px;
+.listHeader p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
 }
 
-.fullRow {
-  grid-column: 1 / -1;
-}
-
-.formActions {
-  margin-top: auto;
-  display: flex;
-  justify-content: flex-end;
-}
-
-.formActions button {
-  min-width: 180px;
-}
-
-/* ── Lista de horarios ─────────────────────────────────────────── */
 .rows {
+  margin: 0;
+  padding: 12px;
+  list-style: none;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  flex: 1 1 auto;
-  min-height: 0;
 }
 
 .row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 12px 14px;
+  gap: 14px;
+  padding: 14px 16px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--background);
-  transition: border-color 0.15s ease, background-color 0.15s ease;
+  border-radius: 12px;
+  background: var(--card);
+  transition: border-color 0.15s ease;
 }
 
 .row:hover {
@@ -146,140 +183,151 @@
 }
 
 .rowInactive {
-  opacity: 0.7;
-  background: var(--muted);
+  opacity: 0.82;
+  background: color-mix(in srgb, var(--muted) 35%, var(--card));
 }
 
 .rowMain {
-  min-width: 0;
-  display: flex;
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr) auto;
+  gap: 16px;
   align-items: center;
-  gap: 12px;
-  flex: 1 1 auto;
+  flex: 1;
+  min-width: 0;
 }
 
-.activeDot,
-.inactiveDot {
-  width: 9px;
-  height: 9px;
-  border-radius: 999px;
-  flex: 0 0 auto;
+.rowWhen {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.activeDot {
-  background: var(--primary);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
-}
-
-.inactiveDot {
-  background: var(--muted-foreground);
-}
-
-.rowTitle {
-  margin: 0;
-  color: var(--foreground);
+.rowWhen strong {
   font-size: 13px;
   font-weight: 800;
+  color: var(--foreground);
+  font-family: var(--font-sans);
 }
 
-.rowSub {
-  margin: 3px 0 0;
-  color: var(--muted-foreground);
+.rowWhen span {
   font-size: 12px;
   font-weight: 600;
-  overflow-wrap: anywhere;
-}
-
-.actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 6px;
-  flex: 0 0 auto;
-  flex-wrap: wrap;
-}
-
-/* ── Estado vazio / loading ───────────────────────────────────── */
-.empty {
-  margin: 0;
-  padding: 40px 24px;
   color: var(--muted-foreground);
+  font-family: var(--font-sans);
+}
+
+.rowInfo p {
+  margin: 0;
   font-size: 13px;
-  text-align: center;
-  flex: 1 1 auto;
+  font-weight: 700;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+.rowInfo span {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+}
+
+.rowAside {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.rowActions {
   display: flex;
   align-items: center;
-  justify-content: center;
-  border: 1px dashed var(--border);
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--muted) 40%, transparent);
+  gap: 8px;
+  flex-shrink: 0;
 }
 
-/* ── Feedback (erro / sucesso) ────────────────────────────────── */
-.error,
-.success {
-  margin: 0 0 16px;
-  padding: 10px 12px;
-  border-radius: var(--radius-md);
-  font-size: 12px;
-  font-weight: 700;
+.deleteBtn {
+  color: var(--destructive) !important;
+  border-color: color-mix(in srgb, var(--destructive) 35%, var(--border)) !important;
 }
 
-.error {
-  color: var(--destructive);
-  background: color-mix(in srgb, var(--destructive) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--destructive) 25%, transparent);
+.deleteBtn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--destructive) 8%, transparent) !important;
 }
 
-.success {
-  color: var(--primary);
-  background: color-mix(in srgb, var(--primary) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--primary) 25%, transparent);
+.empty {
+  margin: 0;
+  padding: 48px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  font-family: var(--font-sans);
 }
 
-/* ── Responsivo (tablet/mobile) ───────────────────────────────── */
-@media (max-width: 959px) {
-  .formCard,
-  .listCard {
-    height: auto;
+.empty strong {
+  font-size: 15px;
+  color: var(--foreground);
+}
+
+.empty span {
+  max-width: 320px;
+  line-height: 1.5;
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 14px;
+  row-gap: 12px;
+}
+
+.fullRow {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 900px) {
+  .rowMain {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .rowAside {
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
   }
 }
 
-@media (max-width: 640px) {
-  .toolbar {
-    padding: 14px 16px;
+@media (max-width: 720px) {
+  .filterCard {
     flex-direction: column;
     align-items: stretch;
   }
 
-  .doctorField {
+  .filterMain {
     max-width: none;
   }
 
-  .summary {
-    margin-left: 0;
-    justify-content: center;
+  .stats {
+    width: 100%;
+  }
+
+  .stat {
+    flex: 1;
+  }
+
+  .row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .rowActions {
+    justify-content: flex-end;
   }
 
   .formGrid {
     grid-template-columns: 1fr;
-  }
-
-  .formActions {
-    justify-content: stretch;
-  }
-
-  .formActions button {
-    width: 100%;
-    min-width: 0;
-  }
-
-  .row {
-    align-items: stretch;
-    flex-direction: column;
-    padding: 14px;
-  }
-
-  .actions {
-    justify-content: flex-start;
   }
 }

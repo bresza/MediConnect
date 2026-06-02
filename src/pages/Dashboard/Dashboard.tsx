@@ -96,6 +96,12 @@ export function Dashboard({ patients, appointments, currentUser, onNavigate, onR
     (p) => p.name,
   )
 
+  const recentPatients = [...visiblePatients].sort((a, b) => {
+    const dateCmp = (b.lastVisit ?? "").localeCompare(a.lastVisit ?? "")
+    if (dateCmp !== 0) return dateCmp
+    return a.name.localeCompare(b.name, "pt-BR")
+  })
+
   const pendingReports = isDoctor
     ? allReports.filter((r) => r.status === "Draft" && isCurrentDoctor(r.doctorId, r.doctorName))
     : allReports.filter((r) => r.status === "Draft")
@@ -182,7 +188,7 @@ export function Dashboard({ patients, appointments, currentUser, onNavigate, onR
           </div>
           {visiblePatients.length === 0 ? (
             <p className={styles.emptyRow}>Nenhum paciente encontrado.</p>
-          ) : visiblePatients.slice(0, 5).map((p) => (
+          ) : recentPatients.slice(0, 5).map((p) => (
             <div key={p.id} className={styles.patientRow}>
               <Avatar name={p.name} size="sm" />
               <div className={styles.patientInfo}>

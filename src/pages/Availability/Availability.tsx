@@ -2,8 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { Topbar } from "../../components/layout/Topbar/Topbar"
 import { Card } from "../../components/ui/Card/Card"
 import { Button } from "../../components/ui/Button/Button"
+import { Badge } from "../../components/ui/Badge/Badge"
 import { Input } from "../../components/ui/Input/Input"
 import { Select } from "../../components/ui/Select/Select"
+import { SearchSelect } from "../../components/ui/SearchSelect/SearchSelect"
+import { Modal } from "../../components/ui/Modal/Modal"
+import { ConfirmDialog } from "../../components/ui/ConfirmDialog/ConfirmDialog"
+import { RefreshButton } from "../../components/ui/RefreshButton/RefreshButton"
 import {
   createDoctorAvailability,
   deleteDoctorAvailability,
@@ -72,6 +77,23 @@ function formatTime(value: string): string {
   return value.slice(0, 5)
 }
 
+function formatTypeLabel(value: string): string {
+  return APPOINTMENT_TYPES.find((item) => item.value === value)?.label ?? value
+}
+
+const PlusIcon = () => (
+  <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round">
+    <path d="M12 5v14M5 12h14" />
+  </svg>
+)
+
+const TrashIcon = () => (
+  <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="3 6 5 6 21 6" />
+    <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6M10 11v6M14 11v6M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2" />
+  </svg>
+)
+
 export function Availability({ currentUser }: AvailabilityProps) {
   const isDoctor = currentUser.role === "doctor"
   const [doctors, setDoctors] = useState<AvailabilityDoctor[]>([])
@@ -82,6 +104,8 @@ export function Availability({ currentUser }: AvailabilityProps) {
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
+  const [createModalOpen, setCreateModalOpen] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<DoctorAvailability | null>(null)
 
   const [weekday, setWeekday] = useState("1")
   const [startTime, setStartTime] = useState("08:00")
@@ -94,6 +118,9 @@ export function Availability({ currentUser }: AvailabilityProps) {
     [doctors, doctorId],
   )
   const titleName = selectedDoctor?.name ?? currentUser.name
+
+  const activeCount = availability.filter((row) => row.active).length
+  const inactiveCount = availability.length - activeCount
 
   useEffect(() => {
     let alive = true
@@ -149,9 +176,23 @@ export function Availability({ currentUser }: AvailabilityProps) {
     void loadAvailability()
   }, [loadAvailability])
 
+  const handleRefresh = useCallback(async () => {
+    await loadAvailability()
+  }, [loadAvailability])
+
   function clearFeedback() {
     setError(null)
     setMessage(null)
+  }
+
+  function openCreateModal() {
+    clearFeedback()
+    setCreateModalOpen(true)
+  }
+
+  function closeCreateModal() {
+    if (isSaving) return
+    setCreateModalOpen(false)
   }
 
   async function handleCreateAvailability() {
@@ -189,6 +230,7 @@ export function Availability({ currentUser }: AvailabilityProps) {
       })
       setAvailability((prev) => sortAvailability([...prev, created]))
       setMessage("Disponibilidade criada.")
+      setCreateModalOpen(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao criar disponibilidade")
     } finally {
@@ -209,7 +251,6 @@ export function Availability({ currentUser }: AvailabilityProps) {
   }
 
   async function handleDeleteAvailability(row: DoctorAvailability) {
-    if (!window.confirm("Excluir esta disponibilidade?")) return
     clearFeedback()
     try {
       await deleteDoctorAvailability(row.id)
@@ -222,121 +263,204 @@ export function Availability({ currentUser }: AvailabilityProps) {
 
   const isBusy = isLoadingDoctors || isLoadingAvailability
 
+  const headerAction = (
+    <div className={styles.headerActions}>
+      <RefreshButton onRefresh={handleRefresh} />
+      <Button icon={<PlusIcon />} onClick={openCreateModal} disabled={!doctorId || isLoadingDoctors}>
+        Nova disponibilidade
+      </Button>
+    </div>
+  )
+
   return (
-    <div>
+    <div className={styles.page}>
       <Topbar
         title="Disponibilidade médica"
         subtitle={doctorId ? `Atendimento de ${titleName}` : "Configure os horários de atendimento"}
+        action={headerAction}
       />
 
-      <Card className={styles.toolbar}>
-        <div className={styles.doctorField}>
+      <div className={styles.intro}>
+        <p>
+          Defina os <strong>dias e horários</strong> em que o médico atende.
+          Esses blocos alimentam a agenda e a busca de horários no portal do paciente.
+        </p>
+      </div>
+
+      {(error || message) && (
+        <p className={error ? styles.feedbackError : styles.feedbackSuccess} role="status">
+          {error ?? message}
+        </p>
+      )}
+
+      <Card className={styles.filterCard}>
+        <div className={styles.filterMain}>
           {isDoctor ? (
-            <>
-              <span className={styles.label}>Médico</span>
+            <div className={styles.doctorLocked}>
+              <span className={styles.fieldLabel}>Médico</span>
               <div className={styles.lockedDoctor}>{titleName}</div>
-            </>
+            </div>
           ) : (
-            <Select
+            <SearchSelect
               label="Médico"
               value={doctorId}
               onChange={(event) => { setDoctorId(event.target.value); clearFeedback() }}
               options={doctors.map((doctor) => ({ value: doctor.id, label: doctor.name }))}
               placeholder="Selecionar médico"
+              searchPlaceholder="Buscar médico..."
               disabled={isLoadingDoctors}
             />
           )}
+          {selectedDoctor?.specialty && (
+            <p className={styles.specialtyHint}>{selectedDoctor.specialty}</p>
+          )}
         </div>
 
-        <div className={styles.summary}>
-          <span>{availability.filter((row) => row.active).length}</span>
-          horários ativos
+        <div className={styles.stats}>
+          <div className={styles.stat}>
+            <span>{activeCount}</span>
+            <small>Ativos</small>
+          </div>
+          <div className={styles.stat}>
+            <span>{inactiveCount}</span>
+            <small>Inativos</small>
+          </div>
+          <div className={styles.stat}>
+            <span>{availability.length}</span>
+            <small>Total</small>
+          </div>
         </div>
       </Card>
 
-      {(error || message) && (
-        <p className={error ? styles.error : styles.success}>{error ?? message}</p>
-      )}
-
-      <div className={styles.grid}>
-        <Card className={styles.formCard}>
-          <h3 className={styles.cardTitle}>Nova disponibilidade</h3>
-          <div className={styles.formGrid}>
-            <Select
-              label="Dia"
-              value={weekday}
-              onChange={(event) => { setWeekday(event.target.value); clearFeedback() }}
-              options={WEEKDAYS}
-            />
-            <Select
-              label="Tipo"
-              value={appointmentType}
-              onChange={(event) => { setAppointmentType(event.target.value); clearFeedback() }}
-              options={APPOINTMENT_TYPES}
-            />
-            <Input
-              label="Início"
-              type="time"
-              value={startTime}
-              onChange={(event) => { setStartTime(event.target.value); clearFeedback() }}
-            />
-            <Input
-              label="Fim"
-              type="time"
-              value={endTime}
-              onChange={(event) => { setEndTime(event.target.value); clearFeedback() }}
-            />
-            <div className={styles.fullRow}>
-              <Select
-                label="Intervalo"
-                value={slotMinutes}
-                onChange={(event) => { setSlotMinutes(event.target.value); clearFeedback() }}
-                options={SLOT_OPTIONS}
-              />
-            </div>
+      <Card className={styles.listCard}>
+        <header className={styles.listHeader}>
+          <div>
+            <h2>Horários cadastrados</h2>
+            <p>Blocos semanais usados para gerar slots de agendamento.</p>
           </div>
-          <div className={styles.formActions}>
-            <Button onClick={handleCreateAvailability} disabled={isSaving || !doctorId}>
-              {isSaving ? "Salvando..." : "Criar disponibilidade"}
+        </header>
+
+        {isBusy ? (
+          <p className={styles.empty}>Carregando disponibilidade...</p>
+        ) : !doctorId ? (
+          <p className={styles.empty}>Médico não encontrado na API de doctors.</p>
+        ) : availability.length === 0 ? (
+          <div className={styles.empty}>
+            <strong>Nenhuma disponibilidade cadastrada</strong>
+            <span>Crie o primeiro bloco de atendimento para este médico.</span>
+            <Button icon={<PlusIcon />} onClick={openCreateModal}>
+              Nova disponibilidade
             </Button>
           </div>
-        </Card>
-
-        <Card className={styles.listCard}>
-          <h3 className={styles.cardTitle}>Horários cadastrados</h3>
-          {isBusy ? (
-            <p className={styles.empty}>Carregando...</p>
-          ) : !doctorId ? (
-            <p className={styles.empty}>Médico não encontrado na API de doctors.</p>
-          ) : availability.length === 0 ? (
-            <p className={styles.empty}>Nenhuma disponibilidade cadastrada.</p>
-          ) : (
-            <div className={styles.rows}>
-              {availability.map((row) => (
-                <div key={row.id} className={`${styles.row} ${!row.active ? styles.rowInactive : ""}`}>
-                  <div className={styles.rowMain}>
-                    <span className={row.active ? styles.activeDot : styles.inactiveDot} />
-                    <div>
-                      <p className={styles.rowTitle}>{WEEKDAYS[row.weekday]?.label ?? "Dia"}</p>
-                      <p className={styles.rowSub}>
-                        {formatTime(row.startTime)} - {formatTime(row.endTime)} · {row.slotMinutes} min · {row.appointmentType}
-                      </p>
-                    </div>
+        ) : (
+          <ul className={styles.rows}>
+            {availability.map((row) => (
+              <li key={row.id} className={`${styles.row} ${!row.active ? styles.rowInactive : ""}`}>
+                <div className={styles.rowMain}>
+                  <div className={styles.rowWhen}>
+                    <strong>{WEEKDAYS[row.weekday]?.label ?? "Dia"}</strong>
+                    <span>{formatTime(row.startTime)} – {formatTime(row.endTime)}</span>
                   </div>
-                  <div className={styles.actions}>
-                    <Button size="sm" variant="ghost" onClick={() => handleToggleAvailability(row)}>
-                      {row.active ? "Desativar" : "Ativar"}
-                    </Button>
-                    <Button size="sm" variant="danger" onClick={() => handleDeleteAvailability(row)}>
-                      Excluir
-                    </Button>
+                  <div className={styles.rowInfo}>
+                    <p>{formatTypeLabel(row.appointmentType)}</p>
+                    <span>Intervalo de {row.slotMinutes} min</span>
+                  </div>
+                  <div className={styles.rowAside}>
+                    <Badge>{row.active ? "Active" : "Inactive"}</Badge>
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </Card>
-      </div>
+                <div className={styles.rowActions}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void handleToggleAvailability(row)}
+                  >
+                    {row.active ? "Desativar" : "Ativar"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className={styles.deleteBtn}
+                    icon={<TrashIcon />}
+                    onClick={() => setDeleteTarget(row)}
+                  >
+                    Excluir
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
+      <Modal
+        isOpen={createModalOpen}
+        onClose={closeCreateModal}
+        title="Nova disponibilidade"
+        subtitle={titleName ? `Para ${titleName}` : undefined}
+        size="md"
+        footer={
+          <>
+            <Button variant="ghost" onClick={closeCreateModal} disabled={isSaving}>
+              Cancelar
+            </Button>
+            <Button onClick={() => void handleCreateAvailability()} disabled={isSaving || !doctorId} loading={isSaving}>
+              {isSaving ? "Salvando..." : "Criar disponibilidade"}
+            </Button>
+          </>
+        }
+      >
+        <div className={styles.formGrid}>
+          <Select
+            label="Dia da semana"
+            value={weekday}
+            onChange={(event) => { setWeekday(event.target.value); clearFeedback() }}
+            options={WEEKDAYS}
+          />
+          <Select
+            label="Tipo de atendimento"
+            value={appointmentType}
+            onChange={(event) => { setAppointmentType(event.target.value); clearFeedback() }}
+            options={APPOINTMENT_TYPES}
+          />
+          <Input
+            label="Horário inicial"
+            type="time"
+            value={startTime}
+            onChange={(event) => { setStartTime(event.target.value); clearFeedback() }}
+          />
+          <Input
+            label="Horário final"
+            type="time"
+            value={endTime}
+            onChange={(event) => { setEndTime(event.target.value); clearFeedback() }}
+          />
+          <div className={styles.fullRow}>
+            <Select
+              label="Duração de cada slot"
+              value={slotMinutes}
+              onChange={(event) => { setSlotMinutes(event.target.value); clearFeedback() }}
+              options={SLOT_OPTIONS}
+            />
+          </div>
+        </div>
+      </Modal>
+
+      <ConfirmDialog
+        isOpen={Boolean(deleteTarget)}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (deleteTarget) void handleDeleteAvailability(deleteTarget)
+        }}
+        title="Excluir disponibilidade"
+        message={
+          deleteTarget
+            ? `Remover ${WEEKDAYS[deleteTarget.weekday]?.label ?? "este dia"}, ${formatTime(deleteTarget.startTime)} – ${formatTime(deleteTarget.endTime)}?`
+            : "Remover esta disponibilidade?"
+        }
+        confirmLabel="Excluir"
+        variant="danger"
+      />
     </div>
   )
 }

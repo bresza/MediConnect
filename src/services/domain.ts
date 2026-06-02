@@ -1,4 +1,4 @@
-import { apiRequest, ApiError, getApiUserId } from "./api"
+import { apiRequest, ApiError, getApiToken, getApiUserId } from "./api"
 import { formatSpecialtyLabel } from "../utils"
 import type {
   MedicalRecord, Prescription, Report, ReportStatus,
@@ -36,11 +36,10 @@ interface ApiReport {
 }
 
 function statusToFrontend(s?: string): ReportStatus {
+  const normalized = s?.trim().toLowerCase()
   // "delivered" e o valor canonico do enum atual; demais nomes ficam como fallback de leitura.
-  if (s === "delivered") return "Finalized"
-  if (s === "completed") return "Finalized"
-  if (s === "finalized") return "Finalized"
-  if (s === "sent")      return "Sent"
+  if (normalized === "delivered" || normalized === "completed" || normalized === "finalized") return "Finalized"
+  if (normalized === "sent") return "Sent"
   return "Draft"
 }
 function statusToApi(s: ReportStatus): string {
@@ -1137,6 +1136,14 @@ function toE164BR(phone: string): string {
   return `+55${digits}`
 }
 
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+}
+
+function isLocalAuthSession(): boolean {
+  return getApiToken()?.startsWith("local-") ?? false
+}
+
 /**
  * Envia SMS via Edge Function `/functions/v1/send-sms` do Supabase.
  *
@@ -1158,8 +1165,9 @@ interface SendSmsResponse {
   message?: string
 }
 
-function normalizeMessageStatus(status?: string): Message["status"] {
-  const normalized = status?.trim().toLowerCase()
+function normalizeMessageStatus(response: SendSmsResponse): Message["status"] {
+  if (response.success === true || response.message_sid || response.sid) return "Delivered"
+  const normalized = response.status?.trim().toLowerCase()
   if (normalized === "delivered" || normalized === "sent" || normalized === "success") return "Delivered"
   if (normalized === "failed" || normalized === "error") return "Failed"
   return "Pending"
@@ -1168,32 +1176,35 @@ function normalizeMessageStatus(status?: string): Message["status"] {
 export async function sendMessage(
   d: Omit<Message, "id"> & { phoneNumber: string },
 ): Promise<Message> {
+  if (isLocalAuthSession()) {
+    throw new Error(
+      "Envio de SMS exige login real no Supabase. Contas de desenvolvimento local (token local-dev) não autenticam na Edge Function send-sms.",
+    )
+  }
+  if (!getApiToken()) {
+    throw new Error("Sessão não autenticada. Faça login novamente para enviar SMS.")
+  }
+
   const message = d.content.trim()
   const phone_number = toE164BR(d.phoneNumber)
   if (!message) throw new Error("Mensagem não pode ser vazia.")
   if (!phone_number) throw new Error("Telefone inválido. Informe DDD + número.")
+  if (phone_number.length < 13) {
+    throw new Error("Telefone incompleto. Use DDD + número com 9 dígitos (ex.: 11999999999).")
+  }
 
-  const body: {
-    message: string
-    phone_number: string
-    patient_id?: string
-    channel?: string
-    sent_by?: string
-  } = {
+  const body: { message: string; phone_number: string; patient_id?: string } = {
     message,
     phone_number,
-    channel: "SMS",
-    sent_by: getApiUserId() ?? undefined,
   }
   const patientId = d.patientId == null ? "" : String(d.patientId).trim()
-  if (patientId) body.patient_id = patientId
+  if (patientId && isUuid(patientId)) body.patient_id = patientId
 
   let response: SendSmsResponse | undefined
   try {
     response = await apiRequest<SendSmsResponse>("/functions/v1/send-sms", {
       method: "POST",
       body,
-      logErrors: false,
     })
   } catch (err) {
     if (!(err instanceof ApiError) || err.status !== 404) throw err
@@ -1207,11 +1218,15 @@ export async function sendMessage(
     throw new Error(response.error ?? response.message ?? "Não foi possível enviar o SMS.")
   }
 
+  if (!response?.success && !response?.message_sid && !response?.sid && !response?.status) {
+    throw new Error("A API não confirmou o envio do SMS. Verifique Twilio e secrets no Supabase.")
+  }
+
   return {
     ...d,
     id: Number(response?.id) || Date.now(),
     channel: "SMS",
-    status: normalizeMessageStatus(response?.status),
+    status: normalizeMessageStatus(response ?? {}),
     sentBy: response?.message_sid ?? response?.sid ?? d.sentBy,
   }
 }
