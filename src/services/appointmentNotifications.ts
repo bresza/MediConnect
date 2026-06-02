@@ -1,5 +1,6 @@
 import { getPatientById } from "./patients"
 import { sendOutboundMessage } from "./messaging"
+import { resolveOutboundChannel } from "./messagingChannel"
 import { formatAppointmentType, formatDate } from "../utils"
 import type { Appointment, CommunicationChannel } from "../types"
 
@@ -84,14 +85,9 @@ async function resolvePatientContact(appointment: Appointment): Promise<PatientC
     const phone = patient.phone?.trim()
     if (!phone) return null
 
-    const channel = appointment.preferredChannel
-      ?? patient.preferredChannel
-      ?? "WhatsApp"
-
-    if (channel !== "WhatsApp" && channel !== "SMS") {
-      return { phone, channel: "WhatsApp" }
-    }
-
+    const channel = resolveOutboundChannel(
+      appointment.preferredChannel ?? patient.preferredChannel,
+    )
     return { phone, channel }
   } catch {
     return null
@@ -115,7 +111,7 @@ async function dispatchNotification(
       patientId: appointment.patientId,
       appointmentId: appointment.id,
     },
-    { fallbackSms: contact.channel === "WhatsApp" },
+    { fallbackSms: false },
   )
 }
 

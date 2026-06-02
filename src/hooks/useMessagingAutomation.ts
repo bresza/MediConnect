@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react"
 import { runAppointmentReminders } from "../services/appointmentReminders"
 import { processInboundWhatsAppReplies } from "../services/whatsappInbound"
+import { isWhatsAppOutboundEnabled } from "../services/messagingChannel"
 import { isEdgeAutomationEnabled, isInboundRestEnabled } from "../services/schemaSafe"
 import type { Appointment, Patient } from "../types"
 
@@ -50,7 +51,7 @@ export function useMessagingAutomation({
         const parts: string[] = []
         if (localReminders.sent > 0) parts.push(`${localReminders.sent} lembrete(s)`)
 
-        if (isEdgeAutomationEnabled() || isInboundRestEnabled()) {
+        if (isWhatsAppOutboundEnabled() && (isEdgeAutomationEnabled() || isInboundRestEnabled())) {
           const inbound = await processInboundWhatsAppReplies(appointments, patients, clinicName)
           if (inbound.replied > 0) parts.push(`${inbound.replied} resposta(s) WhatsApp`)
         }
@@ -67,7 +68,7 @@ export function useMessagingAutomation({
     const reminderTimer = window.setInterval(() => void tick(), REMINDER_INTERVAL_MS)
 
     let inboundTimer: number | undefined
-    if (isEdgeAutomationEnabled() || isInboundRestEnabled()) {
+    if (isWhatsAppOutboundEnabled() && (isEdgeAutomationEnabled() || isInboundRestEnabled())) {
       inboundTimer = window.setInterval(() => {
         if (cancelled) return
         void processInboundWhatsAppReplies(appointments, patients, clinicName).then((inbound) => {

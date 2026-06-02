@@ -6,6 +6,7 @@ import {
   isAppointmentSlotBusy,
 } from "./appointments"
 import { createReport, sendMessage } from "./domain"
+import { isWhatsAppOutboundEnabled, resolveOutboundChannel } from "./messagingChannel"
 import { generateReportContentWithAI } from "./reportAI"
 import { runAppointmentReminders } from "./appointmentReminders"
 import { processInboundWhatsAppReplies } from "./whatsappInbound"
@@ -367,18 +368,19 @@ export function createAppAIActions(deps: CreateAppAIActionsDeps): AppAIActions {
           if (!canDo(deps.role, "send_messages")) return { ok: false, message: "Sem permissão para enviar mensagens." }
           const patient = findPatient(deps.patients, String(params.patientName ?? params.patientId ?? ""))
           if (!patient?.phone) return { ok: false, message: "Paciente sem telefone." }
-          const channel = (String(params.channel ?? patient.preferredChannel ?? "WhatsApp") as CommunicationChannel)
+          const channel = resolveOutboundChannel(
+            String(params.channel ?? patient.preferredChannel ?? "") as CommunicationChannel,
+          )
           await sendMessage({
             patientId: patient.id,
             patientName: patient.name,
             phoneNumber: patient.phone,
-            channel: channel === "SMS" ? "SMS" : "WhatsApp",
+            channel,
             content: String(params.message ?? ""),
             status: "Pending",
             date: new Date().toISOString().slice(0, 10),
-            fallbackSms: channel !== "SMS",
           })
-          return { ok: true, message: `Mensagem enviada para ${patient.name} via ${channel}.` }
+          return { ok: true, message: `SMS enviado para ${patient.name}.` }
         }
 
         case "create_report": {
@@ -468,6 +470,9 @@ export function createAppAIActions(deps: CreateAppAIActionsDeps): AppAIActions {
         }
 
         case "process_whatsapp": {
+          if (!isWhatsAppOutboundEnabled()) {
+            return { ok: false, message: "WhatsApp está desativado. Use send_message com canal SMS." }
+          }
           const result = await processInboundWhatsAppReplies(deps.appointments, deps.patients, deps.clinicName)
           return { ok: true, message: `${result.replied} resposta(s) automática(s) no WhatsApp.` }
         }

@@ -2,6 +2,7 @@ import { apiRequest } from "./api"
 import { isEdgeAutomationEnabled } from "./schemaSafe"
 import { getPatientById } from "./patients"
 import { sendOutboundMessage } from "./messaging"
+import { resolveOutboundChannel } from "./messagingChannel"
 import { formatAppointmentType, formatDate } from "../utils"
 import type { Appointment, CommunicationFrequency, Patient } from "../types"
 
@@ -119,7 +120,7 @@ export async function runAppointmentReminders(
     }
 
     const allowedRules = rulesForFrequency(patient.communicationFrequency)
-    const channel = patient.preferredChannel === "SMS" ? "SMS" : "WhatsApp"
+    const channel = resolveOutboundChannel(patient.preferredChannel)
 
     for (const rule of REMINDER_RULES) {
       result.checked += 1
@@ -148,7 +149,7 @@ export async function runAppointmentReminders(
             patientId: patient.id,
             appointmentId: appointment.id,
           },
-          { fallbackSms: channel === "WhatsApp" },
+          { fallbackSms: false },
         )
         sentKeys.add(storageKey)
         result.sent += 1

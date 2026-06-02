@@ -161,7 +161,7 @@ const EMPTY: FormState = {
   healthInsuranceExpiry:"",isNewbornOnInsurance:false,legacyCode:"",
   zipCode:"",street:"",addressNumber:"",complement:"",neighborhood:"",
   city:"",state:"",reference:"",
-  phone:"",landline:"",alternativePhone:"",email:"",preferredChannel:"",
+  phone:"",landline:"",alternativePhone:"",email:"",preferredChannel:"SMS",
   communicationFrequency:"",optIn:false,
   motherName:"",motherOccupation:"",fatherName:"",fatherOccupation:"",
   guardianName:"",guardianCpf:"",spouseName:"",

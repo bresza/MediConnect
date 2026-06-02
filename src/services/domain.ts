@@ -6,6 +6,7 @@ import type {
   Message, StaffMember, StaffRole, StaffStatus,
   MedicalRecordStatus, PrescriptionMedication, PrescriptionType,
 } from "../types"
+import { appendMessageHistory, loadMessageHistory } from "./messageHistory"
 import { sendOutboundMessage } from "./messaging"
 
 // ─────────────────────────────────────────────────────────────────
@@ -1173,8 +1174,10 @@ export async function createPrescription(data: Omit<Prescription, "id">): Promis
 }
 
 // ─── MENSAGENS (SMS / WhatsApp via Edge Functions) ────────────────
-// Histórico em memória da sessão até existir tabela `messages` na API.
-export async function getMessages(): Promise<Message[]> { return [] }
+// Histórico local no navegador até a API expor tabela/endpoint de mensagens.
+export async function getMessages(): Promise<Message[]> {
+  return loadMessageHistory()
+}
 
 function deliveryToMessageStatus(status: "sent" | "pending" | "failed"): Message["status"] {
   if (status === "sent") return "Delivered"
@@ -1209,13 +1212,15 @@ export async function sendMessage(
     { fallbackSms: d.fallbackSms },
   )
 
-  return {
+  const saved: Message = {
     ...d,
     id: Date.now(),
     channel: channelLabel(result.channel),
     status: deliveryToMessageStatus(result.status),
     sentBy: result.messageId ?? d.sentBy ?? getApiUserId() ?? undefined,
   }
+  appendMessageHistory(saved)
+  return saved
 }
 
 interface PatientLookup {

@@ -1,5 +1,6 @@
 import { ApiError, apiRequest, getApiToken } from "./api"
 import { getMessages } from "./domain"
+import { isWhatsAppOutboundEnabled, resolveOutboundChannel } from "./messagingChannel"
 import type { CommunicationChannel } from "../types"
 
 /** Telefone em E.164 (+55DDDNUMERO). */
@@ -128,14 +129,22 @@ export async function sendSms(input: SendSmsInput): Promise<SendResult> {
   if (res.error || res.success === false) {
     throw new Error(res.error ?? res.message ?? "Falha ao enviar SMS.")
   }
+  const messageId = res.message_sid ?? res.sid ?? (res.id != null ? String(res.id) : "")
+  const accepted = res.success === true || Boolean(messageId)
+  if (!accepted) {
+    throw new Error(res.message ?? "A API não confirmou o envio do SMS.")
+  }
   return {
     channel: "sms",
-    status: res.success === true ? "sent" : "pending",
-    messageId: res.message_sid ?? res.sid ?? String(res.id ?? ""),
+    status: messageId ? "sent" : "pending",
+    messageId,
   }
 }
 
 export async function sendWhatsApp(input: SendWhatsAppInput): Promise<SendResult> {
+  if (!isWhatsAppOutboundEnabled()) {
+    return sendSms(input)
+  }
   const { message, phone_number } = validateOutbound(input)
   const res = await callEdgeFunction<SendWhatsAppApiResponse>("/functions/v1/send-whatsapp", {
     message,
@@ -159,7 +168,8 @@ export async function sendOutboundMessage(
   input: OutboundMessageInput,
   options?: { fallbackSms?: boolean },
 ): Promise<SendResult> {
-  if (channel === "WhatsApp") {
+  const effective = resolveOutboundChannel(channel)
+  if (effective === "WhatsApp") {
     return sendWhatsApp({ ...input, fallbackSms: options?.fallbackSms })
   }
   return sendSms(input)

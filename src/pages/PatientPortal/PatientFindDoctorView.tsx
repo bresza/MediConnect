@@ -387,7 +387,7 @@ export function PatientFindDoctorView({
         type: "consultation",
         status: "scheduled",
         observations: observations.trim() || undefined,
-        preferredChannel: "WhatsApp",
+        preferredChannel: "SMS",
       })
       closeBooking()
       onSuccess?.()

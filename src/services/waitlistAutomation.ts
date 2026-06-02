@@ -1,6 +1,7 @@
 import type { Appointment, WaitlistEntry } from "../types"
 import { createAppointment } from "./appointments"
 import { sendOutboundMessage } from "./messaging"
+import { resolveOutboundChannel } from "./messagingChannel"
 import { getPatientById } from "./patients"
 import {
   enrollPatientInWaitlist,
@@ -29,11 +30,11 @@ async function sendPatientNotification(
     const patient = await getPatientById(patientId)
     const phone = patient?.phone?.trim()
     if (!phone || patient?.optIn === false) return false
-    const preferred = patient?.preferredChannel === "SMS" ? "SMS" : "WhatsApp"
+    const channel = resolveOutboundChannel(patient?.preferredChannel)
     await sendOutboundMessage(
-      preferred,
+      channel,
       { phoneNumber: phone, message: content, patientId },
-      { fallbackSms: preferred === "WhatsApp" },
+      { fallbackSms: false },
     )
     return true
   } catch {
@@ -51,7 +52,7 @@ export async function notifyWaitlistEnrollment(
   const firstName = patientName.trim().split(/\s+/)[0] || patientName
   const target = specialty ? `${doctorName} (${specialty})` : doctorName
   const priorityLabel = WAITLIST_COLOR_LABEL[priorityColor]
-  const sms = `Olá ${firstName}, você entrou na fila de espera para consulta com ${target}. Prioridade: ${priorityLabel}. Avisaremos por WhatsApp ou SMS quando surgir vaga.`
+  const sms = `Olá ${firstName}, você entrou na fila de espera para consulta com ${target}. Prioridade: ${priorityLabel}. Avisaremos por SMS quando surgir vaga.`
   await sendPatientNotification(patientId, sms)
 }
 
