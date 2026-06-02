@@ -8,16 +8,27 @@ export {
   onlyDigits,
 } from "./masks"
 export {
+  isRemovedPatientPlaceholder,
+  REMOVED_PATIENT_CPF,
+  REMOVED_PATIENT_EMAIL,
+  REMOVED_PATIENT_NAME,
+  withoutRemovedPatientPlaceholders,
+} from "./removedPatient"
+export {
   formatCpfBR as formatCpf,
   formatPhoneBR as formatPhone,
   formatZipCodeBR as formatZipCode,
 } from "./masks"
 export {
   canPatientManageAppointment,
+  enrichPatientsWithVisits,
   getPatientDisplayStatus,
+  getPatientLastVisitFromAppointments,
   isAppointmentFuture,
+  isAppointmentPast,
   patientAppointmentStatusLabel,
   showInPatientScheduledTab,
+  showInPatientAbsentTab,
   todayDateStr,
 } from "./patientAppointments"
 
@@ -123,8 +134,17 @@ export function sortByName<T>(items: T[], getName: (item: T) => string | undefin
   })
 }
 
+/** Interpreta YYYY-MM-DD como data local (evita deslocamento UTC→dia anterior). */
+export function parseLocalDate(dateStr: string): Date {
+  const match = dateStr.trim().match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (match) {
+    return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+  }
+  return new Date(dateStr)
+}
+
 export function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString("pt-BR")
+  return parseLocalDate(dateStr).toLocaleDateString("pt-BR")
 }
 
 const APPOINTMENT_TYPE_LABELS: Record<string, string> = {

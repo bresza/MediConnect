@@ -1,4 +1,5 @@
 import { ApiError, apiRequest, getApiUserId } from "./api"
+import { isRemovedPatientPlaceholder, REMOVED_PATIENT_CPF, REMOVED_PATIENT_EMAIL, REMOVED_PATIENT_NAME } from "../utils/removedPatient"
 import { isDataUrl, isRemotePhotoUrl, resolvePatientPhotoUrl, attachPatientPhotos, attachPatientPhoto, deletePatientPhotoFromStorage } from "./patientPhoto"
 import { rememberPatientLink } from "./patientLinks"
 import type {
@@ -437,13 +438,13 @@ async function deletePatientAuthUser(userId?: string): Promise<boolean> {
 }
 
 async function getDeletedPatientPlaceholderId(): Promise<string> {
-  const email = "paciente.removido@mediconnect.local"
-  const cpf = "52998224725"
+  const email = REMOVED_PATIENT_EMAIL
+  const cpf = REMOVED_PATIENT_CPF
   const existing = await findPatientByEmail(email) ?? await findPatientByCpf(cpf)
   if (existing?.id) return existing.id
 
   const payload = compactPayload({
-    full_name: "Paciente removido",
+    full_name: REMOVED_PATIENT_NAME,
     cpf,
     email,
     phone_mobile: "00000000000",
@@ -464,7 +465,7 @@ async function getDeletedPatientPlaceholderId(): Promise<string> {
       method: "POST",
       headers: { Prefer: "return=representation" },
       body: {
-        full_name: "Paciente removido",
+        full_name: REMOVED_PATIENT_NAME,
         cpf,
         email,
         phone_mobile: "00000000000",
@@ -576,11 +577,13 @@ export async function getPatients(): Promise<Patient[]> {
       throw err
     }
   }
-  const patients = (data ?? []).map((row) => {
-    const patient = apiToPatient(row)
-    rememberPatientLink({ patientId: patient.id, name: patient.name, email: patient.email, cpf: patient.cpf })
-    return patient
-  })
+  const patients = (data ?? [])
+    .map((row) => {
+      const patient = apiToPatient(row)
+      rememberPatientLink({ patientId: patient.id, name: patient.name, email: patient.email, cpf: patient.cpf })
+      return patient
+    })
+    .filter((p) => !isRemovedPatientPlaceholder(p))
   return attachPatientPhotos(patients)
 }
 
@@ -604,11 +607,13 @@ export async function getPatientsForReports(): Promise<Patient[]> {
     "/rest/v1/patients?select=id,user_id,full_name,cpf,email,phone_mobile,birth_date&order=full_name.asc",
     { logErrors: false },
   )
-  return (data ?? []).map((row) => {
-    const patient = apiToPatient(row)
-    rememberPatientLink({ patientId: patient.id, name: patient.name, email: patient.email, cpf: patient.cpf })
-    return patient
-  })
+  return (data ?? [])
+    .map((row) => {
+      const patient = apiToPatient(row)
+      rememberPatientLink({ patientId: patient.id, name: patient.name, email: patient.email, cpf: patient.cpf })
+      return patient
+    })
+    .filter((p) => !isRemovedPatientPlaceholder(p))
 }
 
 export async function createPatient(
@@ -703,6 +708,9 @@ async function persistPatientPhoto(patient: Patient): Promise<Patient> {
 }
 
 export async function updatePatient(patient: Patient): Promise<Patient> {
+  if (isRemovedPatientPlaceholder(patient)) {
+    throw new Error("Paciente removido não pode ser editado.")
+  }
   const linkedProfile = patient.userId ? null : await findProfileByEmail(patient.email)
   const patientWithUser = linkedProfile?.id ? { ...patient, userId: linkedProfile.id } : patient
   const patientWithPhoto = await persistPatientPhoto(patientWithUser)
@@ -848,6 +856,9 @@ async function deletePatientRecord(id: string, logErrors = true): Promise<void> 
 
 export async function deletePatient(id: string): Promise<void> {
   const patient = await findPatientById(id).catch(() => null)
+  if (patient && isRemovedPatientPlaceholder(apiToPatient(patient))) {
+    throw new Error("Este registro técnico não pode ser removido.")
+  }
   const userId = patient?.user_id ?? ""
 
   if (userId) {

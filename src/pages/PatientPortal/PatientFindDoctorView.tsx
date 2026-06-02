@@ -13,7 +13,7 @@ import {
 } from "../../services/availability"
 import { Avatar } from "../../components/ui/Avatar/Avatar"
 import { Button } from "../../components/ui/Button/Button"
-import { Drawer } from "../../components/ui/Drawer/Drawer"
+import { Modal } from "../../components/ui/Modal/Modal"
 import {
   formatCrm,
   formatSpecialtyLabel,
@@ -93,6 +93,13 @@ function firstBookableDay(today: string, schedule: DoctorAvailability[]): string
   }
   return null
 }
+
+const CalendarIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+    <rect x="3" y="4" width="18" height="18" rx="2" />
+    <path d="M16 2v4M8 2v4M3 10h18" />
+  </svg>
+)
 
 export function PatientFindDoctorView({
   patient,
@@ -322,8 +329,9 @@ export function PatientFindDoctorView({
     try {
       const slots = await getAvailableSlots(doctorId, nextDate, APPOINTMENT_TYPE, SLOT_OPTIONS)
       if (slotRequestRef.current !== requestId) return
-      setAvailableSlots(slots)
-      if (slots.length === 0) {
+      const futureSlots = slots.filter((slot) => !isPastDateTime(nextDate, slot))
+      setAvailableSlots(futureSlots)
+      if (futureSlots.length === 0) {
         setSlotsError("Nenhum horário livre neste dia. Escolha outra data.")
       }
     } catch (err) {
@@ -466,12 +474,26 @@ export function PatientFindDoctorView({
         <div className={styles.alert} role="alert">{doctorsError}</div>
       )}
 
+      {!doctorsLoading && !doctorsError && filteredDoctors.length > 0 && (
+        <div className={styles.howToBook} aria-label="Como agendar uma consulta">
+          <p className={styles.howToBookTitle}>Como agendar</p>
+          <ol className={styles.howToBookSteps}>
+            <li>Escolha o médico na lista abaixo</li>
+            <li>Clique em <strong>Agendar consulta</strong></li>
+            <li>Selecione data, horário e confirme</li>
+          </ol>
+        </div>
+      )}
+
       <div className={styles.resultsHead}>
         <p>
           {doctorsLoading
             ? "Carregando..."
             : `${filteredDoctors.length} especialista${filteredDoctors.length !== 1 ? "s" : ""} disponíve${filteredDoctors.length !== 1 ? "is" : "l"}`}
         </p>
+        {!doctorsLoading && filteredDoctors.length > 0 && (
+          <span className={styles.resultsHint}>Use o botão verde em cada card para agendar</span>
+        )}
       </div>
 
       <div className={styles.results}>
@@ -503,8 +525,14 @@ export function PatientFindDoctorView({
                 </div>
               </div>
               <div className={styles.doctorCardAction}>
-                <Button onClick={() => openBooking(doctor)}>
-                  Ver horários
+                <span className={styles.actionLabel}>Agendamento</span>
+                <Button
+                  onClick={() => openBooking(doctor)}
+                  icon={<CalendarIcon />}
+                  className={styles.scheduleBtn}
+                  title={`Agendar consulta com ${doctor.name}`}
+                >
+                  Agendar consulta
                 </Button>
               </div>
             </article>
@@ -512,34 +540,47 @@ export function PatientFindDoctorView({
         )}
       </div>
 
-      <Drawer
+      <Modal
         isOpen={Boolean(bookingDoctor)}
         onClose={closeBooking}
-        title="Escolha data e horário"
+        title="Agendar consulta"
         subtitle={bookingDoctor ? `${bookingDoctor.name} · ${doctorSpecialty(bookingDoctor)}` : undefined}
+        size="lg"
+        topLayer
         footer={
-          <div className={styles.drawerFooter}>
-            {date && time && bookingDoctor && (
-              <p className={styles.drawerSummary}>
-                {selectedDayLabel?.weekday}, {selectedDayLabel?.day} {selectedDayLabel?.month} às {time}
-                {" · "}{bookingDoctor.name}
+          <div className={styles.modalFooter}>
+            {date && time && bookingDoctor ? (
+              <div className={styles.bookingSummary}>
+                <span className={styles.bookingSummaryLabel}>Resumo do agendamento</span>
+                <strong>
+                  {selectedDayLabel?.weekday}, {selectedDayLabel?.day} {selectedDayLabel?.month} às {time}
+                </strong>
+                <span>{bookingDoctor.name} · {doctorSpecialty(bookingDoctor)}</span>
+              </div>
+            ) : (
+              <p className={styles.bookingSummaryHint}>
+                Selecione um dia e um horário para confirmar o agendamento.
               </p>
             )}
+            <Button
+              fullWidth
+              className={styles.confirmBtn}
+              onClick={() => void handleSubmit()}
+              disabled={scheduleLoading || waitlistSaving || !date || !time}
+              loading={saving}
+            >
+              {saving ? "Confirmando..." : "Confirmar agendamento"}
+            </Button>
             {canOfferWaitlist && !alreadyOnWaitlist && (
               <Button
                 variant="outline"
+                fullWidth
                 onClick={() => void handleJoinWaitlist()}
                 disabled={waitlistSaving || saving}
               >
                 {waitlistSaving ? "Entrando na fila..." : "Entrar na fila de espera"}
               </Button>
             )}
-            <Button
-              onClick={() => void handleSubmit()}
-              disabled={saving || scheduleLoading || waitlistSaving || !date || !time}
-            >
-              {saving ? "Confirmando..." : "Confirmar agendamento"}
-            </Button>
           </div>
         }
       >
@@ -673,7 +714,7 @@ export function PatientFindDoctorView({
             </section>
           </div>
         )}
-      </Drawer>
+      </Modal>
     </div>
   )
 }

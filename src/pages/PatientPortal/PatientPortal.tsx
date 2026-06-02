@@ -13,16 +13,15 @@ import { Card } from "../../components/ui/Card/Card"
 import { Badge } from "../../components/ui/Badge/Badge"
 import { Avatar } from "../../components/ui/Avatar/Avatar"
 import { Button } from "../../components/ui/Button/Button"
-import { Modal } from "../../components/ui/Modal/Modal"
 import { PatientRescheduleModal } from "../../components/ui/PatientReschedule/PatientRescheduleModal"
 import { PatientConsultationsView } from "./PatientConsultationsView"
 import { PatientFindDoctorView } from "./PatientFindDoctorView"
 import { PatientBillingView } from "./PatientBillingView"
+import { PatientReportsView } from "./PatientReportsView"
 import { PatientDashboard } from "./PatientDashboard"
 import { PatientProfileSettings } from "./PatientProfileSettings"
 import { SECTION_META, type PortalSection } from "./patientPortalSections"
-import { RichTextEditor } from "../../components/ui/RichTextEditor/RichTextEditor"
-import { formatAppointmentType, formatCpfBR, formatDate } from "../../utils"
+import { formatAppointmentType, formatCpfBR, formatDate, patientAppointmentStatusLabel } from "../../utils"
 import { getPatientDisplayStatus, showInPatientScheduledTab } from "../../utils/patientAppointments"
 import type { Appointment, FinancialRecord, Patient, Prescription, Report, User } from "../../types"
 import styles from "./PatientPortal.module.css"
@@ -38,22 +37,6 @@ interface PatientPortalProps {
   onBookAppointment?: (appointment: Omit<Appointment, "id">) => Promise<void>
   onCancelAppointment?: (appointment: Appointment, reason: string) => Promise<void>
   onUpdateAppointment?: (appointment: Appointment) => Promise<void>
-}
-
-const APPOINTMENT_STATUS: Record<string, string> = {
-  scheduled: "Agendada",
-  confirmed: "Confirmada",
-  completed: "Concluída",
-  cancelled: "Cancelada",
-  absent: "Ausente",
-  pending: "Pendente",
-  requested: "Solicitada",
-}
-
-const REPORT_STATUS: Record<string, string> = {
-  Draft: "Rascunho",
-  Finalized: "Finalizado",
-  Sent: "Enviado",
 }
 
 function isFutureAppointment(appointment: Appointment): boolean {
@@ -97,7 +80,6 @@ export function PatientPortal({
   const [resolvedPatient, setResolvedPatient] = useState<Patient | null>(patient)
   const [reports, setReports] = useState<Report[]>([])
   const [billingRecords, setBillingRecords] = useState<FinancialRecord[]>([])
-  const [selectedReport, setSelectedReport] = useState<Report | null>(null)
   const [rescheduleTarget, setRescheduleTarget] = useState<Appointment | null>(null)
   const [reportsLoading, setReportsLoading] = useState(true)
   const [billingLoading, setBillingLoading] = useState(true)
@@ -188,13 +170,19 @@ export function PatientPortal({
   const pendingBilling = billingRecords.filter((r) => r.status === "Pending" || r.status === "Overdue")
   const nextAppointment = portalAppointments
     .filter((a) => a.status !== "cancelled")
+    .filter((a) => getPatientDisplayStatus(a) !== "absent")
     .filter(isFutureAppointment)
     .sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`))[0]
 
+  const availableReports = useMemo(
+    () => reports.filter((r) => r.status === "Finalized" || r.status === "Sent"),
+    [reports],
+  )
+
   const navCounts: Partial<Record<PortalSection, number>> = {
-    consultations: scheduledConsultations.length,
+    consultations: consultations.length,
     exams: exams.length,
-    reports: reports.length,
+    reports: availableReports.length,
     prescriptions: portalPrescriptions.length,
     billing: pendingBilling.length,
   }
@@ -203,9 +191,9 @@ export function PatientPortal({
     onNavCountsChange?.(navCounts)
   }, [
     onNavCountsChange,
-    scheduledConsultations.length,
+    consultations.length,
     exams.length,
-    reports.length,
+    availableReports.length,
     portalPrescriptions.length,
     pendingBilling.length,
   ])
@@ -242,34 +230,36 @@ export function PatientPortal({
 
   return (
     <div className={styles.portal}>
-      <Card className={styles.heroCard}>
-        <div className={styles.heroMain}>
-          <Avatar
-            name={portalPatient.name}
-            photoUrl={portalPatient.photoUrl}
-            size="lg"
-          />
-          <div className={styles.heroText}>
-            <p className={styles.heroEyebrow}>Portal do paciente</p>
-            <h1>{portalPatient.socialName || portalPatient.name}</h1>
-            <span>{portalPatient.email || currentUser.email}</span>
-            {portalPatient.cpf && <span>CPF {formatCpfBR(portalPatient.cpf)}</span>}
+      {activeSection !== "profile" && (
+        <Card className={styles.heroCard}>
+          <div className={styles.heroMain}>
+            <Avatar
+              name={portalPatient.name}
+              photoUrl={portalPatient.photoUrl}
+              size="lg"
+            />
+            <div className={styles.heroText}>
+              <p className={styles.heroEyebrow}>Portal do paciente</p>
+              <h1>{portalPatient.socialName || portalPatient.name}</h1>
+              <span>{portalPatient.email || currentUser.email}</span>
+              {portalPatient.cpf && <span>CPF {formatCpfBR(portalPatient.cpf)}</span>}
+            </div>
           </div>
-        </div>
-        <div className={styles.heroAside}>
-          <div>
-            <span>Próxima consulta</span>
-            <strong>
-              {appointmentsLoading ? "..." : nextAppointment
-                ? `${formatDate(nextAppointment.date)} às ${nextAppointment.time}`
-                : "Sem agenda"}
-            </strong>
+          <div className={styles.heroAside}>
+            <div>
+              <span>Próxima consulta</span>
+              <strong>
+                {appointmentsLoading ? "..." : nextAppointment
+                  ? `${formatDate(nextAppointment.date)} às ${nextAppointment.time}`
+                  : "Sem agenda"}
+              </strong>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => onSectionChange("profile")}>
+              Configurar perfil
+            </Button>
           </div>
-          <Button variant="outline" size="sm" onClick={() => onSectionChange("profile")}>
-            Configurar perfil
-          </Button>
-        </div>
-      </Card>
+        </Card>
+      )}
 
       <div className={styles.mainArea}>
         {activeSection === "overview" && (
@@ -282,7 +272,6 @@ export function PatientPortal({
             pendingBilling={pendingBilling}
             appointmentsLoading={appointmentsLoading}
             onNavigate={onSectionChange}
-            onViewReport={setSelectedReport}
           />
         )}
 
@@ -313,7 +302,6 @@ export function PatientPortal({
                 embedded
                 appointments={consultations}
                 loading={appointmentsLoading}
-                statusLabels={APPOINTMENT_STATUS}
                 onBook={onBookAppointment ? () => onSectionChange("find-doctor") : undefined}
                 onReschedule={onUpdateAppointment ? setRescheduleTarget : undefined}
                 onCancel={onCancelAppointment}
@@ -331,7 +319,7 @@ export function PatientPortal({
                         <p>{formatAppointmentType(appointment.type)}</p>
                         <span>{formatDate(appointment.date)} às {appointment.time} com {appointment.doctorName}</span>
                       </div>
-                      <Badge>{getPatientDisplayStatus(appointment)}</Badge>
+                      <Badge>{patientAppointmentStatusLabel(getPatientDisplayStatus(appointment))}</Badge>
                     </div>
                   ))}
                 </div>
@@ -339,26 +327,7 @@ export function PatientPortal({
             )}
 
             {activeSection === "reports" && (
-              reportsLoading ? (
-                <EmptyBlock title="Carregando laudos..." text="Aguarde enquanto buscamos os documentos liberados." />
-              ) : reports.length === 0 ? (
-                <EmptyBlock title="Nenhum laudo disponível" text="Laudos finalizados pela equipe médica aparecerão nesta área." />
-              ) : (
-                <div className={styles.recordList}>
-                  {reports.map((report) => (
-                    <div key={report.id} className={styles.recordCard}>
-                      <div>
-                        <p>{report.type}</p>
-                        <span>{formatDate(report.date)} • {report.doctorName || "Equipe médica"}</span>
-                      </div>
-                      <div className={styles.recordActions}>
-                        <Button size="sm" variant="outline" onClick={() => setSelectedReport(report)}>Visualizar</Button>
-                        <Badge>{REPORT_STATUS[report.status] ?? report.status}</Badge>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )
+              <PatientReportsView reports={reports} loading={reportsLoading} />
             )}
 
             {activeSection === "prescriptions" && (
@@ -391,56 +360,6 @@ export function PatientPortal({
           </ContentPanel>
         )}
       </div>
-
-      <Modal
-        isOpen={Boolean(selectedReport)}
-        onClose={() => setSelectedReport(null)}
-        title={selectedReport?.type ?? "Laudo"}
-        subtitle={selectedReport ? `${formatDate(selectedReport.date)} • ${selectedReport.doctorName || "Equipe médica"}` : undefined}
-        size="lg"
-        footer={<Button variant="outline" onClick={() => setSelectedReport(null)}>Fechar</Button>}
-      >
-        {selectedReport && (
-          <div className={styles.reportViewer}>
-            <div className={styles.reportMeta}>
-              <div>
-                <span>Status</span>
-                <strong>{REPORT_STATUS[selectedReport.status] ?? selectedReport.status}</strong>
-              </div>
-              {selectedReport.cid10 && (
-                <div><span>CID-10</span><strong>{selectedReport.cid10}</strong></div>
-              )}
-              {selectedReport.orderNumber && (
-                <div><span>Pedido</span><strong>{selectedReport.orderNumber}</strong></div>
-              )}
-            </div>
-            {selectedReport.diagnosis && (
-              <section className={styles.reportSection}>
-                <h3>Diagnóstico</h3>
-                <p>{selectedReport.diagnosis}</p>
-              </section>
-            )}
-            <section className={styles.reportSection}>
-              <h3>Conteúdo do laudo</h3>
-              {(selectedReport.contentHtml || selectedReport.content) ? (
-                <RichTextEditor
-                  value={selectedReport.contentHtml || selectedReport.content || ""}
-                  onChange={() => {}}
-                  readOnly
-                />
-              ) : (
-                <p className={styles.reportEmpty}>Conteúdo não informado.</p>
-              )}
-            </section>
-            {selectedReport.conclusion && (
-              <section className={styles.reportSection}>
-                <h3>Conclusão</h3>
-                <p>{selectedReport.conclusion}</p>
-              </section>
-            )}
-          </div>
-        )}
-      </Modal>
 
       {onUpdateAppointment && (
         <PatientRescheduleModal

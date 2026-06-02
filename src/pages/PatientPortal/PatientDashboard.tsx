@@ -2,7 +2,7 @@ import { Badge } from "../../components/ui/Badge/Badge"
 import { Button } from "../../components/ui/Button/Button"
 import type { Appointment, FinancialRecord, Prescription, Report } from "../../types"
 import type { PortalSection } from "./patientPortalSections"
-import { formatAppointmentType, formatDate } from "../../utils"
+import { formatAppointmentType, formatDate, patientAppointmentStatusLabel } from "../../utils"
 import { getPatientDisplayStatus } from "../../utils/patientAppointments"
 import styles from "./PatientDashboard.module.css"
 
@@ -15,7 +15,6 @@ interface PatientDashboardProps {
   pendingBilling: FinancialRecord[]
   appointmentsLoading: boolean
   onNavigate: (section: PortalSection) => void
-  onViewReport?: (report: Report) => void
 }
 
 export function PatientDashboard({
@@ -27,23 +26,25 @@ export function PatientDashboard({
   pendingBilling,
   appointmentsLoading,
   onNavigate,
-  onViewReport,
 }: PatientDashboardProps) {
   const upcoming = scheduledConsultations
     .filter((a) => {
       const dt = new Date(`${a.date}T${a.time}:00`)
       return !Number.isNaN(dt.getTime()) && dt > new Date()
     })
-    .slice(0, 4)
+    .sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`))
 
-  const recentReports = reports.slice(0, 3)
+  const upcomingPreview = upcoming.slice(0, 4)
+
+  const availableReports = reports.filter((r) => r.status === "Finalized" || r.status === "Sent")
+  const recentReports = availableReports.slice(0, 3)
 
   return (
     <div className={styles.wrap}>
       <section className={styles.metrics}>
         <article className={styles.metricCard}>
           <span>Consultas ativas</span>
-          <strong>{scheduledConsultations.length}</strong>
+          <strong>{upcoming.length}</strong>
         </article>
         <article className={styles.metricCard}>
           <span>Canceladas</span>
@@ -51,7 +52,7 @@ export function PatientDashboard({
         </article>
         <article className={styles.metricCard}>
           <span>Laudos</span>
-          <strong>{reports.length}</strong>
+          <strong>{availableReports.length}</strong>
         </article>
         <article className={styles.metricCard}>
           <span>Boletos pendentes</span>
@@ -71,7 +72,7 @@ export function PatientDashboard({
             <div className={styles.nextAppt}>
               <strong>{formatDate(nextAppointment.date)} às {nextAppointment.time}</strong>
               <span>{formatAppointmentType(nextAppointment.type)} com Dr(a). {nextAppointment.doctorName}</span>
-              <Badge>{getPatientDisplayStatus(nextAppointment)}</Badge>
+              <Badge>{patientAppointmentStatusLabel(getPatientDisplayStatus(nextAppointment))}</Badge>
             </div>
           ) : (
             <div className={styles.emptyInline}>
@@ -90,7 +91,7 @@ export function PatientDashboard({
             <p className={styles.muted}>Nenhuma consulta futura.</p>
           ) : (
             <ul className={styles.list}>
-              {upcoming.map((appt) => (
+              {upcomingPreview.map((appt) => (
                 <li key={appt.id}>
                   <strong>{formatDate(appt.date)} • {appt.time}</strong>
                   <span>Dr(a). {appt.doctorName}</span>
@@ -111,13 +112,11 @@ export function PatientDashboard({
             <ul className={styles.list}>
               {recentReports.map((report) => (
                 <li key={report.id}>
-                  <strong>{report.type}</strong>
+                  <strong>{report.type?.trim() || report.exam?.trim() || "Laudo médico"}</strong>
                   <span>{formatDate(report.date)}</span>
-                  {onViewReport && (
-                    <button type="button" className={styles.linkBtn} onClick={() => onViewReport(report)}>
-                      Abrir
-                    </button>
-                  )}
+                  <button type="button" className={styles.linkBtn} onClick={() => onNavigate("reports")}>
+                    Ver laudos
+                  </button>
                 </li>
               ))}
             </ul>

@@ -6,7 +6,7 @@ import { Avatar } from "../../components/ui/Avatar/Avatar"
 import { Button } from "../../components/ui/Button/Button"
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog/ConfirmDialog"
 import { RefreshButton } from "../../components/ui/RefreshButton/RefreshButton"
-import { formatCpfBR, formatDate, onlyDigits, sortByName, toTitleCase } from "../../utils"
+import { formatCpfBR, formatDate, isRemovedPatientPlaceholder, onlyDigits, sortByName, toTitleCase } from "../../utils"
 import type { PageId, Patient } from "../../types"
 import type { UseToastReturn } from "../../hooks/useToast"
 import styles from "./Patients.module.css"
@@ -46,7 +46,9 @@ export function Patients({ patients, onNavigate, onEditPatient, onViewProfile, o
 
   // Normaliza nome para exibicao e ordena alfabeticamente (case-insensitive, pt-BR).
   const orderedPatients = useMemo(() => {
-    const normalized = patients.map((p) => ({ ...p, name: toTitleCase(p.name) }))
+    const normalized = patients
+      .filter((p) => !isRemovedPatientPlaceholder(p))
+      .map((p) => ({ ...p, name: toTitleCase(p.name) }))
     return sortByName(normalized, (p) => p.name)
   }, [patients])
 
@@ -82,7 +84,7 @@ export function Patients({ patients, onNavigate, onEditPatient, onViewProfile, o
     <div>
       <Topbar
         title="Pacientes"
-        subtitle={`${patients.length} pacientes cadastrados`}
+        subtitle={`${orderedPatients.length} pacientes cadastrados`}
         action={headerAction}
       />
       <div className={styles.filters}>

@@ -68,7 +68,8 @@ async function sendPatientSms(
       phoneNumber: phone,
     })
     return true
-  } catch {
+  } catch (err) {
+    console.warn("[waitlist] Falha ao enviar SMS:", err instanceof Error ? err.message : err)
     return false
   }
 }
