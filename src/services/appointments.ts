@@ -1,4 +1,5 @@
 import { ApiError, apiRequest, getApiUserId } from "./api"
+import { notifyAppointmentScheduled } from "./appointmentNotifications"
 import { getPatientByIdentity, type PatientIdentity } from "./patients"
 import { fillGapFromWaitlist } from "./waitlistAutomation"
 import type {
@@ -316,7 +317,8 @@ export async function getAppointments(): Promise<Appointment[]> {
 }
 
 export async function createAppointment(
-  data: Omit<Appointment, "id">
+  data: Omit<Appointment, "id">,
+  options?: { skipConfirmationSms?: boolean },
 ): Promise<Appointment> {
   const created = await apiRequest<ApiAppointment[]>(
     "/rest/v1/appointments",
@@ -333,13 +335,19 @@ export async function createAppointment(
     ? created[0]
     : (created as ApiAppointment)
 
-  return {
+  const appointment: Appointment = {
     ...apiToAppointment(
       raw,
       data.doctorName
     ),
     patientName: data.patientName,
   }
+
+  if (!options?.skipConfirmationSms) {
+    await notifyAppointmentScheduled(appointment)
+  }
+
+  return appointment
 }
 
 export async function updateAppointment(

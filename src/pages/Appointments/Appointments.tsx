@@ -353,6 +353,36 @@ export function Appointments({
     ]
   }, [today, visibleAppointments])
 
+  const isViewingToday = useMemo(() => {
+    if (calendarView === "timeGridDay") {
+      return toDateStr(visibleMonth) === today
+    }
+    if (calendarView === "dayGridMonth") {
+      return isSameMonth(visibleMonth, new Date())
+    }
+    const weekEnd = new Date(visibleMonth)
+    weekEnd.setDate(weekEnd.getDate() + 6)
+    weekEnd.setHours(23, 59, 59, 999)
+    const now = new Date()
+    return now >= visibleMonth && now <= weekEnd
+  }, [calendarView, visibleMonth, today])
+
+  const navCenterLabel = useMemo(() => {
+    if (isViewingToday) return "Hoje"
+    if (calendarView === "timeGridDay") {
+      const label = visibleMonth.toLocaleDateString("pt-BR", {
+        weekday: "short",
+        day: "2-digit",
+        month: "short",
+      })
+      return label.charAt(0).toUpperCase() + label.slice(1)
+    }
+    if (calendarView === "dayGridMonth") {
+      return visibleMonth.toLocaleDateString("pt-BR", { month: "short", year: "numeric" })
+    }
+    return calendarTitle || formatVisibleMonth(visibleMonth)
+  }, [isViewingToday, calendarView, visibleMonth, calendarTitle])
+
   const conflict = useMemo(() => {
     if (!modal.doctorName || !modal.time || !modal.date) return null
     const result = checkConflict(
@@ -837,7 +867,14 @@ export function Appointments({
 
               <div className={styles.navControls}>
                 <button type="button" className={styles.navButton} onClick={() => navigateCalendar("prev")} aria-label="Anterior">‹</button>
-                <button type="button" className={styles.todayBtn} onClick={() => navigateCalendar("today")}>Hoje</button>
+                <button
+                  type="button"
+                  className={`${styles.todayBtn} ${isViewingToday ? styles.todayBtnActive : ""}`}
+                  onClick={() => navigateCalendar("today")}
+                  aria-label={isViewingToday ? "Ir para hoje" : `Ir para hoje (exibindo ${navCenterLabel})`}
+                >
+                  {navCenterLabel}
+                </button>
                 <button type="button" className={styles.navButton} onClick={() => navigateCalendar("next")} aria-label="Próximo">›</button>
               </div>
             </div>

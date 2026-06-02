@@ -268,10 +268,17 @@
 
 .todayBtn {
   height: 30px;
+  min-width: 30px;
   padding: 0 10px;
   font-size: 11px;
   font-weight: 700;
   white-space: nowrap;
+}
+
+.todayBtnActive {
+  color: var(--primary);
+  border-color: color-mix(in srgb, var(--primary) 35%, var(--border));
+  background: color-mix(in srgb, var(--primary) 8%, var(--surface));
 }
 
 .navButton:hover,
