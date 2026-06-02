@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { ChatMessage } from "../../../services/ai"
 import {
-  AIError, buildSystemPrompt, chatComplete, getAIMode, isAIConfigured,
+  AI_STARTERS_BY_ROLE,
+  AIError, buildSystemPrompt, chatComplete, getAIMode, getAIModel, isAIConfigured,
 } from "../../../services/ai"
 import { runAIAgentTurn } from "../../../services/aiAgent"
 import type { AppAIActions } from "../../../services/aiActions"
@@ -18,37 +19,13 @@ interface AIAssistantProps {
   appActions?: AppAIActions
 }
 
-const STARTERS: Record<UserRole, string[]> = {
-  doctor: [
-    "Crie um laudo de ressonância para o paciente João com dor lombar há 2 semanas",
-    "Quais consultas tenho amanhã?",
-    "Registre nota de consulta: paciente Maria, cefaleia e náusea",
-  ],
-  manager: [
-    "Agende consulta para Ana Silva dia 15/06 às 14h com Dr. Carlos",
-    "Envie lembrete por WhatsApp para pacientes com consulta amanhã",
-    "Mostre a agenda de hoje",
-  ],
-  financial: [
-    "Liste pacientes com consulta nesta semana",
-    "Crie um laudo resumo para convênio do paciente Pedro",
-    "Vá para o módulo financeiro",
-  ],
-  secretary: [
-    "Agende retorno para Maria dia 20/06 às 10h",
-    "Cancele a consulta das 15h de hoje do paciente João",
-    "Envie confirmação por WhatsApp: consulta confirmada amanhã às 9h",
-  ],
-  admin: [
-    "Processe respostas automáticas do WhatsApp",
-    "Rode os lembretes de consulta agora",
-    "Quantos agendamentos temos nesta semana?",
-  ],
-  patient: [
-    "Agende minha consulta para próxima terça às 10h",
-    "Quais são minhas próximas consultas?",
-    "Abra a tela de agendamento",
-  ],
+const ROLE_LABEL: Record<UserRole, string> = {
+  doctor:    "Modo médico",
+  manager:   "Modo gestão",
+  financial: "Modo financeiro",
+  secretary: "Modo secretaria",
+  admin:     "Modo administrador",
+  patient:   "Modo paciente",
 }
 
 const SparkIcon = ({ size = 22 }: { size?: number }) => (
@@ -144,7 +121,7 @@ export function AIAssistant({ currentUser, clinicName, apiContextSnapshot, appAc
     [currentUser.role, currentUser.name, clinicName, apiContextSnapshot],
   )
 
-  const starters = STARTERS[role] ?? STARTERS.secretary
+  const starters = AI_STARTERS_BY_ROLE[role] ?? AI_STARTERS_BY_ROLE.secretary
   const { supported: ttsSupported, speak, stop: stopSpeak } = useSpeechSynthesis({ lang: "pt-BR" })
 
   const speakReply = useCallback(
@@ -271,6 +248,9 @@ export function AIAssistant({ currentUser, clinicName, apiContextSnapshot, appAc
               <div className={styles.headerIcon}><SparkIcon size={18} /></div>
               <div className={styles.headerText}>
                 <p className={styles.headerTitle}>MediConnect Assistente</p>
+                <p className={styles.headerSubtitle}>
+                  {ROLE_LABEL[role] ?? "Assistente"} · {getAIModel()}
+                </p>
               </div>
               <div className={styles.headerActions}>
                 {messages.length > 0 && (

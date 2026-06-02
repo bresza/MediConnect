@@ -10,9 +10,10 @@ import { formatCpfBR, formatPhoneBR, hasAtLeastTwoNames, isValidCpf, isValidEmai
 import styles from "./Login.module.css"
 
 interface LoginProps {
-  onLogin:      (res: LoginResponse) => void
-  darkMode:     boolean
-  onToggleDark: () => void
+  onLogin:          (res: LoginResponse) => void
+  darkMode:         boolean
+  onToggleDark:     () => void
+  onBackToLanding?:  () => void
 }
 
 const FEATURE_LIST = [
@@ -35,7 +36,7 @@ function EyeIcon({ open }: { open: boolean }) {
   )
 }
 
-export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
+export function Login({ onLogin, darkMode, onToggleDark, onBackToLanding }: LoginProps) {
   const [mode,         setMode]         = useState<"login" | "signup">("login")
   const [email,        setEmail]        = useState("")
   const [password,     setPassword]     = useState("")
@@ -173,6 +174,12 @@ export function Login({ onLogin, darkMode, onToggleDark }: LoginProps) {
       {/* Painel direito — formulário */}
       <div className={styles.formPanel}>
         <div className={styles.formCard}>
+
+          {onBackToLanding && (
+            <button type="button" className={styles.backLink} onClick={onBackToLanding}>
+              ← Voltar ao site
+            </button>
+          )}
 
           {/* Logo mobile */}
           <div className={styles.mobileLogo}>

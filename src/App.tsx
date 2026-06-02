@@ -4,13 +4,16 @@ import { QueryProvider } from "./contexts/QueryProvider"
 import { useAuth }      from "./contexts/authStore"
 import { AppRouter } from "./AppRouter"
 import { Login } from "./pages/Login/Login"
+import { Landing } from "./pages/Landing/Landing"
 import { ToastContainer } from "./components/ui/ToastContainer/ToastContainer"
 import { useToast } from "./hooks/useToast"
+import { useAppPath } from "./hooks/useAppPath"
 import type { LoginResponse } from "./services/auth"
 
 function AppInner() {
   const { user, login } = useAuth()
   const { toasts, toast, dismiss } = useToast()
+  const { isLoginPath, goHome } = useAppPath()
 
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem("theme") === "dark")
 
@@ -32,12 +35,20 @@ function AppInner() {
   }
 
   if (!user) {
-    return (
-      <>
-        <Login onLogin={handleLogin} darkMode={darkMode} onToggleDark={() => setDarkMode((d) => !d)} />
-        <ToastContainer toasts={toasts} onDismiss={dismiss} />
-      </>
-    )
+    if (isLoginPath) {
+      return (
+        <>
+          <Login
+            onLogin={handleLogin}
+            darkMode={darkMode}
+            onToggleDark={() => setDarkMode((d) => !d)}
+            onBackToLanding={goHome}
+          />
+          <ToastContainer toasts={toasts} onDismiss={dismiss} />
+        </>
+      )
+    }
+    return <Landing />
   }
 
   return <AppRouter darkMode={darkMode} onToggleDark={() => setDarkMode((d) => !d)} />
