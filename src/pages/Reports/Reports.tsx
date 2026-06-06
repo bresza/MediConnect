@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, type ChangeEvent } from "react"
-import { getReports, createReport, updateReport } from "../../services/domain"
+import { getReports, createReport, updateReport, deleteReport } from "../../services/domain"
 import { REPORT_TEMPLATES, TEMPLATE_SPECIALTIES } from "../../data/reportTemplates"
 import type { ReportTemplate } from "../../data/reportTemplates"
 import type { Report, ReportStatus, User, Patient } from "../../types"
@@ -13,6 +13,8 @@ import { RefreshButton } from "../../components/ui/RefreshButton/RefreshButton"
 import { RichTextEditor } from "../../components/ui/RichTextEditor/RichTextEditor"
 import { chatComplete, isAIConfigured, AIError, type ChatMessage } from "../../services/ai"
 import { formatCrm, formatDate, sortByName, toTitleCase } from "../../utils"
+import { normalizeCid10, validateCid10 } from "../../utils/cid10"
+import { ReportPreview, type ReportPreviewData } from "./ReportPreview"
 import styles from "./Reports.module.css"
 
 interface ReportsProps { currentUser: User; patients?: Patient[] }
@@ -322,11 +324,15 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
   const [updatingId,  setUpdatingId]  = useState<string | null>(null)
   const [search,      setSearch]      = useState("")
   const [filterStatus, setFilterStatus] = useState<ReportStatus | "All">("All")
+  const [previewData, setPreviewData] = useState<ReportPreviewData | null>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   // Marca a Edge Function `ai-chat` como inacessível depois da primeira
   // falha de CORS/rede; nas próximas tentativas, pulamos direto para o
   // fallback local sem tentar de novo o proxy.
   const aiProxyDownRef = useRef(false)
   const aiAvailable = useMemo(() => isAIConfigured(), [])
+  const canDeleteReports = currentUser.role === "manager" || currentUser.role === "admin"
 
   const visibleReports = sortByName(
     reports
@@ -361,6 +367,71 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
     setEditingReport(null)
     setError(null)
     setAiNotice(null)
+    setPreviewData(null)
+  }
+
+  function buildPreviewFromForm(): ReportPreviewData {
+    return {
+      patientName: form.patientName,
+      reportType: form.type,
+      cid10: form.cid10,
+      diagnosis: form.diagnosis,
+      conclusion: form.conclusion,
+      contentHtml: form.contentHtml,
+      date: editingReport?.date ?? new Date().toISOString().slice(0, 10),
+      hideDate: form.hideDate,
+      hideSignature: form.hideSignature,
+      doctorName: currentUser.name,
+      doctorCrm: currentUser.crm,
+      doctorSpecialty: currentUser.specialty,
+      orderNumber: editingReport?.orderNumber,
+    }
+  }
+
+  function buildPreviewFromReport(r: Report): ReportPreviewData {
+    return {
+      patientName: r.patientName,
+      reportType: r.type,
+      cid10: r.cid10 ?? "",
+      diagnosis: r.diagnosis ?? "",
+      conclusion: r.conclusion ?? "",
+      contentHtml: r.contentHtml ?? r.content ?? "",
+      date: r.date,
+      hideDate: r.hideDate ?? false,
+      hideSignature: r.hideSignature ?? false,
+      doctorName: r.doctorName || currentUser.name,
+      doctorCrm: currentUser.crm,
+      doctorSpecialty: currentUser.specialty,
+      orderNumber: r.orderNumber,
+    }
+  }
+
+  function openPreviewFromForm() {
+    if (!form.patientName && !form.patientId) {
+      setError("Selecione o paciente antes de pré-visualizar.")
+      return
+    }
+    const cidError = validateCid10(form.cid10)
+    if (cidError) { setError(cidError); return }
+    setPreviewData(buildPreviewFromForm())
+  }
+
+  function openPreviewFromReport(r: Report) {
+    setPreviewData(buildPreviewFromReport(r))
+  }
+
+  async function handleDeleteReport(id: string) {
+    setListError(null)
+    setDeletingId(id)
+    try {
+      await deleteReport(id)
+      setReports((prev) => prev.filter((r) => r.id !== id))
+      setConfirmDeleteId(null)
+    } catch (err) {
+      setListError(err instanceof Error ? err.message : "Não foi possível anular o laudo.")
+    } finally {
+      setDeletingId(null)
+    }
   }
 
   // ── Aplicar template ─────────────────────────────────────────────
@@ -521,8 +592,11 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
     }
     if (!form.patientId && !form.patientName) { setError("Selecione o paciente."); return }
     if (!form.type)                           { setError("Informe o tipo de laudo."); return }
+    const cidError = validateCid10(form.cid10)
+    if (cidError) { setError(cidError); return }
     setIsSaving(true); setError(null)
     try {
+      const normalizedCid = normalizeCid10(form.cid10)
       const payload = {
         patientId:     form.patientId || form.patientName,
         patientName:   form.patientName,
@@ -532,7 +606,7 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
         conclusion:    form.conclusion,
         content:       form.contentHtml,
         contentHtml:   form.contentHtml,
-        cid10:         form.cid10,
+        cid10:         normalizedCid,
         hideDate:      form.hideDate,
         hideSignature: form.hideSignature,
         status:        finalStatus ?? form.status,
@@ -565,6 +639,21 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
     display: "block", marginBottom: 4,
   }
 
+  if (previewData) {
+    return (
+      <ReportPreview
+        {...previewData}
+        onBack={() => setPreviewData(null)}
+        backLabel={editorOpen ? "← Voltar para edição" : "← Voltar para laudos"}
+        primaryAction={
+          editorOpen && !isReportLocked(form.status)
+            ? { label: "Finalizar laudo", onClick: () => void handleSave("Finalized") }
+            : undefined
+        }
+      />
+    )
+  }
+
   if (editorOpen) {
     return (
       <div className={styles.editorPage}>
@@ -574,6 +663,7 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
           action={
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
               <Button variant="ghost" onClick={closeEditor}>Voltar</Button>
+              <Button variant="outline" onClick={openPreviewFromForm}>Pré-visualizar</Button>
               <Button variant="outline" onClick={() => handleSave("Draft")} disabled={isSaving}>
                 Salvar rascunho
               </Button>
@@ -619,9 +709,13 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
                   options={EXAM_TYPES} required />
                 <div>
                   <label style={labelStyle}>CID-10</label>
-                  <input value={form.cid10} onChange={(e) => setField("cid10", e.target.value)}
-                    placeholder="Ex: I10, E11..."
-                    className={styles.metaInput} />
+                  <input
+                    value={form.cid10}
+                    onChange={(e) => setField("cid10", normalizeCid10(e.target.value))}
+                    placeholder="Ex: I10, E11.9..."
+                    className={styles.metaInput}
+                    maxLength={8}
+                  />
                 </div>
               </div>
 
@@ -662,6 +756,9 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
                   </label>
                 ))}
               </div>
+              <p className={styles.signatureHint}>
+                A assinatura digital não está disponível nesta versão. O laudo exibirá o nome e CRM do profissional.
+              </p>
 
               {aiNotice && (
                 <p className={`${styles.aiNotice} ${aiNotice.tone === "ai" ? styles.aiNoticeAi : styles.aiNoticeLocal}`}>
@@ -727,6 +824,10 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
           </div>
         }
       />
+
+      {listError && (
+        <p style={{ fontSize: 12, color: "var(--destructive)", marginBottom: 12 }}>{listError}</p>
+      )}
 
       {/* Filtros */}
       <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
@@ -799,6 +900,11 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
                           {!isReportLocked(r.status) && (
                             <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>Editar</Button>
                           )}
+                          {(isReportLocked(r.status) || r.status === "Draft") && (
+                            <Button size="sm" variant="ghost" onClick={() => openPreviewFromReport(r)}>
+                              Visualizar
+                            </Button>
+                          )}
                           {r.status === "Draft" && (
                             <Button size="sm" variant="ghost" disabled={updatingId === r.id} onClick={() => handleQuickStatusUpdate(r, "Finalized")}>
                               {updatingId === r.id ? "Finalizando..." : "Finalizar"}
@@ -808,6 +914,18 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
                             <Button size="sm" variant="ghost" disabled={updatingId === r.id} onClick={() => handleQuickStatusUpdate(r, "Sent")}>
                               {updatingId === r.id ? "Enviando..." : "Enviar"}
                             </Button>
+                          )}
+                          {canDeleteReports && isReportLocked(r.status) && (
+                            confirmDeleteId === r.id ? (
+                              <>
+                                <Button size="sm" variant="ghost" disabled={deletingId === r.id} onClick={() => void handleDeleteReport(r.id)}>
+                                  {deletingId === r.id ? "Anulando..." : "Confirmar anulação"}
+                                </Button>
+                                <Button size="sm" variant="ghost" onClick={() => setConfirmDeleteId(null)}>Cancelar</Button>
+                              </>
+                            ) : (
+                              <Button size="sm" variant="ghost" onClick={() => setConfirmDeleteId(r.id)}>Anular</Button>
+                            )
                           )}
                         </div>
                       </td>

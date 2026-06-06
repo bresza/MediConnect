@@ -233,7 +233,7 @@ export function Login({ onLogin, darkMode, onToggleDark, onBackToLanding }: Logi
             {mode === "signup" && (
               <>
                 <p className={styles.signupHint}>
-                  O cadastro usa o endpoint público da API e envia o link de acesso para o e-mail do paciente.
+                  O cadastro envia um link de acesso para o e-mail informado. Se preferir, defina uma senha abaixo.
                 </p>
                 <div className={styles.fieldGroup}>
                   <label className={styles.label}>Nome completo</label>

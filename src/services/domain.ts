@@ -187,6 +187,10 @@ export async function updateReport(report: Report): Promise<Report> {
   return report
 }
 
+export async function deleteReport(id: string): Promise<void> {
+  await apiRequest(`/rest/v1/reports?id=eq.${id}`, { method: "DELETE" })
+}
+
 // ─────────────────────────────────────────────────────────────────
 // STAFF — criação via endpoint correto da API
 // ─────────────────────────────────────────────────────────────────

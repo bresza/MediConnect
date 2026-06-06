@@ -388,3 +388,26 @@
     text-align: right;
   }
 }
+
+.printBtn {
+  flex-shrink: 0;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  #patient-report-viewer,
+  #patient-report-viewer * {
+    visibility: visible;
+  }
+
+  #patient-report-viewer {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 24px;
+  }
+}
