@@ -1,4 +1,4 @@
-import { messageFromProblemDetails, parseProblemDetails } from "./problemDetails"
+import { messageFromProblemDetails, parseProblemDetails, sanitizeDatabaseMessage } from "./problemDetails"
 
 // Le e normaliza as credenciais do Supabase. Sem esse passo, qualquer build
 // que tenha sido gerado sem VITE_SUPABASE_URL acaba chamando `undefined/auth/...`,
@@ -164,10 +164,13 @@ function friendlyMessage(status: number, raw: string): string {
 
 function parseErrorMessage(raw: string, status = 0): string {
   if (!raw) return ""
+  const sanitizedDb = sanitizeDatabaseMessage(raw)
+  if (sanitizedDb) return sanitizedDb
   const problem = parseProblemDetails(raw)
   const fromProblem = messageFromProblemDetails(status, problem)
   if (fromProblem) return fromProblem
-  return problem.detail ?? problem.message ?? problem.title ?? problem.error ?? raw
+  const fallback = problem.detail ?? problem.message ?? problem.title ?? problem.error ?? raw
+  return sanitizeDatabaseMessage(fallback) ?? fallback
 }
 
 async function performFetch(path: string, options: RequestOptions): Promise<Response> {

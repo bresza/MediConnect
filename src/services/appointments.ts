@@ -415,6 +415,51 @@ export interface GetAvailableSlotsOptions {
   allowDefaultFallback?: boolean
 }
 
+/** Staff (secretaria/gestor): nunca usar horario comercial ficticio. */
+export const STAFF_SLOT_OPTIONS: GetAvailableSlotsOptions = { allowDefaultFallback: false }
+
+async function fetchBusyRangesForDate(
+  doctorId: string,
+  date: string,
+): Promise<Array<{ start: number; end: number }>> {
+  const appointments = await apiRequest<ApiAppointment[]>(
+    `/rest/v1/appointments?doctor_id=eq.${encodeURIComponent(doctorId)}&select=id,doctor_id,patient_id,scheduled_at,duration_minutes,status`,
+  )
+
+  return (appointments ?? [])
+    .map((appointment) => {
+      const { date: apptDate, time: apptTime } = parseScheduledAt(appointment.scheduled_at)
+      return { apptDate, apptTime, appointment }
+    })
+    .filter(({ apptDate }) => apptDate === date)
+    .filter(({ appointment }) => appointment.status !== "cancelled")
+    .map(({ apptTime, appointment }) => {
+      const start = timeToMinutes(apptTime)
+      return {
+        start,
+        end: start + (appointment.duration_minutes ?? 30),
+      }
+    })
+}
+
+async function filterOccupiedSlots(
+  doctorId: string,
+  date: string,
+  slots: string[],
+  slotDurationMinutes = 30,
+): Promise<string[]> {
+  if (!doctorId || !date || slots.length === 0) return slots
+
+  const busyRanges = await fetchBusyRangesForDate(doctorId, date)
+  if (busyRanges.length === 0) return slots
+
+  return slots.filter((time) => {
+    const start = timeToMinutes(time)
+    const slotEnd = start + slotDurationMinutes
+    return !busyRanges.some((range) => rangesOverlap(start, slotEnd, range.start, range.end))
+  })
+}
+
 export async function getAvailableSlots(
   doctorId: string,
   date: string,
@@ -427,7 +472,9 @@ export async function getAvailableSlots(
 
   try {
     const apiSlots = await getAvailableSlotsFromApi(doctorId, date, appointmentType)
-    if (apiSlots.length > 0) return apiSlots
+    if (apiSlots.length > 0) {
+      return filterOccupiedSlots(doctorId, date, apiSlots)
+    }
   } catch (err) {
     if (!(err instanceof ApiError)) throw err
     const fallbackStatuses = [400, 404, 422, 500, 501, 502, 503]
@@ -439,7 +486,8 @@ export async function getAvailableSlots(
 
   if (!allowDefaultFallback) return []
 
-  return buildDefaultSlots(date)
+  const fallbackSlots = buildDefaultSlots(date)
+  return filterOccupiedSlots(doctorId, date, fallbackSlots)
 }
 
 export async function getDoctorAvailability(doctorId: string): Promise<DoctorAvailability[]> {
