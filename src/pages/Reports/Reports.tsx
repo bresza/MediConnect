@@ -21,6 +21,10 @@ const STATUS_PT: Record<ReportStatus, string> = {
   Draft: "Rascunho", Finalized: "Finalizado", Sent: "Enviado",
 }
 
+function isReportLocked(status: ReportStatus): boolean {
+  return status === "Finalized" || status === "Sent"
+}
+
 interface ReportForm {
   patientId:     string
   patientName:   string
@@ -473,6 +477,10 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
 
   // ── Editar laudo ─────────────────────────────────────────────────
   function openEdit(r: Report) {
+    if (isReportLocked(r.status)) {
+      setListError("Laudos finalizados não podem ser editados. Anule e crie um novo laudo, se necessário.")
+      return
+    }
     setEditingReport(r)
     setForm({
       patientId:     r.patientId,
@@ -507,6 +515,10 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
   }
 
   async function handleSave(finalStatus?: ReportStatus) {
+    if (editingReport && isReportLocked(editingReport.status)) {
+      setError("Laudos finalizados não podem ser alterados.")
+      return
+    }
     if (!form.patientId && !form.patientName) { setError("Selecione o paciente."); return }
     if (!form.type)                           { setError("Informe o tipo de laudo."); return }
     setIsSaving(true); setError(null)
@@ -784,7 +796,9 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
                       </td>
                       <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}>
                         <div className={styles.tdActions}>
-                          <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>Editar</Button>
+                          {!isReportLocked(r.status) && (
+                            <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>Editar</Button>
+                          )}
                           {r.status === "Draft" && (
                             <Button size="sm" variant="ghost" disabled={updatingId === r.id} onClick={() => handleQuickStatusUpdate(r, "Finalized")}>
                               {updatingId === r.id ? "Finalizando..." : "Finalizar"}

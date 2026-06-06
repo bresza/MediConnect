@@ -18,7 +18,7 @@ import { ConsultationModal } from "../../components/ui/ConsultationModal/Consult
 import { useWaitlist } from "../../hooks/useWaitlist"
 import { filterVisible, suggestForGap } from "../../services/waitlist"
 import { checkConflict, formatAppointmentType } from "../../utils"
-import { getAppointmentDoctors, getAvailableSlots, getDoctorAvailability } from "../../services/appointments"
+import { getAppointmentDoctors, getAvailableSlots, getDoctorAvailability, STAFF_SLOT_OPTIONS } from "../../services/appointments"
 import type { DoctorAvailability } from "../../services/appointments"
 import type {
   Appointment, FinancialRecord, MedicalRecord, Patient, Prescription, User, WaitlistEntry,
@@ -410,7 +410,7 @@ export function Appointments({
     setSlotsError(null)
 
     try {
-      const slots = await getAvailableSlots(doctorId, date)
+      const slots = await getAvailableSlots(doctorId, date, "presencial", STAFF_SLOT_OPTIONS)
       if (slotRequestRef.current !== requestId) return
       setAvailableSlots(keepTime && !slots.includes(keepTime) ? [keepTime, ...slots].sort() : slots)
     } catch (err) {
@@ -562,14 +562,14 @@ export function Appointments({
       return
     }
     if (conflict) { setModalError("Resolva o conflito de horário antes de salvar"); return }
-    if (doctorsError) { setModalError("Não foi possível carregar médicos da API"); return }
-    if (slotsError) { setModalError("Não foi possível confirmar a disponibilidade pela API"); return }
+    if (doctorsError) { setModalError("Não foi possível carregar a lista de profissionais"); return }
+    if (slotsError) { setModalError("Não foi possível confirmar a disponibilidade do médico"); return }
     if (modal.doctorId && modal.date && !isLoadingSlots && availableSlots.length === 0) {
-      setModalError("A API não retornou slots disponíveis para este médico/data")
+      setModalError("Não há horários disponíveis para este médico nesta data")
       return
     }
     if (modal.doctorId && modal.date && availableSlots.length > 0 && !availableSlots.includes(modal.time)) {
-      setModalError("Selecione um horário disponível retornado pela API")
+      setModalError("Selecione um horário disponível na lista")
       return
     }
 
@@ -624,10 +624,10 @@ export function Appointments({
     }
 
     try {
-      const slots = await getAvailableSlots(appointment.doctorId, nextDate)
+      const slots = await getAvailableSlots(appointment.doctorId, nextDate, "presencial", STAFF_SLOT_OPTIONS)
       if (!slots.includes(nextTime)) {
         info.revert()
-        window.alert("Horário indisponível pela API para este médico.")
+        window.alert("Horário indisponível para este médico nesta data.")
         return
       }
       await onUpdateAppointment({ ...appointment, date: nextDate, time: nextTime })
@@ -1117,7 +1117,7 @@ export function Appointments({
             <div className={styles.modalHeader}>
               <div>
                 <h2 className={styles.modalTitle}>{editingAppointment ? "Editar agendamento" : "Novo agendamento"}</h2>
-                <p className={styles.modalSubtitle}>Os horários são validados pela API de disponibilidade.</p>
+                <p className={styles.modalSubtitle}>Horários conforme a disponibilidade cadastrada do profissional.</p>
               </div>
               <button type="button" className={styles.closeBtn} onClick={closeModal} aria-label="Fechar">×</button>
             </div>

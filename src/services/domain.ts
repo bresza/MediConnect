@@ -49,13 +49,24 @@ function statusToApi(s: ReportStatus): string {
   return "draft"
 }
 
+function reportContentMeta(api: ApiReport): { doctorName?: string; doctorId?: string } {
+  const json = api.content_json
+  if (!json || typeof json !== "object" || Array.isArray(json)) return {}
+  const meta = json as { doctor_name?: string; doctor_id?: string }
+  return {
+    doctorName: meta.doctor_name?.trim() || undefined,
+    doctorId: meta.doctor_id?.trim() || undefined,
+  }
+}
+
 function apiToReport(api: ApiReport): Report {
+  const meta = reportContentMeta(api)
   return {
     id:            api.id,
     patientId:     api.patient_id,
     patientName:   api.patients?.full_name  ?? "",
-    doctorId:      api.created_by           ?? api.requested_by ?? "",
-    doctorName:    api.profiles?.full_name  ?? "",  // populated when available
+    doctorId:      meta.doctorId ?? api.created_by ?? api.requested_by ?? "",
+    doctorName:    meta.doctorName ?? api.profiles?.full_name ?? "",
     type:          api.exam                 ?? "Laudo Médico",
     exam:          api.exam,
     diagnosis:     api.diagnosis,
@@ -77,6 +88,10 @@ function reportToApi(
   r: Partial<Report> & { patientId: string },
 ): Record<string, unknown> {
   const uid = getApiUserId()
+  const contentJson: Record<string, unknown> = {}
+  if (r.doctorName?.trim()) contentJson.doctor_name = r.doctorName.trim()
+  if (r.doctorId?.trim()) contentJson.doctor_id = r.doctorId.trim()
+
   return {
     patient_id:     r.patientId,
     status:         statusToApi(r.status ?? "Draft"),
@@ -86,10 +101,32 @@ function reportToApi(
     diagnosis:      r.diagnosis ?? r.content ?? "",
     conclusion:     r.conclusion ?? "",
     content_html:   r.contentHtml ?? r.content ?? "",
-    content_json:   {},
+    content_json:   Object.keys(contentJson).length > 0 ? contentJson : {},
     hide_date:      r.hideDate      ?? false,
     hide_signature: r.hideSignature ?? false,
   };
+}
+
+async function resolveMissingDoctorNames(reports: Report[]): Promise<Report[]> {
+  const missingIds = [...new Set(
+    reports
+      .filter((report) => !report.doctorName?.trim() && report.doctorId)
+      .map((report) => report.doctorId),
+  )]
+  if (missingIds.length === 0) return reports
+
+  const profiles = await apiRequest<ApiProfile[]>(
+    `/rest/v1/profiles?id=in.(${missingIds.map(encodeURIComponent).join(",")})&select=id,full_name`,
+  ).catch(() => [])
+
+  const profileMap = new Map((profiles ?? []).map((p) => [p.id, p.full_name]))
+  if (profileMap.size === 0) return reports
+
+  return reports.map((report) => {
+    if (report.doctorName?.trim()) return report
+    const name = profileMap.get(report.doctorId)
+    return name ? { ...report, doctorName: name } : report
+  })
 }
 
 export async function getReports(): Promise<Report[]> {
@@ -106,16 +143,22 @@ export async function getReports(): Promise<Report[]> {
     ...(profiles ?? []).map((p) => [p.id, p.full_name] as const),
   ])
 
-  return (reports ?? [])
+  return resolveMissingDoctorNames(
+    (reports ?? [])
     .filter((report) =>
       report.exam !== MEDICAL_RECORD_EXAM &&
       report.exam !== PRESCRIPTION_EXAM &&
       report.exam !== FINANCIAL_RECORD_EXAM)
-    .map((report) => ({
-      ...apiToReport(report),
-      patientName: patientMap.get(report.patient_id) ?? "",
-      doctorName: doctorMap.get(report.created_by ?? report.requested_by ?? "") ?? "",
-    }))
+    .map((report) => {
+      const meta = reportContentMeta(report)
+      const authorId = report.created_by ?? report.requested_by ?? meta.doctorId ?? ""
+      return {
+        ...apiToReport(report),
+        patientName: patientMap.get(report.patient_id) ?? "",
+        doctorName: meta.doctorName ?? doctorMap.get(authorId) ?? "",
+      }
+    }),
+  )
 }
 
 export async function createReport(
@@ -524,7 +567,7 @@ function staffCreationPermissionError(err: ApiError): Error {
       "Sem permissão para criar usuários. Apenas administrador, gestor e secretária podem cadastrar a equipe.",
     )
   }
-  return err
+  return new Error(err.message || "Erro ao cadastrar profissional. Tente novamente.")
 }
 
 async function postCreateUserWithPassword(
