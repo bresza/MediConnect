@@ -168,7 +168,7 @@ export function Settings({ currentUser }: SettingsProps) {
                 </p>
                 <p>
                   O perfil Gestão possui acesso completo aos módulos administrativos e
-                  acompanha os dados reais persistidos pela API integrada.
+                  acompanha os dados reais da clínica em tempo real.
                 </p>
               </div>
             </Section>

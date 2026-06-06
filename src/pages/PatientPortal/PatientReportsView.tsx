@@ -209,13 +209,24 @@ export function PatientReportsView({ reports, loading }: PatientReportsViewProps
         size="lg"
         topLayer
         footer={
-          <Button fullWidth className={styles.closeBtn} variant="outline" onClick={() => setSelected(null)}>
-            Fechar
-          </Button>
+          <>
+            {selected && isReadable(selected) && (
+              <Button
+                variant="outline"
+                className={styles.printBtn}
+                onClick={() => window.print()}
+              >
+                Baixar PDF
+              </Button>
+            )}
+            <Button fullWidth className={styles.closeBtn} variant="outline" onClick={() => setSelected(null)}>
+              Fechar
+            </Button>
+          </>
         }
       >
         {selected && (
-          <div className={styles.viewer}>
+          <div className={styles.viewer} id="patient-report-viewer">
             {!isReadable(selected) && (
               <div className={styles.draftNotice} role="status">
                 <strong>Laudo em elaboração</strong>

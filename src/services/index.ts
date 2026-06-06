@@ -31,7 +31,7 @@ export {
 export {
   getMedicalRecords, createMedicalRecord, updateMedicalRecord,
   getPrescriptions,  createPrescription,
-  getReports,        createReport,        updateReport,
+  getReports,        createReport,        updateReport,        deleteReport,
   getMessages,       sendMessage,
   getStaff,          createStaffMember,   updateStaffMember, deleteStaffMember,
 } from "./domain"
