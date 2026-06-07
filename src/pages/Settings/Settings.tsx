@@ -156,7 +156,7 @@ export function Settings({ currentUser }: SettingsProps) {
                 </div>
                 <div className={styles.infoItem}>
                   <span>Status do sistema</span>
-                  <strong>Ativo e conectado à API</strong>
+                  <strong>Ativo e sincronizado</strong>
                 </div>
               </div>
 
@@ -173,27 +173,27 @@ export function Settings({ currentUser }: SettingsProps) {
               </div>
             </Section>
           ) : (
-            <Section title="Integrações da API">
+            <Section title="Integrações">
               <div className={styles.integrationBox}>
                 <div>
-                  <span className={styles.integrationLabel}>API principal</span>
-                  <strong>Supabase REST API</strong>
+                  <span className={styles.integrationLabel}>Plataforma principal</span>
+                  <strong>MediConnect — nuvem</strong>
                 </div>
-                <span className={styles.integrationStatus}>Integrada</span>
+                <span className={styles.integrationStatus}>Conectada</span>
               </div>
 
               <div className={styles.infoGrid}>
                 <div className={styles.infoItem}>
-                  <span>Documentação</span>
-                  <strong>do5wegrct3.apidog.io</strong>
+                  <span>Central de ajuda</span>
+                  <strong>Suporte Popcode</strong>
                 </div>
                 <div className={styles.infoItem}>
-                  <span>Autenticação</span>
-                  <strong>Bearer token</strong>
+                  <span>Acesso seguro</span>
+                  <strong>Login com senha</strong>
                 </div>
                 <div className={styles.infoItem}>
-                  <span>Banco de dados</span>
-                  <strong>Supabase</strong>
+                  <span>Armazenamento</span>
+                  <strong>Dados na nuvem</strong>
                 </div>
                 <div className={styles.infoItem}>
                   <span>Módulos conectados</span>
@@ -203,12 +203,12 @@ export function Settings({ currentUser }: SettingsProps) {
 
               <div className={styles.textBlock}>
                 <p>
-                  O front-end consome a API por endpoints REST usando as tabelas expostas
-                  pelo backend, incluindo profiles, doctors, patients, appointments e reports.
+                  Os módulos da clínica trabalham de forma integrada: alterações na agenda,
+                  laudos e cadastros refletem automaticamente para toda a equipe autorizada.
                 </p>
                 <p>
-                  Dados sensíveis de ambiente, como chaves e tokens, permanecem fora da
-                  interface e são usados somente pela camada de serviços.
+                  Informações sensíveis de acesso ficam protegidas fora da tela e são usadas
+                  apenas para manter sua sessão e a sincronização dos dados.
                 </p>
               </div>
             </Section>

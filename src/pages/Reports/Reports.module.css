@@ -465,13 +465,18 @@
 }
 
 @media print {
-  .previewRoot { padding: 0; background: white; }
-  .previewToolbar { display: none; }
+  .previewRoot { padding: 0; background: white !important; }
+  .previewToolbar { display: none !important; }
   .reportDocument {
     box-shadow: none;
     border: none;
     max-width: 100%;
     padding: 24px;
+    background: #ffffff !important;
+    color: #111827 !important;
+  }
+  .reportDocument * {
+    color: #111827 !important;
   }
 }
 

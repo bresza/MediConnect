@@ -97,6 +97,9 @@ export function messageFromProblemDetails(status: number, p: ProblemDetails): st
   if (code === "CPF_EXISTS") {
     return raw || "Este CPF já está cadastrado."
   }
+  if (code === "CRM_EXISTS") {
+    return raw || "Este CRM já está cadastrado para esta UF."
+  }
   if (code === "EMAIL_EXISTS") {
     return raw || "Este e-mail já está em uso."
   }

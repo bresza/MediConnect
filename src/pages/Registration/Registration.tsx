@@ -333,19 +333,21 @@ export function Registration({
   const [errors, setErrors]   = useState<Partial<Record<keyof FormState, string>>>({})
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [stepError, setStepError] = useState<string | null>(null)
   const [saved, setSaved]     = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Reinicializa quando editingPatient muda
   useEffect(() => {
     setForm(editingPatient ? toForm(editingPatient) : EMPTY)
-    setStep(1); setSaved(false); setErrors({})
+    setStep(1); setSaved(false); setErrors({}); setStepError(null)
   }, [editingPatient])
 
   function set(field: keyof FormState, value: string | boolean) {
     setForm((f) => ({ ...f, [field]: value }))
     setErrors((e) => ({ ...e, [field]: undefined }))
     setSaveError(null)
+    setStepError(null)
   }
 
   // CEP auto-fill
@@ -499,12 +501,19 @@ export function Registration({
 
   async function handleNext() {
     setSaveError(null)
+    setStepError(null)
     if (isEditing) {
-      if (!validateRequiredSteps()) return
+      if (!validateRequiredSteps()) {
+        setStepError("Revise os campos destacados antes de continuar.")
+        return
+      }
       await savePatient()
       return
     }
-    if (!validateStep()) return
+    if (!validateStep()) {
+      setStepError("Preencha os campos obrigatórios desta etapa para continuar.")
+      return
+    }
     if (step < totalSteps) { setStep((s) => s + 1); return }
     await savePatient()
   }
@@ -642,8 +651,9 @@ export function Registration({
                 </div>
               </div>
               <div className={`${styles.grid3} ${styles.marginTop}`}>
-                <Select label="Sexo biológico" options={GENDERS}
-                  value={form.gender} onChange={(e) => set("gender", e.target.value)} />
+                <Select label="Sexo biológico" required options={GENDERS}
+                  value={form.gender} onChange={(e) => set("gender", e.target.value)}
+                  error={errors.gender} />
                 <Input label="Data de nascimento" type="date" required max={TODAY}
                   value={form.dob} onChange={(e) => set("dob", e.target.value)} error={errors.dob} />
                 <Select label="Estado civil" options={MARITAL}
@@ -866,7 +876,9 @@ export function Registration({
             {step > 1 ? "← Anterior" : "Cancelar"}
           </Button>
           <div className={styles.formFooterRight}>
-            {saveError && <span className={styles.saveError}>{saveError}</span>}
+            {(saveError || stepError) && (
+              <span className={styles.saveError}>{saveError ?? stepError}</span>
+            )}
             <span className={styles.stepCount}>
               {isEditing ? "Edição rápida" : `Etapa ${step} de ${totalSteps}`}
             </span>
