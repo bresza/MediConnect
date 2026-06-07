@@ -18,6 +18,7 @@ import {
 } from "../../services/availability"
 import type { AvailabilityDoctor, DoctorAvailability } from "../../services/availability"
 import type { User } from "../../types"
+import { formatRecordStatus } from "../../utils/statusLabels"
 import styles from "./Availability.module.css"
 
 interface AvailabilityProps {
@@ -366,7 +367,7 @@ export function Availability({ currentUser }: AvailabilityProps) {
                     <span>Intervalo de {row.slotMinutes} min</span>
                   </div>
                   <div className={styles.rowAside}>
-                    <Badge>{row.active ? "Active" : "Inactive"}</Badge>
+                    <Badge>{formatRecordStatus(row.active ? "Active" : "Inactive")}</Badge>
                   </div>
                 </div>
                 <div className={styles.rowActions}>

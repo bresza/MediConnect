@@ -140,11 +140,11 @@ export function Settings({ currentUser }: SettingsProps) {
               </div>
             </>
           ) : activeTab === "clinic" ? (
-            <Section title="Clínica Mediconnect">
+            <Section title="Clínica MediConnect">
               <div className={styles.infoGrid}>
                 <div className={styles.infoItem}>
                   <span>Nome da clínica</span>
-                  <strong>Mediconnect</strong>
+                  <strong>MediConnect</strong>
                 </div>
                 <div className={styles.infoItem}>
                   <span>Unidade</span>
@@ -162,7 +162,7 @@ export function Settings({ currentUser }: SettingsProps) {
 
               <div className={styles.textBlock}>
                 <p>
-                  A Mediconnect centraliza o fluxo da clínica com cadastro de pacientes,
+                  A MediConnect centraliza o fluxo da clínica com cadastro de pacientes,
                   agenda, laudos, receitas, equipe, financeiro, comunicação
                   e relatórios gerenciais.
                 </p>

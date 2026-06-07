@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Sidebar }        from "./components/layout/Sidebar/Sidebar"
 import { AIAssistant }    from "./components/ui/AIAssistant/AIAssistant"
 import { ToastContainer } from "./components/ui/ToastContainer/ToastContainer"
@@ -21,6 +21,7 @@ import { Financial }      from "./pages/Financial/Financial"
 import { Settings }       from "./pages/Settings/Settings"
 import { Team }           from "./pages/Team/Team"
 import { canAccess, canDo, getDefaultPage } from "./utils/permissions"
+import { pageFromPath, pathForPage } from "./utils/appRoutes"
 import { enrichPatientsWithVisits } from "./utils"
 import { isRemovedPatientPlaceholder, withoutRemovedPatientPlaceholders } from "./utils/removedPatient"
 import { buildAIApiContextFromAppState } from "./services/aiContext"
@@ -70,12 +71,45 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
     ])
   }
 
-  const [activePage,       setActivePage]       = useState<PageId>(() => getDefaultPage(user?.role ?? "secretary"))
+  const [activePage,       setActivePage]       = useState<PageId>(() => {
+    const fromUrl = pageFromPath(window.location.pathname)
+    if (fromUrl && canAccess(user?.role ?? "secretary", fromUrl)) return fromUrl
+    return getDefaultPage(user?.role ?? "secretary")
+  })
   const [sidebarOpen,      setSidebarOpen]      = useState(false)
   const [patientPortalSection, setPatientPortalSection] = useState<PortalSection>("overview")
   const [patientPortalCounts, setPatientPortalCounts] = useState<Partial<Record<PortalSection, number>>>({})
   const [editingPatient,   setEditingPatient]   = useState<Patient | null>(null)
   const [viewingPatient,   setViewingPatient]   = useState<Patient | null>(null)
+
+  useEffect(() => {
+    if (!user) return
+    const onPopState = () => {
+      const page = pageFromPath(window.location.pathname)
+      if (page && canAccess(user.role, page)) {
+        setActivePage(page)
+        setSidebarOpen(false)
+      }
+    }
+    window.addEventListener("popstate", onPopState)
+    return () => window.removeEventListener("popstate", onPopState)
+  }, [user?.role])
+
+  // F5 / link direto: alinha activePage com a URL atual
+  useEffect(() => {
+    if (!user) return
+    const page = pageFromPath(window.location.pathname)
+    if (page && canAccess(user.role, page)) {
+      setActivePage(page)
+      return
+    }
+    const fallback = getDefaultPage(user.role)
+    setActivePage(fallback)
+    const fallbackPath = pathForPage(fallback)
+    if (window.location.pathname !== fallbackPath) {
+      window.history.replaceState({}, "", fallbackPath)
+    }
+  }, [user?.id, user?.role])
 
   if (!user) return null
   const currentUser = user
@@ -192,6 +226,16 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
     if (page !== "patient-profile") setViewingPatient(null)
     setActivePage(page)
     setSidebarOpen(false)
+    const nextPath = pathForPage(page)
+    if (window.location.pathname !== nextPath) {
+      window.history.pushState({}, "", nextPath)
+    }
+  }
+
+  function handleLogout() {
+    toast("Sessão encerrada.", "info")
+    logout()
+    window.history.replaceState({}, "", "/")
   }
 
   function handleViewProfile(patient: Patient) {
@@ -419,7 +463,7 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
         activePage={activePage}
         onNavigate={handleNavigate}
         currentUser={currentUser}
-        onLogout={logout}
+        onLogout={handleLogout}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         darkMode={darkMode}
@@ -444,7 +488,7 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
                 <path d="M12 8v8M8 12h8" />
               </svg>
             </div>
-            <p className={styles.mobileLogoName}>Mediconnect</p>
+            <p className={styles.mobileLogoName}>MediConnect</p>
           </div>
         </div>
         <div className={styles.content}>

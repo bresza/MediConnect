@@ -166,7 +166,7 @@ export function Login({ onLogin, darkMode, onToggleDark, onBackToLanding }: Logi
             </svg>
           </div>
           <div>
-            <p className={styles.brandName}>Mediconnect</p>
+            <p className={styles.brandName}>MediConnect</p>
             <p className={styles.brandClinic}>Clínica Central</p>
           </div>
         </div>
@@ -199,7 +199,7 @@ export function Login({ onLogin, darkMode, onToggleDark, onBackToLanding }: Logi
                 <path d="M12 2a10 10 0 100 20A10 10 0 0012 2z" /><path d="M12 8v8M8 12h8" />
               </svg>
             </div>
-            <span className={styles.mobileLogoName}>Mediconnect</span>
+            <span className={styles.mobileLogoName}>MediConnect</span>
           </div>
 
           <div className={styles.formHeader}>

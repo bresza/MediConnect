@@ -128,7 +128,7 @@ function localDevLogin(payload: LoginPayload): LoginResponse | null {
     user,
     token: `local-dev:${user.role}:${email}`,
     clinicId: "local",
-    clinicName: "Mediconnect",
+    clinicName: "MediConnect",
     refreshToken: null,
     expiresAt: null,
   }
@@ -790,7 +790,7 @@ export async function login(payload: LoginPayload): Promise<LoginResponse> {
       user: await withRoleLinks(user, authData.access_token),
       token: authData.access_token,
       clinicId: "default",
-      clinicName: "Mediconnect",
+      clinicName: "MediConnect",
       refreshToken: authData.refresh_token ?? null,
       expiresAt: expiresAtFromSeconds(authData.expires_in),
     }
@@ -814,7 +814,7 @@ export async function login(payload: LoginPayload): Promise<LoginResponse> {
     user: await withRoleLinks(user, authData.access_token),
     token: authData.access_token,
     clinicId: "default",
-    clinicName: "Mediconnect",
+    clinicName: "MediConnect",
     refreshToken: authData.refresh_token ?? null,
     expiresAt: expiresAtFromSeconds(authData.expires_in),
   }
