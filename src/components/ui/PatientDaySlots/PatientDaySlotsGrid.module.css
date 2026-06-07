@@ -1,0 +1,51 @@
+.slotsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 8px;
+}
+
+.slotBtn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 52px;
+  padding: 8px 6px;
+  border-radius: 10px;
+  border: 2px solid var(--border);
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  cursor: pointer;
+}
+
+.slotTime {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.slotBtnActive {
+  border-color: #14b8a6;
+  background: #14b8a6;
+  color: #fff;
+}
+
+.slotBtnActive .slotOccupiedLabel {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.slotBtnOccupied {
+  border-color: var(--border);
+  background: color-mix(in srgb, var(--border) 35%, var(--background));
+  color: var(--muted-foreground, #64748b);
+  cursor: not-allowed;
+  opacity: 0.85;
+}
+
+.slotOccupiedLabel {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}

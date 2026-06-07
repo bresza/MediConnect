@@ -435,6 +435,17 @@
   font-weight: 700;
 }
 
+.slotsSection h3 {
+  margin: 0 0 4px;
+}
+
+.slotsHint {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--muted-foreground, #64748b);
+  line-height: 1.4;
+}
+
 .slotsGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));

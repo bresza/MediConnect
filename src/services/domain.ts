@@ -1,5 +1,5 @@
 import { apiRequest, ApiError, getApiToken, getApiUserId } from "./api"
-import { formatSpecialtyLabel } from "../utils"
+import { formatSpecialtyLabel, onlyDigits } from "../utils"
 import type {
   MedicalRecord, Prescription, Report, ReportStatus,
   Message, StaffMember, StaffRole, StaffStatus,
@@ -57,6 +57,25 @@ function reportContentMeta(api: ApiReport): { doctorName?: string; doctorId?: st
     doctorName: meta.doctor_name?.trim() || undefined,
     doctorId: meta.doctor_id?.trim() || undefined,
   }
+}
+
+/** Extrai nome do medico assinante de laudos legados (HTML gerado pelo editor). */
+function extractDoctorNameFromReportHtml(html?: string): string | undefined {
+  if (!html?.trim()) return undefined
+  const plain = html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+  const match = plain.match(/M[eé]dico\s+respons[aá]vel:\s*([^—\-–]+)/i)
+  return match?.[1]?.trim() || undefined
+}
+
+interface ApiDoctorForReport {
+  id: string
+  full_name: string
+  user_id?: string
 }
 
 function apiToReport(api: ApiReport): Report {
@@ -571,7 +590,61 @@ function staffCreationPermissionError(err: ApiError): Error {
       "Sem permissão para criar usuários. Apenas administrador, gestor e secretária podem cadastrar a equipe.",
     )
   }
+  if (err.status === 409) {
+    const msg = err.message.trim()
+    if (/cpf/i.test(msg)) {
+      return new Error(msg.includes("CPF") ? msg : "Este CPF já está cadastrado. Não é possível cadastrar a mesma pessoa duas vezes.")
+    }
+    if (/crm/i.test(msg)) {
+      return new Error(msg.includes("CRM") ? msg : "Este CRM já está cadastrado para esta UF. Escolha outro registro ou edite o profissional existente.")
+    }
+    if (/e-?mail|email/i.test(msg)) {
+      return new Error(msg.includes("mail") ? msg : "Este e-mail já está cadastrado na equipe.")
+    }
+    return new Error(msg || "Não foi possível cadastrar: CPF, CRM ou e-mail já existem no sistema.")
+  }
+  if (err.status === 400 || err.status === 422) {
+    const msg = err.message.trim()
+    if (/cpf/i.test(msg)) {
+      return new Error(msg.includes("CPF") ? msg : "CPF inválido ou já cadastrado. Verifique os dados informados.")
+    }
+    if (/crm/i.test(msg)) {
+      return new Error(msg.includes("CRM") ? msg : "CRM inválido ou já cadastrado para esta UF.")
+    }
+    return new Error(msg || "Dados inválidos. Verifique os campos e tente novamente.")
+  }
   return new Error(err.message || "Erro ao cadastrar profissional. Tente novamente.")
+}
+
+function normalizeStaffCrm(crm?: string): string {
+  return (crm ?? "").replace(/\s/g, "").toUpperCase()
+}
+
+async function assertStaffIdentityUnique(
+  data: Omit<StaffMember, "id" | "createdAt">,
+  doctorExtra?: DoctorExtra,
+): Promise<void> {
+  const cpfDigits = onlyDigits(doctorExtra?.cpf || data.cpf || "")
+  const staff = await getStaff().catch(() => [] as StaffMember[])
+  const email = data.email.trim().toLowerCase()
+
+  if (staff.some((member) => member.email.trim().toLowerCase() === email)) {
+    throw new Error("Este e-mail já está cadastrado na equipe.")
+  }
+  if (cpfDigits && staff.some((member) => onlyDigits(member.cpf ?? "") === cpfDigits)) {
+    throw new Error("Este CPF já está cadastrado. Não é possível cadastrar a mesma pessoa duas vezes.")
+  }
+  if (data.role === "doctor" && doctorExtra) {
+    const candidate = `${doctorExtra.crmNum.trim()}-${doctorExtra.crmUf.trim().toUpperCase()}`
+    const duplicateCrm = staff.some(
+      (member) => member.role === "doctor" && normalizeStaffCrm(member.crm) === normalizeStaffCrm(candidate),
+    )
+    if (duplicateCrm) {
+      throw new Error(
+        `O CRM ${candidate} já está cadastrado. Escolha outro registro ou edite o profissional existente.`,
+      )
+    }
+  }
 }
 
 async function postCreateUserWithPassword(
@@ -636,6 +709,7 @@ export async function createStaffMember(
   doctorExtra?: DoctorExtra,
 ): Promise<StaffMember> {
   const cpf = assertStaffCreateFields(data, password, doctorExtra)
+  await assertStaffIdentityUnique(data, doctorExtra)
 
   if (data.role === "doctor") {
     const extra = doctorExtra!
@@ -1301,8 +1375,53 @@ function recordMatchesPatient(
 }
 
 export async function getPatientReportsByIdentity(identity: PatientLookup): Promise<Report[]> {
-  const reports = await getReports()
-  return reports.filter((report) => recordMatchesPatient(report, identity))
+  const patientId = identity.patientId?.trim()
+
+  const [rawReports, doctors] = await Promise.all([
+    patientId
+      ? apiRequest<ApiReport[]>(
+          `/rest/v1/reports?patient_id=eq.${encodeURIComponent(patientId)}&select=*&order=created_at.desc`,
+          { logErrors: false },
+        ).catch(() => [] as ApiReport[])
+      : apiRequest<ApiReport[]>("/rest/v1/reports?select=*&order=created_at.desc", { logErrors: false })
+          .catch(() => [] as ApiReport[]),
+    apiRequest<ApiDoctorForReport[]>(
+      "/rest/v1/doctors?select=id,full_name,user_id",
+      { logErrors: false },
+    ).catch(() => [] as ApiDoctorForReport[]),
+  ])
+
+  const doctorById = new Map((doctors ?? []).map((d) => [d.id, d.full_name]))
+  const doctorByUserId = new Map(
+    (doctors ?? [])
+      .filter((d) => d.user_id)
+      .map((d) => [d.user_id!, d.full_name] as const),
+  )
+
+  const filtered = (rawReports ?? []).filter((report) =>
+    report.exam !== MEDICAL_RECORD_EXAM &&
+    report.exam !== PRESCRIPTION_EXAM &&
+    report.exam !== FINANCIAL_RECORD_EXAM &&
+    (!patientId || report.patient_id === patientId),
+  )
+
+  return filtered.map((report) => {
+    const meta = reportContentMeta(report)
+    const authorId = report.created_by ?? report.requested_by ?? meta.doctorId ?? ""
+    const doctorName =
+      meta.doctorName ??
+      (meta.doctorId ? doctorById.get(meta.doctorId) : undefined) ??
+      doctorByUserId.get(authorId) ??
+      doctorById.get(authorId) ??
+      extractDoctorNameFromReportHtml(report.content_html) ??
+      ""
+
+    return {
+      ...apiToReport(report),
+      patientName: identity.name ?? "",
+      doctorName,
+    }
+  })
 }
 
 export async function getPatientMedicalRecordsByIdentity(identity: PatientLookup): Promise<MedicalRecord[]> {

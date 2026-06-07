@@ -3,7 +3,9 @@ import { Badge } from "../../components/ui/Badge/Badge"
 import { Button } from "../../components/ui/Button/Button"
 import { Modal } from "../../components/ui/Modal/Modal"
 import { RichTextEditor } from "../../components/ui/RichTextEditor/RichTextEditor"
+import { ReportDocument } from "../Reports/ReportDocument"
 import { formatDate } from "../../utils"
+import { printElement } from "../../utils/printReport"
 import type { Report, ReportStatus } from "../../types"
 import styles from "./PatientReportsView.module.css"
 
@@ -214,7 +216,7 @@ export function PatientReportsView({ reports, loading }: PatientReportsViewProps
               <Button
                 variant="outline"
                 className={styles.printBtn}
-                onClick={() => window.print()}
+                onClick={() => printElement("patient-report-print-area", reportTitle(selected))}
               >
                 Baixar PDF
               </Button>
@@ -289,6 +291,23 @@ export function PatientReportsView({ reports, loading }: PatientReportsViewProps
                 <p>{selected.conclusion}</p>
               </section>
             )}
+
+            <div hidden aria-hidden="true">
+              <ReportDocument
+                id="patient-report-print-area"
+                patientName={selected.patientName}
+                reportType={reportTitle(selected)}
+                cid10={selected.cid10 ?? ""}
+                diagnosis={selected.diagnosis ?? ""}
+                conclusion={selected.conclusion ?? ""}
+                contentHtml={selected.contentHtml || selected.content || ""}
+                date={selected.date}
+                hideDate={selected.hideDate ?? false}
+                hideSignature={selected.hideSignature ?? false}
+                doctorName={selected.doctorName}
+                orderNumber={selected.orderNumber}
+              />
+            </div>
           </div>
         )}
       </Modal>

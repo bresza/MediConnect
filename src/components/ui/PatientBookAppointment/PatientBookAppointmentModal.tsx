@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { getAvailableSlots } from "../../../services/appointments"
+import { getPatientDaySlots, type DaySlot } from "../../../services/appointments"
+import { PatientDaySlotsGrid } from "../PatientDaySlots/PatientDaySlotsGrid"
 import {
   getBookableDoctors,
   getDoctorAvailability,
@@ -30,7 +31,6 @@ interface PatientBookAppointmentModalProps {
 }
 
 const APPOINTMENT_TYPE = "presencial"
-const SLOT_OPTIONS = { allowDefaultFallback: false } as const
 const DEFAULT_SPECIALTY = "Clínica Geral"
 
 function doctorSpecialty(doctor: AvailabilityDoctor): string {
@@ -69,7 +69,7 @@ export function PatientBookAppointmentModal({
   const [date, setDate] = useState("")
   const [time, setTime] = useState("")
   const [observations, setObservations] = useState("")
-  const [availableSlots, setAvailableSlots] = useState<string[]>([])
+  const [daySlots, setDaySlots] = useState<DaySlot[]>([])
   const [slotsLoading, setSlotsLoading] = useState(false)
   const [slotsError, setSlotsError] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
@@ -81,7 +81,7 @@ export function PatientBookAppointmentModal({
     setDate("")
     setTime("")
     setObservations("")
-    setAvailableSlots([])
+    setDaySlots([])
     setSlotsError(null)
     setFormError(null)
     setSaving(false)
@@ -168,14 +168,14 @@ export function PatientBookAppointmentModal({
 
   const loadSlots = useCallback(async (nextDoctorId: string, nextDate: string, schedule: DoctorAvailability[]) => {
     if (!nextDoctorId || !nextDate) {
-      setAvailableSlots([])
+      setDaySlots([])
       setSlotsLoading(false)
       setSlotsError(null)
       return
     }
 
     if (!isDateOnDoctorSchedule(nextDate, schedule)) {
-      setAvailableSlots([])
+      setDaySlots([])
       setSlotsLoading(false)
       setSlotsError(`O médico não atende neste dia. Dias disponíveis: ${summarizeDoctorWeekdays(schedule)}.`)
       return
@@ -187,20 +187,17 @@ export function PatientBookAppointmentModal({
     setSlotsError(null)
 
     try {
-      const slots = await getAvailableSlots(
-        nextDoctorId,
-        nextDate,
-        APPOINTMENT_TYPE,
-        SLOT_OPTIONS,
-      )
+      const slots = await getPatientDaySlots(nextDoctorId, nextDate, APPOINTMENT_TYPE)
       if (slotRequestRef.current !== requestId) return
-      setAvailableSlots(slots)
-      if (slots.length === 0) {
+      const futureSlots = slots.filter((slot) => slot.status !== "past")
+      setDaySlots(futureSlots)
+      const freeCount = futureSlots.filter((slot) => slot.status === "available").length
+      if (freeCount === 0) {
         setSlotsError("Nenhum horário livre nesta data na agenda do médico. Tente outro dia.")
       }
     } catch (err) {
       if (slotRequestRef.current !== requestId) return
-      setAvailableSlots([])
+      setDaySlots([])
       setSlotsError(err instanceof Error ? err.message : "Erro ao consultar horários.")
     } finally {
       if (slotRequestRef.current === requestId) setSlotsLoading(false)
@@ -222,7 +219,7 @@ export function PatientBookAppointmentModal({
     setDoctorId("")
     setDate("")
     setTime("")
-    setAvailableSlots([])
+    setDaySlots([])
     setSlotsError(null)
     setFormError(null)
   }
@@ -231,7 +228,7 @@ export function PatientBookAppointmentModal({
     setDoctorId(value)
     setDate("")
     setTime("")
-    setAvailableSlots([])
+    setDaySlots([])
     setSlotsError(null)
     setFormError(null)
     setDoctorSchedule([])
@@ -246,7 +243,7 @@ export function PatientBookAppointmentModal({
       setFormError(`Este médico não atende neste dia. Atende: ${scheduleSummary}.`)
       setDate("")
       setTime("")
-      setAvailableSlots([])
+      setDaySlots([])
       return
     }
     setDate(value)
@@ -265,13 +262,13 @@ export function PatientBookAppointmentModal({
       setFormError("Escolha um horário futuro.")
       return
     }
-    if (!slotsLoading && availableSlots.length === 0) {
+    if (!slotsLoading && daySlots.filter((s) => s.status === "available").length === 0) {
       setFormError("Não há horários disponíveis na agenda do médico para esta data.")
       return
     }
 
-    if (!availableSlots.includes(time)) {
-      setFormError("Selecione um horário da lista de disponíveis.")
+    if (!daySlots.some((slot) => slot.status === "available" && slot.time === time)) {
+      setFormError("Selecione um horário disponível da lista.")
       return
     }
 
@@ -372,32 +369,28 @@ export function PatientBookAppointmentModal({
 
         <div className={styles.slotsSection}>
           <p className={styles.slotsLabel}>
-            Horários disponíveis
+            Horários
             {selectedDoctor && date ? ` — ${selectedDoctor.name}` : ""}
+          </p>
+          <p className={styles.slotsHint}>
+            Horários livres podem ser selecionados; os ocupados já possuem consulta agendada.
           </p>
 
           {!doctorId || !date ? (
             <p className={styles.slotsHint}>Selecione médico e data para ver os horários.</p>
           ) : slotsLoading ? (
             <p className={styles.slotsHint}>Consultando disponibilidade...</p>
-          ) : availableSlots.length === 0 ? (
+          ) : daySlots.length === 0 ? (
             <p className={styles.slotsHint}>{slotsError ?? "Nenhum horário nesta data."}</p>
           ) : (
-            <div className={styles.slotsGrid}>
-              {availableSlots.map((slot) => (
-                <button
-                  key={slot}
-                  type="button"
-                  className={`${styles.slotBtn} ${time === slot ? styles.slotBtnActive : ""}`}
-                  onClick={() => {
-                    setTime(slot)
-                    setFormError(null)
-                  }}
-                >
-                  {slot}
-                </button>
-              ))}
-            </div>
+            <PatientDaySlotsGrid
+              daySlots={daySlots}
+              selectedTime={time}
+              onSelectTime={(slot) => {
+                setTime(slot)
+                setFormError(null)
+              }}
+            />
           )}
         </div>
 

@@ -473,7 +473,9 @@ export async function getAvailableSlots(
   try {
     const apiSlots = await getAvailableSlotsFromApi(doctorId, date, appointmentType)
     if (apiSlots.length > 0) {
-      return filterOccupiedSlots(doctorId, date, apiSlots)
+      // A Edge Function ja calcula ocupacao com permissao de servico; nao refiltrar
+      // no cliente (RLS do paciente so enxerga os proprios agendamentos).
+      return apiSlots
     }
   } catch (err) {
     if (!(err instanceof ApiError)) throw err
@@ -502,7 +504,8 @@ export async function getDoctorAvailability(doctorId: string): Promise<DoctorAva
   return (rows ?? []).map(apiToAvailability).filter((row) => row.weekday >= 0 && row.active)
 }
 
-async function getAvailableSlotsFromAvailability(
+/** Grade teorica do dia (disponibilidade cadastrada), sem filtrar agendamentos. */
+async function getScheduleSlotsForDate(
   doctorId: string,
   date: string,
   appointmentType = "presencial",
@@ -511,40 +514,21 @@ async function getAvailableSlotsFromAvailability(
   if (date < today) return []
 
   const day = new Date(`${date}T00:00:00`).getDay()
-  const [availability, exceptions, appointments] = await Promise.all([
+  const [availability, exceptions] = await Promise.all([
     apiRequest<ApiDoctorAvailability[]>(
       `/rest/v1/doctor_availability?doctor_id=eq.${encodeURIComponent(doctorId)}&select=*`,
     ),
     apiRequest<ApiDoctorException[]>(
       `/rest/v1/doctor_exceptions?doctor_id=eq.${encodeURIComponent(doctorId)}&date=eq.${encodeURIComponent(date)}&select=*`,
     ).catch(() => []),
-    apiRequest<ApiAppointment[]>(
-      `/rest/v1/appointments?doctor_id=eq.${encodeURIComponent(doctorId)}&select=id,doctor_id,patient_id,scheduled_at,duration_minutes,status`,
-    ),
   ])
-
-  const busyRanges = (appointments ?? [])
-    .map((appointment) => {
-      const { date: apptDate, time: apptTime } = parseScheduledAt(appointment.scheduled_at)
-      return { apptDate, apptTime, appointment }
-    })
-    .filter(({ apptDate }) => apptDate === date)
-    .filter(({ appointment }) => appointment.status !== "cancelled")
-    .map(({ apptTime, appointment }) => {
-      const start = timeToMinutes(apptTime)
-      return {
-        start,
-        end: start + (appointment.duration_minutes ?? 30),
-      }
-    })
 
   const blockedRanges = (exceptions ?? []).map((exception) => ({
     start: exception.start_time ? timeToMinutes(exception.start_time) : 0,
     end: exception.end_time ? timeToMinutes(exception.end_time) : 24 * 60,
   }))
 
-  const now = new Date()
-  const nowMinutes = timeToMinutes(localTime(now))
+  const nowMinutes = timeToMinutes(localTime(new Date()))
 
   return (availability ?? [])
     .filter((row) => row.active !== false)
@@ -560,12 +544,121 @@ async function getAvailableSlotsFromAvailability(
         const slotEnd = cursor + slotMinutes
         const inPast = date === today && cursor <= nowMinutes
         const blocked = blockedRanges.some((range) => rangesOverlap(cursor, slotEnd, range.start, range.end))
-        const occupied = busyRanges.some((range) => rangesOverlap(cursor, slotEnd, range.start, range.end))
-        if (!inPast && !blocked && !occupied) slots.push(minutesToTime(cursor))
+        if (!inPast && !blocked) slots.push(minutesToTime(cursor))
       }
 
       return slots
     })
+    .filter((time, index, all) => all.indexOf(time) === index)
+    .sort()
+}
+
+async function getAvailableSlotsFromAvailability(
+  doctorId: string,
+  date: string,
+  appointmentType = "presencial",
+): Promise<string[]> {
+  const scheduleSlots = await getScheduleSlotsForDate(doctorId, date, appointmentType)
+  if (scheduleSlots.length === 0) return []
+
+  const busyRanges = await fetchBusyRangesForDate(doctorId, date)
+  if (busyRanges.length === 0) return scheduleSlots
+
+  return scheduleSlots.filter((time) => {
+    const start = timeToMinutes(time)
+    const slotEnd = start + DEFAULT_SLOT_DURATION
+    return !busyRanges.some((range) => rangesOverlap(start, slotEnd, range.start, range.end))
+  })
+}
+
+export type DaySlotStatus = "available" | "occupied" | "past"
+
+export interface DaySlot {
+  time: string
+  status: DaySlotStatus
+}
+
+function slotStatusForTime(
+  date: string,
+  time: string,
+  freeSet: Set<string>,
+): DaySlotStatus {
+  const today = localDate(new Date())
+  const normalized = normalizeSlotTime(time)
+  const nowMinutes = timeToMinutes(localTime(new Date()))
+  if (date === today && timeToMinutes(normalized) <= nowMinutes) return "past"
+  return freeSet.has(normalized) ? "available" : "occupied"
+}
+
+function buildDaySlotsFromGrid(
+  date: string,
+  grid: string[],
+  freeSlots: string[],
+): DaySlot[] {
+  const freeSet = new Set(normalizeSlotList(freeSlots))
+  return grid.map((time) => ({
+    time: normalizeSlotTime(time),
+    status: slotStatusForTime(date, time, freeSet),
+  }))
+}
+
+/**
+ * Portal do paciente: exibe a grade completa do dia e marca horarios ocupados
+ * com base na Edge Function (visao global), nao no filtro RLS do cliente.
+ */
+export async function getPatientDaySlots(
+  doctorId: string,
+  date: string,
+  appointmentType = "presencial",
+): Promise<DaySlot[]> {
+  if (!doctorId || !date) return []
+  if (date < localDate(new Date())) return []
+
+  const scheduleSlots = await getScheduleSlotsForDate(doctorId, date, appointmentType)
+  const grid = scheduleSlots.length > 0 ? scheduleSlots : buildDefaultSlots(date)
+
+  let freeSlotsFromApi: string[] | null = null
+  try {
+    freeSlotsFromApi = await getAvailableSlotsFromApi(doctorId, date, appointmentType)
+  } catch (err) {
+    if (!(err instanceof ApiError)) throw err
+    const fallbackStatuses = [400, 404, 422, 500, 501, 502, 503]
+    if (!fallbackStatuses.includes(err.status)) throw err
+  }
+
+  // So confia na diff grade x API quando a funcao retorna horarios livres de fato.
+  // Resposta vazia (200) nao significa dia inteiro ocupado — cai no fallback local.
+  if (freeSlotsFromApi !== null && freeSlotsFromApi.length > 0) {
+    if (grid.length > 0) {
+      return buildDaySlotsFromGrid(date, grid, freeSlotsFromApi)
+    }
+    return normalizeSlotList(freeSlotsFromApi).map((time) => ({
+      time,
+      status: slotStatusForTime(date, time, new Set(normalizeSlotList(freeSlotsFromApi))),
+    }))
+  }
+
+  const freeSlotsLocal = await safeAvailabilitySlots(doctorId, date, appointmentType)
+  if (grid.length > 0) {
+    return buildDaySlotsFromGrid(date, grid, freeSlotsLocal)
+  }
+
+  return normalizeSlotList(freeSlotsLocal).map((time) => ({
+    time,
+    status: slotStatusForTime(date, time, new Set(normalizeSlotList(freeSlotsLocal))),
+  }))
+}
+
+function normalizeSlotTime(time: string): string {
+  const match = time.trim().match(/^(\d{1,2}):(\d{2})/)
+  if (!match) return time.trim()
+  return `${match[1].padStart(2, "0")}:${match[2]}`
+}
+
+function normalizeSlotList(times: string[]): string[] {
+  return times
+    .map(normalizeSlotTime)
+    .filter(Boolean)
     .filter((time, index, all) => all.indexOf(time) === index)
     .sort()
 }
@@ -575,26 +668,59 @@ function slotToTime(slot: string | ApiAvailableSlot, contextDate?: string): stri
     ? slot
     : slot.time ?? slot.start_time ?? slot.start ?? slot.scheduled_at ?? ""
   if (!raw) return null
-  if (/^\d{2}:\d{2}/.test(raw)) return raw.slice(0, 5)
+  if (/^\d{1,2}:\d{2}/.test(raw)) return normalizeSlotTime(raw)
 
   const wallClock = raw.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/)
   if (wallClock) {
     if (!contextDate || wallClock[1] === contextDate) {
-      return wallClock[2]
+      return normalizeSlotTime(wallClock[2])
     }
   }
 
   const parsed = new Date(raw)
   if (Number.isNaN(parsed.getTime())) return null
-  return localTime(parsed)
+  return normalizeSlotTime(localTime(parsed))
 }
 
-function extractSlots(data: ApiAvailableSlotsResponse | undefined): Array<string | ApiAvailableSlot> {
+function extractSlots(data: ApiAvailableSlotsResponse | undefined, contextDate?: string): Array<string | ApiAvailableSlot> {
   if (!data) return []
   if (Array.isArray(data)) return data
-  if (Array.isArray(data.slots)) return data.slots
-  if (Array.isArray(data.data)) return data.data
-  if (data.data && typeof data.data === "object" && Array.isArray(data.data.slots)) return data.data.slots
+
+  if (typeof data !== "object" || data === null) return []
+
+  const record = data as Record<string, unknown>
+
+  const directKeys = ["available_slots", "available", "free_slots", "free", "slots", "data"] as const
+  for (const key of directKeys) {
+    const value = record[key]
+    if (Array.isArray(value)) return value as Array<string | ApiAvailableSlot>
+    if (value && typeof value === "object" && !Array.isArray(value) && contextDate) {
+      const byDate = value as Record<string, unknown>
+      const dayValue = byDate[contextDate]
+      if (Array.isArray(dayValue)) return dayValue as Array<string | ApiAvailableSlot>
+      if (dayValue && typeof dayValue === "object" && !Array.isArray(dayValue)) {
+        const dayObj = dayValue as Record<string, unknown>
+        if (Array.isArray(dayObj.available)) return dayObj.available as Array<string | ApiAvailableSlot>
+        if (Array.isArray(dayObj.slots)) return dayObj.slots as Array<string | ApiAvailableSlot>
+        if (Array.isArray(dayObj.free)) return dayObj.free as Array<string | ApiAvailableSlot>
+      }
+    }
+  }
+
+  if (contextDate && Array.isArray(record[contextDate])) {
+    return record[contextDate] as Array<string | ApiAvailableSlot>
+  }
+
+  if (Array.isArray(record.slots)) return record.slots as Array<string | ApiAvailableSlot>
+  if (Array.isArray(record.data)) return record.data as Array<string | ApiAvailableSlot>
+  if (record.data && typeof record.data === "object" && !Array.isArray(record.data)) {
+    const nested = record.data as Record<string, unknown>
+    if (Array.isArray(nested.slots)) return nested.slots as Array<string | ApiAvailableSlot>
+    if (contextDate && Array.isArray(nested[contextDate])) {
+      return nested[contextDate] as Array<string | ApiAvailableSlot>
+    }
+  }
+
   return []
 }
 
@@ -627,12 +753,12 @@ async function getAvailableSlotsFromApi(
   const today = localDate(new Date())
   const nowMinutes = timeToMinutes(localTime(new Date()))
 
-  return extractSlots(data)
-    .map((slot) => slotToTime(slot, date))
-    .filter((time): time is string => Boolean(time))
-    .filter((time) => date !== today || timeToMinutes(time) > nowMinutes)
-    .filter((time, index, all) => all.indexOf(time) === index)
-    .sort()
+  return normalizeSlotList(
+    extractSlots(data, date)
+      .map((slot) => slotToTime(slot, date))
+      .filter((time): time is string => Boolean(time))
+      .filter((time) => date !== today || timeToMinutes(time) > nowMinutes),
+  )
 }
 
 export async function getAppointmentDoctors(): Promise<AppointmentDoctor[]> {

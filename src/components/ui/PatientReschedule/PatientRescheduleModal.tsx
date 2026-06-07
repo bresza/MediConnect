@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { getAvailableSlots } from "../../../services/appointments"
+import { getPatientDaySlots, type DaySlot } from "../../../services/appointments"
+import { PatientDaySlotsGrid } from "../PatientDaySlots/PatientDaySlotsGrid"
 import {
   getDoctorAvailability,
   isDateOnDoctorSchedule,
@@ -22,7 +23,6 @@ interface PatientRescheduleModalProps {
 }
 
 const APPOINTMENT_TYPE = "presencial"
-const SLOT_OPTIONS = { allowDefaultFallback: false } as const
 
 function todayStr(): string {
   const d = new Date()
@@ -49,7 +49,7 @@ export function PatientRescheduleModal({
   const [time, setTime] = useState("")
   const [doctorSchedule, setDoctorSchedule] = useState<DoctorAvailability[]>([])
   const [scheduleLoading, setScheduleLoading] = useState(false)
-  const [availableSlots, setAvailableSlots] = useState<string[]>([])
+  const [daySlots, setDaySlots] = useState<DaySlot[]>([])
   const [slotsLoading, setSlotsLoading] = useState(false)
   const [slotsError, setSlotsError] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
@@ -93,13 +93,13 @@ export function PatientRescheduleModal({
 
   const loadSlots = useCallback(async (doctorId: string, nextDate: string, schedule: DoctorAvailability[]) => {
     if (!doctorId || !nextDate) {
-      setAvailableSlots([])
+      setDaySlots([])
       setSlotsLoading(false)
       return
     }
 
     if (!isDateOnDoctorSchedule(nextDate, schedule)) {
-      setAvailableSlots([])
+      setDaySlots([])
       setSlotsLoading(false)
       setSlotsError(`O médico não atende neste dia. Dias disponíveis: ${summarizeDoctorWeekdays(schedule)}.`)
       return
@@ -111,13 +111,15 @@ export function PatientRescheduleModal({
     setSlotsError(null)
 
     try {
-      const slots = await getAvailableSlots(doctorId, nextDate, APPOINTMENT_TYPE, SLOT_OPTIONS)
+      const slots = await getPatientDaySlots(doctorId, nextDate, APPOINTMENT_TYPE)
       if (slotRequestRef.current !== requestId) return
-      setAvailableSlots(slots)
-      if (slots.length === 0) setSlotsError("Nenhum horário livre nesta data na agenda do médico.")
+      const futureSlots = slots.filter((slot) => slot.status !== "past")
+      setDaySlots(futureSlots)
+      const freeCount = futureSlots.filter((slot) => slot.status === "available").length
+      if (freeCount === 0) setSlotsError("Nenhum horário livre nesta data na agenda do médico.")
     } catch (err) {
       if (slotRequestRef.current !== requestId) return
-      setAvailableSlots([])
+      setDaySlots([])
       setSlotsError(err instanceof Error ? err.message : "Erro ao consultar horários.")
     } finally {
       if (slotRequestRef.current === requestId) setSlotsLoading(false)
@@ -148,11 +150,11 @@ export function PatientRescheduleModal({
       setFormError(`Este médico não atende neste dia. Atende: ${scheduleSummary}.`)
       return
     }
-    if (!slotsLoading && availableSlots.length === 0) {
+    if (!slotsLoading && daySlots.filter((s) => s.status === "available").length === 0) {
       setFormError("Não há horários disponíveis na agenda do médico para esta data.")
       return
     }
-    if (!availableSlots.includes(time)) {
+    if (!daySlots.some((slot) => slot.status === "available" && slot.time === time)) {
       setFormError("Selecione um horário disponível.")
       return
     }
@@ -229,24 +231,20 @@ export function PatientRescheduleModal({
         />
 
         <div className={bookStyles.slotsSection}>
-          <p className={bookStyles.slotsLabel}>Horários disponíveis</p>
+          <p className={bookStyles.slotsLabel}>Horários</p>
+          <p className={bookStyles.slotsHint}>
+            Horários livres podem ser selecionados; os ocupados já possuem consulta agendada.
+          </p>
           {slotsLoading ? (
             <p className={bookStyles.slotsHint}>Consultando disponibilidade...</p>
-          ) : availableSlots.length === 0 ? (
+          ) : daySlots.length === 0 ? (
             <p className={bookStyles.slotsHint}>{slotsError ?? "Nenhum horário nesta data."}</p>
           ) : (
-            <div className={bookStyles.slotsGrid}>
-              {availableSlots.map((slot) => (
-                <button
-                  key={slot}
-                  type="button"
-                  className={`${bookStyles.slotBtn} ${time === slot ? bookStyles.slotBtnActive : ""}`}
-                  onClick={() => { setTime(slot); setFormError(null) }}
-                >
-                  {slot}
-                </button>
-              ))}
-            </div>
+            <PatientDaySlotsGrid
+              daySlots={daySlots}
+              selectedTime={time}
+              onSelectTime={(slot) => { setTime(slot); setFormError(null) }}
+            />
           )}
         </div>
       </div>
