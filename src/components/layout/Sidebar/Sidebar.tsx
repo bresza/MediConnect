@@ -22,7 +22,7 @@ const ALL_NAV_GROUPS: NavGroup[] = [
   {
     section: "Clínica",
     items: [
-      { id: "reports",  label: "Relatórios",  icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" },
+      { id: "reports",  label: "Laudos",  icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" },
       { id: "messages", label: "Mensagens",   icon: "M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" },
     ],
   },
@@ -94,7 +94,7 @@ export function Sidebar({
           </svg>
         </div>
         <div style={{ minWidth: 0 }}>
-          <p className={styles.logoName}>Mediconnect</p>
+          <p className={styles.logoName}>MediConnect</p>
           <p className={styles.logoClinic}>Clínica Central</p>
         </div>
         <button className={styles.closeBtn} onClick={onClose} aria-label="Fechar menu">

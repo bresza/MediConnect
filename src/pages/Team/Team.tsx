@@ -19,6 +19,7 @@ import {
 import type { StaffMember, StaffRole, StaffStatus } from "../../types"
 import type { UseToastReturn } from "../../hooks/useToast"
 import type { UseStaffReturn } from "../../hooks/useStaff"
+import { formatRecordStatus, RECORD_STATUS_OPTIONS } from "../../utils/statusLabels"
 import styles from "./Team.module.css"
 
 type TabId = StaffRole
@@ -349,7 +350,7 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: Tea
                       : <td><p className={styles.cellMain}>{member.department ?? "—"}</p></td>
                     }
                     <td><p className={styles.cellMain}>{displayMaskedPhone(member.phone)}</p></td>
-                    <td><Badge>{member.status}</Badge></td>
+                    <td><Badge>{formatRecordStatus(member.status)}</Badge></td>
                     <td>
                       <div className={styles.actions}>
                         <button className={styles.actionBtn} onClick={() => openEdit(member)} title="Editar"><EditIcon /></button>
@@ -389,7 +390,7 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: Tea
                 error={errors.email} required />
               <Input label="Telefone" value={form.phone} onChange={(e) => handleChange("phone", formatPhoneBR(e.target.value))}
                 error={errors.phone} required placeholder="(00) 00000-0000" inputMode="tel" maxLength={15} />
-              <Select label="Status" value={form.status} onChange={(e) => handleChange("status", e.target.value)} options={["Active", "Inactive"]} />
+              <Select label="Status" value={form.status} onChange={(e) => handleChange("status", e.target.value)} options={[...RECORD_STATUS_OPTIONS]} />
             </div>
           </Section>
 

@@ -701,7 +701,7 @@ function PrescriptionPreview({ patient, currentUser, date, rxType, meds, cid10, 
         {/* Header */}
         <div className={styles.rxClinic}>
           <div>
-            <p className={styles.rxClinicName}>Mediconnect Clínica Médica</p>
+            <p className={styles.rxClinicName}>MediConnect Clínica Médica</p>
             <p className={styles.rxClinicInfo}>Av. Principal, 1000 · Aracaju / SE · (79) 3000-0000</p>
           </div>
           <div className={styles.rxDateBlock}>

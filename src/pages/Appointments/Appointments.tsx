@@ -18,6 +18,12 @@ import { ConsultationModal } from "../../components/ui/ConsultationModal/Consult
 import { useWaitlist } from "../../hooks/useWaitlist"
 import { filterVisible, suggestForGap } from "../../services/waitlist"
 import { checkConflict, formatAppointmentType } from "../../utils"
+import {
+  canBookAppointments,
+  canCancelAppointments,
+  canDeleteAppointments,
+  canEditAppointments,
+} from "../../utils/permissions"
 import { getAppointmentDoctors, getAvailableSlots, getDoctorAvailability, STAFF_SLOT_OPTIONS } from "../../services/appointments"
 import type { DoctorAvailability } from "../../services/appointments"
 import type {
@@ -192,7 +198,10 @@ export function Appointments({
   const isDoctor    = currentUser.role === "doctor"
   const isManager   = currentUser.role === "manager" || currentUser.role === "admin"
   const isSecretary = currentUser.role === "secretary"
-  const canManage = true
+  const canBook = canBookAppointments(currentUser.role)
+  const canEdit = canEditAppointments(currentUser.role)
+  const canCancel = canCancelAppointments(currentUser.role)
+  const canDelete = canDeleteAppointments(currentUser.role)
   /** Gestor/admin tem visão completa mas (regra do produto) não edita a fila. */
   const canManageWaitlist = isDoctor || isSecretary
   const today = toDateStr(new Date())
@@ -507,7 +516,8 @@ export function Appointments({
   }
 
   function openModal(startDate?: Date, appointment?: Appointment) {
-    if (!canManage) return
+    if (appointment && !canEdit) return
+    if (!appointment && !canBook) return
 
     const fallbackDoctor = startDate ? (defaultDoctor() ?? availableDoctorFor(startDate)) : defaultDoctor()
     const date = appointment?.date ?? (startDate ? toDateStr(startDate) : today)
@@ -593,6 +603,10 @@ export function Appointments({
   }
 
   async function handleEventDrop(info: EventDropArg) {
+    if (!canEdit) {
+      info.revert()
+      return
+    }
     const appointment = info.event.extendedProps.appointment as Appointment | undefined
     const start = info.event.start
     if (!appointment || !start) {
@@ -658,7 +672,7 @@ export function Appointments({
   }
 
   function handleDateClick(arg: DateClickArg) {
-    if (!canManage) return
+    if (!canBook) return
     const clicked = arg.allDay ? new Date(`${arg.dateStr}T08:00:00`) : arg.date
     const isPastSelection = arg.allDay ? arg.dateStr < today : clicked <= new Date()
     if (isPastSelection) {
@@ -688,6 +702,7 @@ export function Appointments({
   }
 
   function handleScheduleFromWaitlist(entry: WaitlistEntry) {
+    if (!canBook) return
     setActiveTab("calendar")
     setSuggested(null)
     setEditingAppointment(null)
@@ -772,7 +787,7 @@ export function Appointments({
           action={
             <div className={styles.headerActions}>
               {onRefresh && <RefreshButton onRefresh={onRefresh} />}
-              {canManage && activeTab === "calendar" && (
+              {canBook && activeTab === "calendar" && (
                 <Button onClick={() => openModal()} icon={<span aria-hidden="true">+</span>}>
                   Novo agendamento
                 </Button>
@@ -806,6 +821,11 @@ export function Appointments({
             Visualização gerencial (somente leitura na fila)
           </span>
         )}
+        {isDoctor && (
+          <span className={styles.managerHint}>
+            Visualização da sua agenda — agendamentos são feitos pela secretaria ou pelo paciente
+          </span>
+        )}
       </div>
 
       {activeTab === "waitlist" ? (
@@ -821,7 +841,7 @@ export function Appointments({
             onAdd={handleAddToWaitlist}
             onUpdate={async (entry) => { await waitlist.update(entry) }}
             onRemove={async (id) => { await waitlist.remove(id) }}
-            onScheduleFromEntry={handleScheduleFromWaitlist}
+            onScheduleFromEntry={canBook ? handleScheduleFromWaitlist : undefined}
           />
         </div>
       ) : (
@@ -909,9 +929,9 @@ export function Appointments({
               snapDuration="00:30:00"
               allDaySlot={false}
               nowIndicator
-              selectable={canManage}
-              editable={canManage}
-              eventStartEditable={canManage}
+              selectable={canBook}
+              editable={canEdit}
+              eventStartEditable={canEdit}
               eventDurationEditable={false}
               dayMaxEvents={3}
               eventMinHeight={28}
@@ -1032,17 +1052,25 @@ export function Appointments({
                 <div className={styles.detailField}><span>Duração</span><strong>{selected.duration} min</strong></div>
               </div>
 
-              {canManage && (
+              {(canStartConsultation || canEdit || canCancel || canDelete) && (
                 <div className={styles.detailActions}>
                   {canStartConsultation && selected.status !== "completed" && selected.status !== "cancelled" && (
                     <Button size="sm" variant="primary" onClick={() => setConsultationFor(selected)}>
                       Atender paciente
                     </Button>
                   )}
-                  <Button size="sm" variant="outline" onClick={() => openModal(undefined, selected)}>Editar</Button>
-                  {selected.status !== "completed" && <Button size="sm" variant="ghost" onClick={() => handleStatus(selected, "completed")}>Concluir</Button>}
-                  {selected.status !== "cancelled" && <Button size="sm" variant="danger" onClick={() => handleStatus(selected, "cancelled")}>Cancelar</Button>}
-                  {onDeleteAppointment && <Button size="sm" variant="danger" onClick={() => handleDeleteSelected(selected)}>Excluir</Button>}
+                  {canEdit && (
+                    <Button size="sm" variant="outline" onClick={() => openModal(undefined, selected)}>Editar</Button>
+                  )}
+                  {canStartConsultation && selected.status !== "completed" && (
+                    <Button size="sm" variant="ghost" onClick={() => handleStatus(selected, "completed")}>Concluir</Button>
+                  )}
+                  {canCancel && selected.status !== "cancelled" && (
+                    <Button size="sm" variant="danger" onClick={() => handleStatus(selected, "cancelled")}>Cancelar</Button>
+                  )}
+                  {canDelete && onDeleteAppointment && (
+                    <Button size="sm" variant="danger" onClick={() => handleDeleteSelected(selected)}>Excluir</Button>
+                  )}
                 </div>
               )}
             </Card>

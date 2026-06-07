@@ -59,13 +59,14 @@ export const ROLE_PAGES: Record<UserRole, PageId[]> = {
     "patient-profile",
   ],
 
-  // Secretária — agenda, cadastro básico via Pacientes, comunicação
+  // Secretária — agenda, cadastro básico, laudos (somente leitura) e comunicação
   secretary: [
     "dashboard",
-    "appointments",   // criar, editar e cancelar
-    "patients",       // ver lista
-    "register",       // rota interna acionada por Pacientes > Novo paciente
-    "messages",       // comunicação básica
+    "appointments",
+    "patients",
+    "register",
+    "reports",
+    "messages",
     "patient-profile",
   ],
 }
@@ -79,7 +80,7 @@ export const ROLE_ACTIONS: Record<UserRole, string[]> = {
   manager:   ["view_reports", "create_reports", "update_reports", "delete_reports", "view_all_appointments", "create_appointments", "delete_appointments", "manage_availability", "manage_patients", "update_patients", "delete_patients", "manage_team", "view_financial", "manage_financial", "send_messages"],
   admin:     ["view_reports", "create_reports", "update_reports", "delete_reports", "view_all_appointments", "create_appointments", "delete_appointments", "manage_availability", "manage_patients", "update_patients", "delete_patients", "manage_team", "view_financial", "manage_financial", "send_messages"],
   financial: ["view_financial", "manage_financial", "view_reports"],
-  secretary: ["view_appointments", "create_appointments", "update_appointments", "cancel_appointments", "register_patients", "update_patients", "send_messages"],
+  secretary: ["view_appointments", "create_appointments", "update_appointments", "cancel_appointments", "register_patients", "update_patients", "send_messages", "view_reports"],
 }
 
 export const ROLE_LABELS: Record<UserRole, string> = {
@@ -106,6 +107,27 @@ export function canAccess(role: UserRole, page: PageId): boolean {
 
 export function canDo(role: UserRole, action: string): boolean {
   return (ROLE_ACTIONS[role] ?? []).includes(action)
+}
+
+/** Agenda interna: paciente agenda no portal; médico só visualiza e atende. */
+export function canBookAppointments(role: UserRole): boolean {
+  if (role === "doctor" || role === "patient") return false
+  return canDo(role, "create_appointments")
+}
+
+export function canEditAppointments(role: UserRole): boolean {
+  if (role === "doctor" || role === "patient") return false
+  return canDo(role, "update_appointments") || canDo(role, "create_appointments")
+}
+
+export function canCancelAppointments(role: UserRole): boolean {
+  if (role === "doctor" || role === "patient") return false
+  return canDo(role, "cancel_appointments") || canDo(role, "delete_appointments")
+}
+
+export function canDeleteAppointments(role: UserRole): boolean {
+  if (role === "doctor" || role === "patient") return false
+  return canDo(role, "delete_appointments")
 }
 
 export function getDefaultPage(role: UserRole): PageId {

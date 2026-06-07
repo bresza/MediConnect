@@ -7,6 +7,7 @@ import { Button } from "../../components/ui/Button/Button"
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog/ConfirmDialog"
 import { RefreshButton } from "../../components/ui/RefreshButton/RefreshButton"
 import { formatCpfBR, formatDate, isRemovedPatientPlaceholder, onlyDigits, sortByName, toTitleCase } from "../../utils"
+import { formatRecordStatus } from "../../utils/statusLabels"
 import type { PageId, Patient } from "../../types"
 import type { UseToastReturn } from "../../hooks/useToast"
 import styles from "./Patients.module.css"
@@ -126,7 +127,7 @@ export function Patients({ patients, onNavigate, onEditPatient, onViewProfile, o
                       <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}>{formatCpfBR(p.cpf) || "—"}</td>
                       <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}>{p.healthInsurance ?? "—"}</td>
                       <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}>{p.lastVisit ? formatDate(p.lastVisit) : "—"}</td>
-                      <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}><Badge>{p.status}</Badge></td>
+                      <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}><Badge>{formatRecordStatus(p.status)}</Badge></td>
                       <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}>
                         <div className={styles.actions} onClick={(e) => e.stopPropagation()}>
                           <Button size="sm" variant="ghost" onClick={() => onEditPatient(p)}>Editar</Button>

@@ -495,8 +495,13 @@ export function PatientFindDoctorView({
         <p>
           {doctorsLoading
             ? "Carregando..."
-            : `${filteredDoctors.length} especialista${filteredDoctors.length !== 1 ? "s" : ""} disponíve${filteredDoctors.length !== 1 ? "is" : "l"}`}
+            : `${filteredDoctors.length} especialista${filteredDoctors.length !== 1 ? "s" : ""} com agenda online`}
         </p>
+        {!doctorsLoading && filteredDoctors.length > 0 && (
+          <span className={styles.resultsHint}>
+            Exibimos médicos com horários cadastrados para agendamento pelo portal
+          </span>
+        )}
         {!doctorsLoading && filteredDoctors.length > 0 && (
           <span className={styles.resultsHint}>Use o botão verde em cada card para agendar</span>
         )}

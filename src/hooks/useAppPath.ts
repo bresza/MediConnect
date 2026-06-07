@@ -1,23 +1,34 @@
 import { useCallback, useEffect, useState } from "react"
-
-const LOGIN_PATH = "/login"
+import { LOGIN_PATH, normalizePathname } from "../utils/appRoutes"
 
 export function useAppPath() {
-  const [path, setPath] = useState(() => window.location.pathname)
+  const [path, setPath] = useState(() => window.location.pathname + window.location.search)
 
   useEffect(() => {
-    const onPopState = () => setPath(window.location.pathname)
-    window.addEventListener("popstate", onPopState)
-    return () => window.removeEventListener("popstate", onPopState)
+    const sync = () => setPath(window.location.pathname + window.location.search)
+    window.addEventListener("popstate", sync)
+    return () => window.removeEventListener("popstate", sync)
   }, [])
 
-  const navigate = useCallback((next: string) => {
+  const navigate = useCallback((next: string, replace = false) => {
     const target = next.startsWith("/") ? next : `/${next}`
-    window.history.pushState({}, "", target)
+    if (replace) window.history.replaceState({}, "", target)
+    else window.history.pushState({}, "", target)
     setPath(target)
   }, [])
 
-  const isLoginPath = path === LOGIN_PATH || path.startsWith(`${LOGIN_PATH}/`)
+  const pathname = normalizePathname(path.split("?")[0] ?? path)
+  const isLoginPath = pathname === LOGIN_PATH || pathname.startsWith(`${LOGIN_PATH}/`)
 
-  return { path, navigate, isLoginPath, goHome: () => navigate("/"), goLogin: () => navigate(LOGIN_PATH) }
+  return {
+    path,
+    pathname,
+    navigate,
+    isLoginPath,
+    goHome: () => navigate("/", true),
+    goLogin: (nextPath?: string) => {
+      const query = nextPath ? `?next=${encodeURIComponent(nextPath)}` : ""
+      navigate(`${LOGIN_PATH}${query}`, true)
+    },
+  }
 }

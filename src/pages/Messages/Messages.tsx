@@ -19,7 +19,7 @@ const SMS_TEMPLATES: MessageTemplate[] = [
   { id: 2, name: "Confirmação de agendamento", channel: "SMS", content: "Olá {nome}, sua consulta foi confirmada para {data} às {hora}." },
   { id: 3, name: "Resultado de exame disponível", channel: "SMS", content: "Olá {nome}, seu resultado de exame está disponível." },
   { id: 4, name: "Cancelamento de consulta", channel: "SMS", content: "Olá {nome}, sua consulta de {data} foi cancelada." },
-  { id: 5, name: "Boas-vindas ao paciente", channel: "SMS", content: "Olá {nome}, seja bem-vindo(a) à Clínica Mediconnect!" },
+  { id: 5, name: "Boas-vindas ao paciente", channel: "SMS", content: "Olá {nome}, seja bem-vindo(a) à Clínica MediConnect!" },
 ]
 
 export function Messages() {

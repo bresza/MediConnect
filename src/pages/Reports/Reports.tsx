@@ -14,6 +14,8 @@ import { RichTextEditor } from "../../components/ui/RichTextEditor/RichTextEdito
 import { chatComplete, isAIConfigured, AIError, type ChatMessage } from "../../services/ai"
 import { formatCrm, formatDate, sortByName, toTitleCase } from "../../utils"
 import { normalizeCid10, validateCid10 } from "../../utils/cid10"
+import { fillReportTemplate } from "../../utils/reportPlaceholders"
+import { canDo } from "../../utils/permissions"
 import { ReportPreview, type ReportPreviewData } from "./ReportPreview"
 import styles from "./Reports.module.css"
 
@@ -324,6 +326,9 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
   const [updatingId,  setUpdatingId]  = useState<string | null>(null)
   const [search,      setSearch]      = useState("")
   const [filterStatus, setFilterStatus] = useState<ReportStatus | "All">("All")
+  const [filterDoctor, setFilterDoctor] = useState<string>("All")
+  const [filterDateFrom, setFilterDateFrom] = useState("")
+  const [filterDateTo, setFilterDateTo] = useState("")
   const [previewData, setPreviewData] = useState<ReportPreviewData | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -333,6 +338,16 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
   const aiProxyDownRef = useRef(false)
   const aiAvailable = useMemo(() => isAIConfigured(), [])
   const canDeleteReports = currentUser.role === "manager" || currentUser.role === "admin"
+  const canCreateReports = canDo(currentUser.role, "create_reports")
+  const canUpdateReports = canDo(currentUser.role, "update_reports")
+  const readOnlyReports = !canCreateReports && canDo(currentUser.role, "view_reports")
+
+  const doctorFilterOptions = useMemo(() => {
+    const names = new Set(
+      reports.map((r) => r.doctorName?.trim()).filter(Boolean) as string[],
+    )
+    return sortByName([...names], (name) => name)
+  }, [reports])
 
   const visibleReports = sortByName(
     reports
@@ -343,6 +358,13 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
         return r.doctorId === currentUser.id || r.doctorName === toTitleCase(currentUser.name)
       })
       .filter((r) => filterStatus === "All" || r.status === filterStatus)
+      .filter((r) => filterDoctor === "All" || r.doctorName === filterDoctor)
+      .filter((r) => {
+        if (!filterDateFrom && !filterDateTo) return true
+        if (filterDateFrom && r.date < filterDateFrom) return false
+        if (filterDateTo && r.date > filterDateTo) return false
+        return true
+      })
       .filter((r) => !search ||
         r.patientName.toLowerCase().includes(search.toLowerCase()) ||
         r.type.toLowerCase().includes(search.toLowerCase())),
@@ -437,14 +459,17 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
   // ── Aplicar template ─────────────────────────────────────────────
   function applyTemplate(t: ReportTemplate) {
     const patient    = patients.find((p) => p.id === form.patientId)
-    const pName      = patient?.name ?? "[NOME DO PACIENTE]"
-    const dName      = currentUser.name ?? "[NOME DO MÉDICO]"
+    const pName      = (patient?.name ?? form.patientName) || "(nome do paciente)"
+    const dName      = currentUser.name ?? "(nome do médico)"
     const today      = new Date().toLocaleDateString("pt-BR")
-    const fill = (s: string) => s
-      .replace(/\[NOME DO PACIENTE\]/g, pName)
-      .replace(/\[NOME DO MÉDICO\]/g, dName)
-      .replace(/\[DATA\]/g, today)
-      .replace(/\[CRM\]/g, formatCrm(currentUser.crm) || "[CRM]")
+    const ctx = {
+      patientName: pName,
+      doctorName: dName,
+      date: today,
+      crm: formatCrm(currentUser.crm) || "(CRM)",
+      cpf: patient?.cpf,
+    }
+    const fill = (s: string) => fillReportTemplate(s, ctx)
     setForm((prev) => ({
       ...prev,
       type:        t.exam,
@@ -820,7 +845,7 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
         action={
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
             <RefreshButton onRefresh={load} />
-            <Button onClick={openNew}>+ Novo laudo</Button>
+            {canCreateReports && <Button onClick={openNew}>+ Novo laudo</Button>}
           </div>
         }
       />
@@ -840,6 +865,42 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
             placeholder="Buscar por paciente ou tipo..."
             style={{ width: "100%", padding: "8px 12px 8px 32px", borderRadius: 8, fontSize: 13, border: "1px solid var(--border)", background: "var(--background)", color: "var(--foreground)", outline: "none", boxSizing: "border-box" }} />
         </div>
+        {doctorFilterOptions.length > 0 && (
+          <select
+            value={filterDoctor}
+            onChange={(e) => setFilterDoctor(e.target.value)}
+            aria-label="Filtrar por médico"
+            style={{ padding: "8px 12px", borderRadius: 8, fontSize: 13, border: "1px solid var(--border)", background: "var(--background)", color: "var(--foreground)", minWidth: 180 }}
+          >
+            <option value="All">Todos os médicos</option>
+            {doctorFilterOptions.map((name) => (
+              <option key={name} value={name}>{name}</option>
+            ))}
+          </select>
+        )}
+        <input
+          type="date"
+          value={filterDateFrom}
+          onChange={(e) => setFilterDateFrom(e.target.value)}
+          aria-label="Data inicial"
+          style={{ padding: "8px 12px", borderRadius: 8, fontSize: 13, border: "1px solid var(--border)", background: "var(--background)", color: "var(--foreground)" }}
+        />
+        <input
+          type="date"
+          value={filterDateTo}
+          onChange={(e) => setFilterDateTo(e.target.value)}
+          aria-label="Data final"
+          style={{ padding: "8px 12px", borderRadius: 8, fontSize: 13, border: "1px solid var(--border)", background: "var(--background)", color: "var(--foreground)" }}
+        />
+        {(filterDateFrom || filterDateTo || filterDoctor !== "All") && (
+          <button
+            type="button"
+            onClick={() => { setFilterDateFrom(""); setFilterDateTo(""); setFilterDoctor("All") }}
+            style={{ padding: "7px 14px", borderRadius: 8, fontSize: 12, fontWeight: 500, cursor: "pointer", border: "1px solid var(--border)", background: "var(--background)", color: "var(--foreground)" }}
+          >
+            Limpar filtros
+          </button>
+        )}
         {(["All", "Draft", "Finalized"] as const).map((s) => (
           <button key={s} onClick={() => setFilterStatus(s)}
             style={{ padding: "7px 14px", borderRadius: 8, fontSize: 12, fontWeight: 500, cursor: "pointer", border: "1px solid var(--border)", transition: "all 0.15s", background: filterStatus === s ? "var(--primary)" : "var(--background)", color: filterStatus === s ? "white" : "var(--foreground)" }}>
@@ -847,6 +908,12 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
           </button>
         ))}
       </div>
+
+      {readOnlyReports && (
+        <p style={{ fontSize: 12, color: "var(--muted-foreground)", marginBottom: 12 }}>
+          Modo consulta: você pode visualizar laudos, mas não criar ou alterar documentos.
+        </p>
+      )}
 
       {/* Tabela */}
       <Card>
@@ -897,20 +964,20 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
                       </td>
                       <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}>
                         <div className={styles.tdActions}>
-                          {!isReportLocked(r.status) && (
+                          {canUpdateReports && !isReportLocked(r.status) && (
                             <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>Editar</Button>
                           )}
-                          {(isReportLocked(r.status) || r.status === "Draft") && (
+                          {(isReportLocked(r.status) || r.status === "Draft" || readOnlyReports) && (
                             <Button size="sm" variant="ghost" onClick={() => openPreviewFromReport(r)}>
                               Visualizar
                             </Button>
                           )}
-                          {r.status === "Draft" && (
+                          {canUpdateReports && r.status === "Draft" && (
                             <Button size="sm" variant="ghost" disabled={updatingId === r.id} onClick={() => handleQuickStatusUpdate(r, "Finalized")}>
                               {updatingId === r.id ? "Finalizando..." : "Finalizar"}
                             </Button>
                           )}
-                          {r.status === "Finalized" && (
+                          {canUpdateReports && r.status === "Finalized" && (
                             <Button size="sm" variant="ghost" disabled={updatingId === r.id} onClick={() => handleQuickStatusUpdate(r, "Sent")}>
                               {updatingId === r.id ? "Enviando..." : "Enviar"}
                             </Button>
