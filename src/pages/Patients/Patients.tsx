@@ -1,11 +1,6 @@
 import { useMemo, useState } from "react"
-import { Topbar } from "../../components/layout/Topbar/Topbar"
-import { Card } from "../../components/ui/Card/Card"
-import { Badge } from "../../components/ui/Badge/Badge"
 import { Avatar } from "../../components/ui/Avatar/Avatar"
-import { Button } from "../../components/ui/Button/Button"
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog/ConfirmDialog"
-import { RefreshButton } from "../../components/ui/RefreshButton/RefreshButton"
 import { formatCpfBR, formatDate, isRemovedPatientPlaceholder, onlyDigits, sortByName, toTitleCase } from "../../utils"
 import { formatRecordStatus } from "../../utils/statusLabels"
 import type { PageId, Patient } from "../../types"
@@ -29,12 +24,18 @@ const SearchIcon = () => (
   </svg>
 )
 const PlusIcon = () => (
-  <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round">
+  <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round">
     <path d="M12 5v14M5 12h14" />
   </svg>
 )
+const RefreshIcon = () => (
+  <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.9" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 12a9 9 0 11-2.64-6.36" />
+    <path d="M21 3v6h-6" />
+  </svg>
+)
 const TrashIcon = () => (
-  <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="3 6 5 6 21 6" />
     <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6M10 11v6M14 11v6M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2" />
   </svg>
@@ -44,6 +45,7 @@ export function Patients({ patients, onNavigate, onEditPatient, onViewProfile, o
   const [search, setSearch]             = useState("")
   const [filterStatus, setFilterStatus] = useState<"All" | "Active" | "Inactive">("All")
   const [confirmId, setConfirmId]       = useState<string | null>(null)
+  const [isRefreshing, setIsRefreshing] = useState(false)
 
   // Normaliza nome para exibicao e ordena alfabeticamente (case-insensitive, pt-BR).
   const orderedPatients = useMemo(() => {
@@ -72,22 +74,39 @@ export function Patients({ patients, onNavigate, onEditPatient, onViewProfile, o
     setConfirmId(null)
   }
 
-  const headerAction = (
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-      {onRefresh && <RefreshButton onRefresh={onRefresh} />}
-      {canCreatePatient && (
-        <Button onClick={() => onNavigate("register")} icon={<PlusIcon />}>Novo paciente</Button>
-      )}
-    </div>
-  )
+  async function handleRefresh() {
+    if (!onRefresh || isRefreshing) return
+    setIsRefreshing(true)
+    try {
+      await Promise.resolve(onRefresh())
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
 
   return (
-    <div>
-      <Topbar
-        title="Pacientes"
-        subtitle={`${orderedPatients.length} pacientes cadastrados`}
-        action={headerAction}
-      />
+    <div className={styles.page}>
+      <header className={styles.header}>
+        <div>
+          <h1 className={styles.title}>Pacientes</h1>
+          <p className={styles.subtitle}>{orderedPatients.length} pacientes cadastrados</p>
+        </div>
+        <div className={styles.headerActions}>
+          {onRefresh && (
+            <button type="button" className={styles.refreshBtn} onClick={handleRefresh} disabled={isRefreshing}>
+              <RefreshIcon />
+              Atualizar
+            </button>
+          )}
+          {canCreatePatient && (
+            <button type="button" className={styles.newBtn} onClick={() => onNavigate("register")}>
+              <PlusIcon />
+              Novo paciente
+            </button>
+          )}
+        </div>
+      </header>
+
       <div className={styles.filters}>
         <div className={styles.searchWrapper}>
           <span className={styles.searchIcon}><SearchIcon /></span>
@@ -99,7 +118,8 @@ export function Patients({ patients, onNavigate, onEditPatient, onViewProfile, o
           </button>
         ))}
       </div>
-      <Card>
+
+      <section className={styles.tablePanel}>
         {filtered.length === 0 ? (
           <div className={styles.empty}>
             <svg width="40" height="40" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24" strokeLinecap="round">
@@ -127,12 +147,14 @@ export function Patients({ patients, onNavigate, onEditPatient, onViewProfile, o
                       <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}>{formatCpfBR(p.cpf) || "—"}</td>
                       <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}>{p.healthInsurance ?? "—"}</td>
                       <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}>{p.lastVisit ? formatDate(p.lastVisit) : "—"}</td>
-                      <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}><Badge>{formatRecordStatus(p.status)}</Badge></td>
+                      <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}>
+                        <span className={styles.statusBadge}>{formatRecordStatus(p.status)}</span>
+                      </td>
                       <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}>
                         <div className={styles.actions} onClick={(e) => e.stopPropagation()}>
-                          <Button size="sm" variant="ghost" onClick={() => onEditPatient(p)}>Editar</Button>
+                          <button type="button" className={styles.editBtn} onClick={() => onEditPatient(p)}>Editar</button>
                           {onDeletePatient && (
-                            <button className={styles.deleteBtn} onClick={() => setConfirmId(p.id)} title="Remover paciente"><TrashIcon /></button>
+                            <button type="button" className={styles.deleteBtn} onClick={() => setConfirmId(p.id)} title="Remover paciente"><TrashIcon /></button>
                           )}
                         </div>
                       </td>
@@ -143,7 +165,8 @@ export function Patients({ patients, onNavigate, onEditPatient, onViewProfile, o
             </table>
           </div>
         )}
-      </Card>
+      </section>
+
       <ConfirmDialog
         isOpen={confirmId !== null} onClose={() => setConfirmId(null)} onConfirm={handleDeleteConfirm}
         title="Remover paciente" message={`Tem certeza que deseja remover ${confirmTarget?.name ?? "este paciente"}? Todos os dados vinculados serão perdidos.`}
