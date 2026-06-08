@@ -6,12 +6,10 @@ import interactionPlugin, { type DateClickArg } from "@fullcalendar/interaction"
 import listPlugin from "@fullcalendar/list"
 import ptBrLocale from "@fullcalendar/core/locales/pt-br"
 import type { EventClickArg, EventDropArg, EventInput } from "@fullcalendar/core"
-import { Topbar } from "../../components/layout/Topbar/Topbar"
 import { Card } from "../../components/ui/Card/Card"
 import { Badge } from "../../components/ui/Badge/Badge"
 import { Avatar } from "../../components/ui/Avatar/Avatar"
 import { Button } from "../../components/ui/Button/Button"
-import { RefreshButton } from "../../components/ui/RefreshButton/RefreshButton"
 import { Select } from "../../components/ui/Select/Select"
 import { WaitlistPanel, WaitlistSuggestionModal, type AddWaitlistInput } from "../../components/ui/Waitlist/Waitlist"
 import { ConsultationModal } from "../../components/ui/ConsultationModal/ConsultationModal"
@@ -93,6 +91,19 @@ const TYPE_LABEL: Record<Appointment["type"], string> = {
   exam: "Exame",
   procedure: "Procedimento",
 }
+
+const RefreshIcon = () => (
+  <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.9" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 12a9 9 0 11-2.64-6.36" />
+    <path d="M21 3v6h-6" />
+  </svg>
+)
+
+const PlusIcon = () => (
+  <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round">
+    <path d="M12 5v14M5 12h14" />
+  </svg>
+)
 
 function toDateStr(date: Date): string {
   return [
@@ -232,6 +243,7 @@ export function Appointments({
   const [availabilityError, setAvailabilityError] = useState<string | null>(null)
   const [pageHeight, setPageHeight] = useState<number>()
   const [calendarHeight, setCalendarHeight] = useState(480)
+  const [isRefreshing, setIsRefreshing] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -725,6 +737,16 @@ export function Appointments({
 
   const slotOptions = modal.doctorId && modal.date ? availableSlots : []
 
+  async function handleRefresh() {
+    if (!onRefresh || isRefreshing) return
+    setIsRefreshing(true)
+    try {
+      await Promise.resolve(onRefresh())
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
+
   const measureLayout = useCallback(() => {
     const pageEl = pageRef.current
     if (pageEl) {
@@ -775,26 +797,28 @@ export function Appointments({
       style={pageHeight ? { height: pageHeight, maxHeight: pageHeight } : undefined}
     >
       <div className={styles.pageHeader}>
-        <Topbar
-          title="Agendamento"
-          subtitle={
-            calendarView === "dayGridMonth"
+        <div>
+          <h1 className={styles.title}>Agendamento</h1>
+          <p className={styles.subtitle}>
+            {calendarView === "dayGridMonth"
               ? formatVisibleMonth(visibleMonth)
-              : calendarTitle
-                ? `Agenda da clínica · ${calendarTitle}`
-                : "Agenda da clínica"
-          }
-          action={
-            <div className={styles.headerActions}>
-              {onRefresh && <RefreshButton onRefresh={onRefresh} />}
-              {canBook && activeTab === "calendar" && (
-                <Button onClick={() => openModal()} icon={<span aria-hidden="true">+</span>}>
-                  Novo agendamento
-                </Button>
-              )}
-            </div>
-          }
-        />
+              : calendarTitle || "Agenda da clínica"}
+          </p>
+        </div>
+        <div className={styles.headerActions}>
+          {onRefresh && (
+            <button type="button" className={styles.refreshBtn} onClick={handleRefresh} disabled={isRefreshing}>
+              <RefreshIcon />
+              Atualizar
+            </button>
+          )}
+          {canBook && activeTab === "calendar" && (
+            <button type="button" className={styles.newBtn} onClick={() => openModal()}>
+              <PlusIcon />
+              Novo agendamento
+            </button>
+          )}
+        </div>
       </div>
 
       <div className={styles.tabs} role="tablist" aria-label="Visualização">
