@@ -73,6 +73,9 @@ export function Sidebar({
   patientPortalCounts,
 }: SidebarProps) {
   const isPatient = currentUser.role === "patient"
+  const isManagerDashboard = currentUser.role === "manager" && (
+    activePage === "dashboard" || activePage === "patients" || activePage === "appointments"
+  )
   const allowedPages = ROLE_PAGES[currentUser.role] ?? []
 
   const visibleGroups = ALL_NAV_GROUPS
@@ -82,7 +85,7 @@ export function Sidebar({
   const roleColor = ROLE_COLORS[currentUser.role] ?? "#6366f1"
 
   return (
-    <aside className={`${styles.sidebar} ${isOpen ? styles.sidebarOpen : ""}`}>
+    <aside className={`${styles.sidebar} ${isOpen ? styles.sidebarOpen : ""} ${isManagerDashboard ? styles.managerDashboardSidebar : ""}`}>
 
       {/* Logo */}
       <div className={styles.logo}>

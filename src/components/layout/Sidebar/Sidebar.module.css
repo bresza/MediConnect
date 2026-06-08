@@ -194,3 +194,186 @@
   color: var(--destructive);
   border-color: rgb(220 38 38 / 0.2);
 }
+
+/* ── Dashboard do gestor: replica visual da referência ─────────── */
+.managerDashboardSidebar {
+  width: 240px;
+  background: linear-gradient(180deg, #6f8878 0%, #5f7769 52%, #5a7163 100%);
+  border-right: 1px solid rgb(255 255 255 / 0.2);
+  color: #fff;
+}
+
+.managerDashboardSidebar .logo {
+  height: 88px;
+  padding: 0 20px;
+  border-bottom: none;
+  gap: 12px;
+}
+
+.managerDashboardSidebar .logoIcon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 0.18);
+  box-shadow: none;
+}
+
+.managerDashboardSidebar .logoIcon svg {
+  width: 22px;
+  height: 22px;
+  stroke: #fff;
+}
+
+.managerDashboardSidebar .logoName {
+  font-size: 20px;
+  color: #fff;
+  line-height: 1.05;
+}
+
+.managerDashboardSidebar .logoClinic {
+  margin-top: 5px;
+  font-size: 13px;
+  color: rgb(255 255 255 / 0.78);
+}
+
+.managerDashboardSidebar .logo + div {
+  margin: 0 14px 22px !important;
+  min-height: 38px;
+  border-radius: 8px !important;
+  background: rgb(255 255 255 / 0.08) !important;
+  border: 1px solid rgb(255 255 255 / 0.15) !important;
+}
+
+.managerDashboardSidebar .logo + div > div:first-child {
+  width: 10px !important;
+  height: 10px !important;
+  background: #fff !important;
+}
+
+.managerDashboardSidebar .logo + div p {
+  color: #fff !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+}
+
+.managerDashboardSidebar .nav {
+  padding: 0 14px;
+}
+
+.managerDashboardSidebar .navSection {
+  padding: 8px 8px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: rgb(255 255 255 / 0.72);
+  opacity: 1;
+  text-transform: uppercase;
+}
+
+.managerDashboardSidebar .navList {
+  gap: 4px;
+  margin-bottom: 28px;
+}
+
+.managerDashboardSidebar .navBtn {
+  min-height: 40px;
+  padding: 10px 11px;
+  border-radius: 8px;
+  color: rgb(255 255 255 / 0.92);
+  font-size: 15px;
+  font-weight: 500;
+  gap: 12px;
+}
+
+.managerDashboardSidebar .navBtn svg {
+  width: 17px;
+  height: 17px;
+}
+
+.managerDashboardSidebar .navBtn:hover {
+  background: rgb(255 255 255 / 0.11);
+  color: #fff;
+}
+
+.managerDashboardSidebar .navBtnActive,
+.managerDashboardSidebar .navBtnActive:hover {
+  background: rgb(255 255 255 / 0.18);
+  color: #fff;
+}
+
+.managerDashboardSidebar .navBtnActive::before {
+  display: none;
+}
+
+.managerDashboardSidebar .themeRow {
+  margin: 0 14px;
+  min-height: 58px;
+  padding: 10px 14px;
+  border: 1px solid rgb(255 255 255 / 0.08);
+  border-left: none;
+  border-right: none;
+}
+
+.managerDashboardSidebar .themeLabel {
+  font-size: 14px;
+  color: #fff;
+}
+
+.managerDashboardSidebar .themeBtn {
+  width: 34px;
+  height: 34px;
+  border: none;
+  background: transparent;
+  color: #fff;
+}
+
+.managerDashboardSidebar .themeBtn svg {
+  width: 22px;
+  height: 22px;
+}
+
+.managerDashboardSidebar .user {
+  padding: 16px 18px 20px;
+  border-top: none;
+}
+
+.managerDashboardSidebar .userCard {
+  padding: 0;
+  gap: 12px;
+}
+
+.managerDashboardSidebar .userCard:hover {
+  background: transparent;
+}
+
+.managerDashboardSidebar .userAvatar {
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: #fff !important;
+  color: #26362f;
+  font-size: 13px;
+}
+
+.managerDashboardSidebar .userName {
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.managerDashboardSidebar .userRole {
+  color: rgb(255 255 255 / 0.82);
+  font-size: 14px;
+}
+
+.managerDashboardSidebar .logoutBtn {
+  width: 32px;
+  height: 32px;
+  color: #fff;
+  border: none;
+}
+
+.managerDashboardSidebar .logoutBtn svg {
+  width: 18px;
+  height: 18px;
+}
