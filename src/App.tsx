@@ -38,14 +38,14 @@ function AppInner() {
     if (user) return
     if (isLoginPath) return
 
+    if (isPublicPath(pathname)) return
+
     if (isAppPath(pathname)) {
       goLogin(pathname)
       return
     }
 
-    if (!isPublicPath(pathname)) {
-      goHome()
-    }
+    goHome()
   }, [user, isLoginPath, pathname, goLogin, goHome])
 
   function handleLogin(res: LoginResponse) {
@@ -75,6 +75,7 @@ function AppInner() {
         </>
       )
     }
+    if (isPublicPath(pathname)) return <Landing />
     if (isAppPath(pathname)) return null
     return <Landing />
   }

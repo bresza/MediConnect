@@ -3,6 +3,7 @@ import { Sidebar }        from "./components/layout/Sidebar/Sidebar"
 import { AIAssistant }    from "./components/ui/AIAssistant/AIAssistant"
 import { ToastContainer } from "./components/ui/ToastContainer/ToastContainer"
 import { Dashboard }      from "./pages/Dashboard/Dashboard"
+import { ManagerDashboard } from "./pages/Dashboard/ManagerDashboard"
 import { Patients }       from "./pages/Patients/Patients"
 import { Registration }   from "./pages/Registration/Registration"
 import { Appointments }   from "./pages/Appointments/Appointments"
@@ -325,7 +326,13 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
 
       // ── Dashboard (adaptado por perfil) ─────────────────────────
       case "dashboard":
-        return (
+        return currentUser.role === "manager" ? (
+          <ManagerDashboard
+            onNavigate={handleNavigate}
+            onRefresh={reloadAll}
+            onOpenSidebar={() => setSidebarOpen(true)}
+          />
+        ) : (
           <Dashboard
             patients={visiblePatients}
             appointments={visibleAppointments}
@@ -444,7 +451,13 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
         return <Settings currentUser={currentUser} />
 
       default:
-        return (
+        return currentUser.role === "manager" ? (
+          <ManagerDashboard
+            onNavigate={handleNavigate}
+            onRefresh={reloadAll}
+            onOpenSidebar={() => setSidebarOpen(true)}
+          />
+        ) : (
           <Dashboard
             patients={visiblePatients}
             appointments={visibleAppointments}
