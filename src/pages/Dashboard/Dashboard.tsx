@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useState } from "react"
 import { getReports } from "../../services/domain"
 import type { Report } from "../../types"
-import { Topbar } from "../../components/layout/Topbar/Topbar"
-import { Card } from "../../components/ui/Card/Card"
-import { Badge } from "../../components/ui/Badge/Badge"
 import { Avatar } from "../../components/ui/Avatar/Avatar"
+import { Badge } from "../../components/ui/Badge/Badge"
 import { Button } from "../../components/ui/Button/Button"
 import { RefreshButton } from "../../components/ui/RefreshButton/RefreshButton"
 import { formatDate, formatAppointmentType, sortByName, toTitleCase } from "../../utils"
@@ -32,15 +30,45 @@ interface StatConfig {
   valCls: string
   iconBg: string
   iconStroke: string
-  trend: string
 }
 
 const STATS: StatConfig[] = [
-  { label: "Pacientes",         icon: "M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z", valCls: styles.statPrimary,  iconBg: styles.statIconPrimary,  iconStroke: "var(--primary)", trend: "+3 mês" },
-  { label: "Agendamentos hoje", icon: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z",         valCls: styles.statBlue,    iconBg: styles.statIconBlue,    iconStroke: "#0284c7",         trend: "hoje"  },
-  { label: "Laudos pendentes",  icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2", valCls: styles.statAmber,   iconBg: styles.statIconAmber,   iconStroke: "#d97706",         trend: "abertos" },
-  { label: "Taxa de presença",  icon: "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z",                                                    valCls: styles.statEmerald, iconBg: styles.statIconEmerald, iconStroke: "#059669",         trend: "confirmados" },
+  {
+    label: "Pacientes",
+    icon: "M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z",
+    valCls: styles.statPrimary,
+    iconBg: styles.statIconPrimary,
+    iconStroke: "var(--primary)",
+  },
+  {
+    label: "Agendamentos hoje",
+    icon: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z",
+    valCls: styles.statBlue,
+    iconBg: styles.statIconBlue,
+    iconStroke: "#0284c7",
+  },
+  {
+    label: "Laudos pendentes",
+    icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2",
+    valCls: styles.statAmber,
+    iconBg: styles.statIconAmber,
+    iconStroke: "#d97706",
+  },
+  {
+    label: "Taxa de presença",
+    icon: "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z",
+    valCls: styles.statEmerald,
+    iconBg: styles.statIconEmerald,
+    iconStroke: "#059669",
+  },
 ]
+
+const STAT_TRENDS: Record<string, string> = {
+  "Pacientes":          "+3 mês",
+  "Agendamentos hoje":  "hoje",
+  "Laudos pendentes":   "abertos",
+  "Taxa de presença":   "confirmados",
+}
 
 function todayKey() {
   const now = new Date()
@@ -48,6 +76,13 @@ function todayKey() {
   const month = String(now.getMonth() + 1).padStart(2, "0")
   const day = String(now.getDate()).padStart(2, "0")
   return `${year}-${month}-${day}`
+}
+
+const PAGE_TITLES: Partial<Record<string, string>> = {
+  doctor:    "Meu Painel",
+  secretary: "Recepção",
+  financial: "Dashboard",
+  admin:     "Dashboard",
 }
 
 export function Dashboard({ patients, appointments, currentUser, onNavigate, onRefresh }: DashboardProps) {
@@ -81,6 +116,7 @@ export function Dashboard({ patients, appointments, currentUser, onNavigate, onR
     patientName: toTitleCase(a.patientName),
     doctorName: toTitleCase(a.doctorName),
   }))
+
   const todayAppointments = visibleAppointments
     .filter((a) => a.date === todayKey())
     .sort((a, b) => a.time.localeCompare(b.time))
@@ -117,90 +153,108 @@ export function Dashboard({ patients, appointments, currentUser, onNavigate, onR
     "Taxa de presença":   `${rate}%`,
   }
 
-  const today = new Date().toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" })
+  const today = new Date().toLocaleDateString("pt-BR", {
+    day: "numeric", month: "long", year: "numeric",
+  })
+
+  const pageTitle = PAGE_TITLES[currentUser.role] ?? "Dashboard"
 
   return (
-    <div>
-      <Topbar
-        title={currentUser.role === "doctor" ? "Meu Painel" : currentUser.role === "secretary" ? "Recepção" : "Dashboard"}
-        subtitle={`Visão geral · ${today}`}
-        action={
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <RefreshButton onRefresh={handleRefresh} />
-            {!isDoctor && (
-              <Button onClick={() => onNavigate("register")} icon={<PlusIcon />}>
-                Novo paciente
-              </Button>
-            )}
-          </div>
-        }
-      />
+    <div className={styles.page}>
+      {/* Header — mesmo padrão visual do ManagerDashboard */}
+      <header className={styles.header}>
+        <div className={styles.headerInfo}>
+          <h1 className={styles.headerTitle}>{pageTitle}</h1>
+          <p className={styles.headerSubtitle}>Visão geral · {today}</p>
+        </div>
+        <div className={styles.headerActions}>
+          <RefreshButton onRefresh={handleRefresh} variant="outline" size="md" />
+          {!isDoctor && (
+            <Button onClick={() => onNavigate("register")} icon={<PlusIcon />}>
+              Novo paciente
+            </Button>
+          )}
+        </div>
+      </header>
 
-      {/* Stats */}
+      {/* Stats — mesmo layout horizontal do ManagerDashboard */}
       <div className={styles.statsGrid}>
         {STATS.map((s) => (
-          <Card key={s.label} className={styles.statCard}>
-            <div className={styles.statHeader}>
-              <p className={styles.statLabel}>{s.label}</p>
+          <div key={s.label} className={styles.statCard}>
+            <div className={styles.statLayout}>
               <div className={`${styles.statIconBox} ${s.iconBg}`}>
-                <svg width="17" height="17" fill="none" stroke={s.iconStroke}
-                  strokeWidth="1.8" viewBox="0 0 24 24">
+                <svg fill="none" stroke={s.iconStroke} strokeWidth="1.8" viewBox="0 0 24 24">
                   {s.icon.split("M").filter(Boolean).map((d, i) => (
                     <path key={i} d={"M" + d} strokeLinecap="round" strokeLinejoin="round" />
                   ))}
                 </svg>
               </div>
+              <div className={styles.statText}>
+                <p className={styles.statLabel}>{s.label}</p>
+                <p className={`${styles.statValue} ${s.valCls}`}>{statValues[s.label]}</p>
+                <span className={styles.statTrend}>{STAT_TRENDS[s.label]}</span>
+              </div>
             </div>
-            <p className={`${styles.statValue} ${s.valCls}`}>{statValues[s.label]}</p>
-            <span className={styles.statTrend}>{s.trend}</span>
-          </Card>
+          </div>
         ))}
       </div>
 
-      {/* Content columns */}
+      {/* Content — panels no mesmo padrão do ManagerDashboard */}
       <div className={styles.contentGrid}>
-        <Card>
-          <div className={styles.cardHeader}>
-            <p className={styles.cardHeaderTitle}>Agenda de hoje</p>
-            <Button size="sm" variant="ghost" onClick={() => onNavigate("appointments")}>Ver tudo</Button>
+        <section className={styles.panel}>
+          <div className={styles.panelHeader}>
+            <p className={styles.panelTitle}>Agenda de hoje</p>
+            <button type="button" className={styles.linkBtn} onClick={() => onNavigate("appointments")}>
+              Ver tudo
+            </button>
           </div>
-          {todayAppointments.length === 0 ? (
-            <p className={styles.emptyRow}>Nenhum agendamento para hoje.</p>
-          ) : todayAppointments.slice(0, 5).map((a) => (
-            <div key={a.id} className={styles.appointmentRow}>
-              <span className={styles.appointmentTime}>{a.time}</span>
-              <Avatar name={a.patientName} size="sm" />
-              <div className={styles.appointmentInfo}>
-                <p className={styles.appointmentName}>{a.patientName}</p>
-                <p className={styles.appointmentSub}>
-                  {formatAppointmentType(a.type)} · {a.doctorName.split(" ").slice(0, 2).join(" ")}
-                </p>
-              </div>
-              <Badge>{a.status}</Badge>
-            </div>
-          ))}
-        </Card>
+          <div className={styles.panelBody}>
+            {todayAppointments.length === 0 ? (
+              <p className={styles.emptyRow}>Nenhum agendamento para hoje.</p>
+            ) : (
+              todayAppointments.slice(0, 5).map((a) => (
+                <div key={a.id} className={styles.appointmentRow}>
+                  <span className={styles.appointmentTime}>{a.time}</span>
+                  <Avatar name={a.patientName} size="sm" />
+                  <div className={styles.appointmentInfo}>
+                    <p className={styles.appointmentName}>{a.patientName}</p>
+                    <p className={styles.appointmentSub}>
+                      {formatAppointmentType(a.type)} · {a.doctorName.split(" ").slice(0, 2).join(" ")}
+                    </p>
+                  </div>
+                  <Badge>{a.status}</Badge>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
 
-        <Card>
-          <div className={styles.cardHeader}>
-            <p className={styles.cardHeaderTitle}>Pacientes recentes</p>
-            <Button size="sm" variant="ghost" onClick={() => onNavigate("patients")}>Ver todos</Button>
+        <section className={styles.panel}>
+          <div className={styles.panelHeader}>
+            <p className={styles.panelTitle}>Pacientes recentes</p>
+            <button type="button" className={styles.linkBtn} onClick={() => onNavigate("patients")}>
+              Ver todos
+            </button>
           </div>
-          {visiblePatients.length === 0 ? (
-            <p className={styles.emptyRow}>Nenhum paciente encontrado.</p>
-          ) : recentPatients.slice(0, 5).map((p) => (
-            <div key={p.id} className={styles.patientRow}>
-              <Avatar name={p.name} size="sm" />
-              <div className={styles.patientInfo}>
-                <p className={styles.patientName}>{p.name}</p>
-                <p className={styles.patientSub}>
-                  {p.healthInsurance ?? "—"} · última visita {p.lastVisit ? formatDate(p.lastVisit) : "—"}
-                </p>
-              </div>
-              <Badge>{p.status}</Badge>
-            </div>
-          ))}
-        </Card>
+          <div className={styles.panelBody}>
+            {visiblePatients.length === 0 ? (
+              <p className={styles.emptyRow}>Nenhum paciente encontrado.</p>
+            ) : (
+              recentPatients.slice(0, 5).map((p) => (
+                <div key={p.id} className={styles.patientRow}>
+                  <Avatar name={p.name} size="sm" />
+                  <div className={styles.patientInfo}>
+                    <p className={styles.patientName}>{p.name}</p>
+                    <p className={styles.patientSub}>
+                      {p.healthInsurance ?? "—"} · última visita {p.lastVisit ? formatDate(p.lastVisit) : "—"}
+                    </p>
+                  </div>
+                  <span className={styles.statusBadge}>{p.status === "Active" ? "Ativo" : p.status}</span>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
       </div>
     </div>
   )

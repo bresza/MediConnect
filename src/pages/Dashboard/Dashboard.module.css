@@ -1,36 +1,126 @@
+/* ── Page ─────────────────────────────────────────────────────── */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-height: calc(100dvh - 56px);
+  padding-bottom: 72px;
+}
+
+/* ── Header ───────────────────────────────────────────────────── */
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 4px;
+}
+
+.headerInfo { min-width: 0; }
+
+.headerTitle {
+  font-size: 21px;
+  font-weight: 700;
+  color: var(--foreground);
+  line-height: 1.1;
+}
+
+.headerSubtitle {
+  font-size: 13px;
+  color: var(--muted-foreground);
+  margin-top: 4px;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 /* ── Stats grid ───────────────────────────────────────────────── */
 .statsGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr));
-  gap: 12px;
-  margin-bottom: 20px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
 }
 
-.statCard { padding: 16px 18px; }
+@media (max-width: 1100px) {
+  .statsGrid { grid-template-columns: repeat(2, 1fr); }
+}
 
-.statHeader { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+@media (max-width: 520px) {
+  .statsGrid { grid-template-columns: 1fr; }
+}
+
+.statCard {
+  min-height: 124px;
+  padding: 18px 20px;
+  border-radius: 8px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 2px rgb(17 24 39 / 0.06), 0 8px 22px rgb(17 24 39 / 0.05);
+}
+
+.statLayout {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  height: 100%;
+}
+
+.statText { min-width: 0; }
 
 .statLabel {
-  font-size: 11px; font-weight: 600;
+  font-size: 11px;
+  font-weight: 600;
   color: var(--muted-foreground);
-  text-transform: uppercase; letter-spacing: 0.06em;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.statIconBox {
+  width: 62px;
+  height: 58px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.statIconBox svg {
+  width: 30px;
+  height: 30px;
 }
 
 .statValue {
-  font-size: 28px; font-weight: 700;
-  margin-top: 6px; line-height: 1;
+  font-size: 31px;
+  font-weight: 700;
+  margin-top: 5px;
+  line-height: 1;
   letter-spacing: -0.03em;
 }
-@media (min-width: 640px) { .statValue { font-size: 32px; } }
 
 .statTrend {
-  display: inline-flex; align-items: center; gap: 3px;
-  margin-top: 6px;
-  font-size: 11px; font-weight: 600;
-  padding: 2px 7px; border-radius: 20px;
-  background-color: var(--accent);
-  color: var(--accent-foreground);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--muted-foreground);
 }
+
+.statTrendUp   { color: #059669; }
+.statTrendDown { color: #d97706; }
+
+:global(.dark) .statTrendUp   { color: #34d399; }
+:global(.dark) .statTrendDown { color: #fbbf24; }
 
 .statPrimary  { color: var(--primary); }
 .statBlue     { color: #0284c7; }
@@ -41,79 +131,154 @@
 :global(.dark) .statAmber   { color: #fbbf24; }
 :global(.dark) .statEmerald { color: #34d399; }
 
-.statIconBox {
-  width: 38px; height: 38px;
-  border-radius: var(--radius-lg);
-  display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0;
-}
+.statIconPrimary { background: color-mix(in srgb, var(--primary) 15%, var(--card)); }
+.statIconBlue    { background: #e0f2fe; }
+.statIconAmber   { background: #fffbeb; }
+.statIconEmerald { background: #ecfdf5; }
 
-.statIconPrimary { background-color: rgb(124 144 130 / 0.12); }
-.statIconBlue    { background-color: #e0f2fe; }
-.statIconAmber   { background-color: #fffbeb; }
-.statIconEmerald { background-color: #ecfdf5; }
-
-:global(.dark) .statIconBlue    { background-color: rgb(59 130 246 / 0.15); }
-:global(.dark) .statIconAmber   { background-color: rgb(245 158 11 / 0.15); }
-:global(.dark) .statIconEmerald { background-color: rgb(16 185 129 / 0.15); }
+:global(.dark) .statIconBlue    { background: rgb(59 130 246 / 0.15); }
+:global(.dark) .statIconAmber   { background: rgb(245 158 11 / 0.15); }
+:global(.dark) .statIconEmerald { background: rgb(16 185 129 / 0.15); }
 
 /* ── Content grid ─────────────────────────────────────────────── */
 .contentGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));
-  gap: 16px;
+  gap: 18px;
+}
+
+/* ── Panel (replaces plain <Card>) ───────────────────────────── */
+.panel {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgb(17 24 39 / 0.06), 0 8px 22px rgb(17 24 39 / 0.04);
+  overflow: hidden;
 }
 
 /* ── Card header ──────────────────────────────────────────────── */
-.cardHeader {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 14px 18px;
+.panelHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 44px;
+  padding: 10px 20px;
   border-bottom: 1px solid var(--border);
 }
-.cardHeaderTitle { font-size: 13px; font-weight: 700; color: var(--foreground); }
+
+.panelTitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--foreground);
+}
+
+.linkBtn {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 12px;
+  background: var(--card);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--foreground);
+  cursor: pointer;
+  font-family: var(--font-sans);
+}
+
+.linkBtn:hover { text-decoration: underline; }
+
+.panelBody { padding: 0 20px 20px; }
 
 /* ── Appointment row ──────────────────────────────────────────── */
 .appointmentRow {
-  display: flex; align-items: center; gap: 11px;
-  padding: 11px 18px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 0;
   border-bottom: 1px solid var(--border);
 }
+
 .appointmentRow:last-child { border-bottom: none; }
 
 .appointmentTime {
-  font-size: 11px; font-weight: 700;
+  font-size: 11px;
+  font-weight: 700;
   color: var(--primary);
-  width: 38px; flex-shrink: 0;
+  width: 38px;
+  flex-shrink: 0;
 }
 
 .appointmentInfo { flex: 1; min-width: 0; }
 
 .appointmentName {
-  font-size: 13px; font-weight: 600;
+  font-size: 13px;
+  font-weight: 600;
   color: var(--foreground);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.appointmentSub { font-size: 11px; color: var(--muted-foreground); margin-top: 1px; }
+.appointmentSub {
+  font-size: 11px;
+  color: var(--muted-foreground);
+  margin-top: 1px;
+}
 
 /* ── Patient row ──────────────────────────────────────────────── */
 .patientRow {
-  display: flex; align-items: center; gap: 11px;
-  padding: 10px 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 57px;
+  padding: 11px 0;
   border-bottom: 1px solid var(--border);
 }
+
 .patientRow:last-child { border-bottom: none; }
 
 .patientInfo { flex: 1; min-width: 0; }
-.patientName { font-size: 13px; font-weight: 600; color: var(--foreground); }
-.patientSub { font-size: 11px; color: var(--muted-foreground); margin-top: 1px; }
+
+.patientName {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--foreground);
+}
+
+.patientSub {
+  font-size: 11px;
+  color: var(--muted-foreground);
+  margin-top: 2px;
+}
+
+.statusBadge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--primary) 18%, var(--card));
+  color: var(--accent-foreground);
+}
+
+:global(.dark) .statusBadge {
+  background: color-mix(in srgb, var(--primary) 22%, var(--card));
+}
 
 /* ── Empty ────────────────────────────────────────────────────── */
 .emptyRow {
-  padding: 32px 18px;
+  padding: 32px 20px;
   text-align: center;
   font-size: 13px;
   color: var(--muted-foreground);
 }
 
-:global(.dark) .statIconAmber { background-color: rgb(245 158 11 / 0.15); }
+/* ── Responsive ───────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .headerActions {
+    width: 100%;
+  }
+}
