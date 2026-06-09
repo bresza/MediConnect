@@ -7,6 +7,7 @@
 <title>MediConnect — Gestão Clínica Inteligente</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Open+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+<script>if(localStorage.getItem('theme')==='dark')document.documentElement.classList.add('dark');</script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -78,6 +79,30 @@
     text-decoration: none;
   }
   .nav-cta:hover { background: var(--primary-hover); }
+
+  .nav-right {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+  }
+
+  .theme-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--foreground);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+    flex-shrink: 0;
+    padding: 0;
+  }
+  .theme-btn:hover { background: var(--muted); }
+  .theme-btn svg { display: block; }
 
   /* ── HERO ── */
   .hero {
@@ -579,6 +604,35 @@
   .d4  { animation-delay: 0.5s; }
   .d5  { animation-delay: 0.66s; }
 
+  /* ── DARK MODE ── */
+  html.dark {
+    --primary:        #8fa897;
+    --primary-hover:  #7c9082;
+    --primary-active: #6b7d71;
+    --accent:         #243028;
+    --accent-fg:      #9fbdab;
+    --bg:             #0f1117;
+    --card:           #181b23;
+    --foreground:     #f1f3f5;
+    --muted:          #22262f;
+    --muted-fg:       #8b95a1;
+    --border:         #2a2f3a;
+  }
+  html.dark nav {
+    background: rgba(24,27,35,0.92);
+  }
+  html.dark .pw-sidebar,
+  html.dark .pw-stat,
+  html.dark .pw-chart,
+  html.dark .pw-patient,
+  html.dark .hero-preview {
+    background: var(--card) !important;
+    border-color: var(--border) !important;
+  }
+  html.dark .pw-main { background: var(--bg); }
+  html.dark .pw-bar-chrome { background: #22262f; border-color: var(--border); }
+  html.dark .pw-badge { background: #14532d; color: #86efac; }
+
   /* ── RESPONSIVE ── */
   @media (max-width: 640px) {
     nav { padding: 0 1.25rem; }
@@ -601,7 +655,12 @@
     <li><a href="#modules">Módulos</a></li>
     <li><a href="#roles">Equipe</a></li>
   </ul>
-  <a class="nav-cta" href="/login" target="_top">Login</a>
+  <div class="nav-right">
+    <button class="theme-btn" id="themeBtnLanding" aria-label="Alternar tema">
+      <!-- ícone preenchido pelo JS -->
+    </button>
+    <a class="nav-cta" href="/login" target="_top">Login</a>
+  </div>
 </nav>
 
 <!-- HERO -->
@@ -869,5 +928,37 @@
   <p style="margin-top:0.5rem;opacity:0.4;font-size:0.75rem;">© 2026 MediConnect. Todos os direitos reservados.</p>
 </footer>
 
+<script>
+  (function () {
+    var ICON_MOON = '<svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>';
+    var ICON_SUN  = '<svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>';
+
+    var btn = document.getElementById('themeBtnLanding');
+    var html = document.documentElement;
+
+    function isDark() {
+      return localStorage.getItem('theme') === 'dark';
+    }
+
+    function applyTheme(dark) {
+      if (dark) {
+        html.classList.add('dark');
+        btn.innerHTML = ICON_SUN;
+      } else {
+        html.classList.remove('dark');
+        btn.innerHTML = ICON_MOON;
+      }
+    }
+
+    // Inicializa com o tema salvo
+    applyTheme(isDark());
+
+    btn.addEventListener('click', function () {
+      var dark = !isDark();
+      localStorage.setItem('theme', dark ? 'dark' : 'light');
+      applyTheme(dark);
+    });
+  })();
+</script>
 </body>
 </html>

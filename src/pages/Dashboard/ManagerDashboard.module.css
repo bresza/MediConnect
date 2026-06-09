@@ -209,7 +209,7 @@
   font-weight: 600;
   padding: 4px 9px;
   border-radius: 999px;
-  background: #eef1ec;
+  background: var(--accent);
   color: var(--muted-foreground);
 }
 
@@ -221,10 +221,14 @@
 .statAmber { color: #d97706; }
 .statEmerald { color: #059669; }
 
-.iconPrimary { background: rgb(45 74 62 / 0.1); }
-.iconBlue { background: #e0f2fe; }
-.iconAmber { background: #fffbeb; }
+.iconPrimary { background: color-mix(in srgb, var(--primary) 15%, var(--card)); }
+.iconBlue    { background: #e0f2fe; }
+.iconAmber   { background: #fffbeb; }
 .iconEmerald { background: #ecfdf5; }
+
+:global(.dark) .iconBlue    { background: rgb(59 130 246 / 0.15); }
+:global(.dark) .iconAmber   { background: rgb(245 158 11 / 0.15); }
+:global(.dark) .iconEmerald { background: rgb(16 185 129 / 0.15); }
 
 /* Grids */
 .mainGrid {
@@ -427,8 +431,13 @@
   font-weight: 600;
   padding: 3px 8px;
   border-radius: 20px;
-  background: #ecfdf5;
-  color: #059669;
+  background: color-mix(in srgb, var(--primary) 18%, var(--card));
+  color: var(--accent-foreground);
+}
+
+:global(.dark) .statusBadge {
+  background: color-mix(in srgb, var(--primary) 22%, var(--card));
+  color: var(--accent-foreground);
 }
 
 /* Activities */
@@ -462,12 +471,12 @@
 }
 
 .activityIcon_green {
-  background: #ecfdf5;
+  background: color-mix(in srgb, #059669 15%, var(--card));
   color: #059669;
 }
 
 .activityIcon_orange {
-  background: #fffbeb;
+  background: color-mix(in srgb, #d97706 15%, var(--card));
   color: #d97706;
 }
 
