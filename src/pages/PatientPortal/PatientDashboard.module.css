@@ -1,49 +1,60 @@
 .wrap {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
 }
 
+/* ── Metric cards — mesmo padrão dos stat cards do ManagerDashboard ── */
 .metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  gap: 16px;
 }
 
 .metricCard {
-  padding: 16px;
+  min-height: 100px;
+  padding: 18px 20px;
   border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--background);
+  border-radius: 8px;
+  background: var(--card);
+  box-shadow: 0 1px 2px rgb(17 24 39 / 0.06), 0 8px 22px rgb(17 24 39 / 0.05);
 }
 
 .metricCard span {
   display: block;
   margin-bottom: 6px;
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 600;
   color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
   font-family: var(--font-sans);
 }
 
 .metricCard strong {
-  font-size: 24px;
-  font-weight: 800;
-  color: var(--foreground);
+  font-size: 31px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: var(--primary);
   font-family: var(--font-sans);
 }
 
+/* ── Grid de painéis — mesmo padrão do ManagerDashboard ── */
 .grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: 18px;
 }
 
+/* ── Panels — mesmo estilo .panel do ManagerDashboard ── */
 .highlightCard,
 .panel {
-  padding: 16px 18px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
   background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgb(17 24 39 / 0.06), 0 8px 22px rgb(17 24 39 / 0.04);
+  overflow: hidden;
 }
 
 .highlightCard header,
@@ -52,7 +63,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 12px;
+  min-height: 44px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
 }
 
 .highlightCard h3,
@@ -64,26 +77,42 @@
   font-family: var(--font-sans);
 }
 
+/* Botões "Ver todos" */
 .panel header button,
 .linkBtn {
-  border: none;
-  background: transparent;
-  color: var(--primary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 5px 11px;
+  background: var(--card);
+  color: var(--foreground);
   font-size: 12px;
   font-weight: 600;
   font-family: var(--font-sans);
   cursor: pointer;
-  padding: 0;
 }
 
+.panel header button:hover,
+.linkBtn:hover {
+  text-decoration: underline;
+}
+
+/* Corpo dos panels */
+.highlightCard > *:not(header),
+.panel > *:not(header) {
+  padding: 0 20px 20px;
+}
+
+/* ── Próxima consulta ── */
 .nextAppt {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  padding-top: 14px;
 }
 
 .nextAppt strong {
   font-size: 18px;
+  font-weight: 700;
   color: var(--foreground);
   font-family: var(--font-sans);
 }
@@ -99,40 +128,42 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 10px;
+  padding-top: 14px;
 }
 
 .emptyInline p,
 .muted {
   margin: 0;
+  padding: 12px 20px 0;
   font-size: 13px;
   color: var(--muted-foreground);
   font-family: var(--font-sans);
 }
 
+/* ── Lista de itens ── */
 .list {
   margin: 0;
   padding: 0;
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 10px;
 }
 
 .list li {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding-bottom: 10px;
+  padding: 11px 20px;
   border-bottom: 1px solid var(--border);
 }
 
 .list li:last-child {
-  padding-bottom: 0;
   border-bottom: none;
 }
 
 .list strong {
   font-size: 13px;
+  font-weight: 700;
   color: var(--foreground);
   font-family: var(--font-sans);
 }
@@ -143,6 +174,7 @@
   font-family: var(--font-sans);
 }
 
+/* ── Alert panel ── */
 .alertPanel {
   grid-column: 1 / -1;
   border-color: color-mix(in srgb, var(--primary) 35%, var(--border));
@@ -151,11 +183,13 @@
 
 .alertPanel p {
   margin: 0;
+  padding-top: 14px;
   font-size: 13px;
   color: var(--foreground);
   font-family: var(--font-sans);
 }
 
+/* ── Responsive ── */
 @media (max-width: 900px) {
   .metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -163,5 +197,11 @@
 
   .grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .metrics {
+    grid-template-columns: 1fr 1fr;
   }
 }

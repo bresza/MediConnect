@@ -1,7 +1,7 @@
 .portal {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 18px;
 }
 
 .heroCard {
@@ -11,8 +11,9 @@
   gap: 20px;
   padding: 20px 22px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 8px;
   background: var(--card);
+  box-shadow: 0 1px 2px rgb(17 24 39 / 0.06), 0 8px 22px rgb(17 24 39 / 0.05);
 }
 
 .heroMain {
@@ -84,7 +85,8 @@
   padding: 0;
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgb(17 24 39 / 0.06), 0 8px 22px rgb(17 24 39 / 0.04);
 }
 
 .contentHeader {

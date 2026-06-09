@@ -7,39 +7,44 @@
   gap: 4px;
 }
 
+/* Itens seguem o mesmo padrão do .navBtn do sidebar verde */
 .item {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: var(--radius-md);
+  gap: 12px;
+  padding: 10px 11px;
+  border-radius: 8px;
   border: 1px solid transparent;
   background: transparent;
-  color: var(--muted-foreground);
+  color: rgb(255 255 255 / 0.92);
   cursor: pointer;
   text-align: left;
   font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 500;
   transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
 }
 
 .item:hover {
-  background-color: var(--sidebar-muted);
-  color: var(--foreground);
+  background: rgb(255 255 255 / 0.11);
+  color: #fff;
 }
 
+/* Item ativo — mesmo padrão do .navBtnActive no sidebar verde */
 .itemActive {
-  background-color: var(--accent);
-  color: var(--accent-foreground);
-  border-color: color-mix(in srgb, var(--primary) 35%, var(--border));
+  background: rgb(255 255 255 / 0.18);
+  color: #fff;
+  border-color: transparent;
   font-weight: 600;
 }
 
 .itemActive:hover {
-  background-color: var(--accent);
-  color: var(--accent-foreground);
+  background: rgb(255 255 255 / 0.18);
+  color: #fff;
 }
 
+/* Ícone — tamanho e cor iguais aos do navBtn do sidebar verde */
 .iconWrap {
   position: relative;
   width: 32px;
@@ -49,16 +54,21 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  background: color-mix(in srgb, var(--primary) 10%, var(--sidebar));
-  color: var(--primary);
+  background: rgb(255 255 255 / 0.12);
+  color: #fff;
+}
+
+.iconWrap svg {
+  width: 17px;
+  height: 17px;
 }
 
 .itemActive .iconWrap {
-  background: color-mix(in srgb, var(--primary) 18%, var(--sidebar));
+  background: rgb(255 255 255 / 0.20);
 }
 
 .label {
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 500;
   line-height: 1.2;
 }
@@ -67,6 +77,7 @@
   font-weight: 600;
 }
 
+/* Badge de contagem */
 .badge {
   position: absolute;
   top: -5px;
@@ -75,8 +86,8 @@
   height: 16px;
   padding: 0 4px;
   border-radius: 999px;
-  background: var(--primary);
-  color: #fff;
+  background: #fff;
+  color: #2d4a3e;
   font-style: normal;
   font-size: 9px;
   font-weight: 700;

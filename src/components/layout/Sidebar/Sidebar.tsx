@@ -73,9 +73,8 @@ export function Sidebar({
   patientPortalCounts,
 }: SidebarProps) {
   const isPatient = currentUser.role === "patient"
-  const isManagerDashboard = currentUser.role === "manager" && (
-    activePage === "dashboard" || activePage === "patients" || activePage === "appointments"
-  )
+  // Sidebar verde aplicado a todos os perfis autenticados
+  const isManagerDashboard = true
   const allowedPages = ROLE_PAGES[currentUser.role] ?? []
 
   const visibleGroups = ALL_NAV_GROUPS

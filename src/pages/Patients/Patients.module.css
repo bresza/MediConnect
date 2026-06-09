@@ -100,7 +100,7 @@
   height: 36px;
   padding: 8px 12px 8px 34px;
   border-radius: 8px;
-  border: 1px solid #aeb8ad;
+  border: 1px solid var(--border);
   background-color: var(--card);
   color: var(--foreground);
   font-size: 12px;
@@ -109,21 +109,21 @@
 }
 
 .searchInput::placeholder {
-  color: #667085;
+  color: var(--muted-foreground);
 }
 
 .searchInput:focus {
-  border-color: #60786a;
-  box-shadow: 0 0 0 2px rgb(96 120 106 / 0.14);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 14%, transparent);
 }
 
 .filterBtn {
   height: 36px;
   padding: 0 14px;
   border-radius: 7px;
-  border: 1px solid #b9c0b7;
+  border: 1px solid var(--border);
   background: var(--card);
-  color: #2f3832;
+  color: var(--foreground);
   font-size: 12px;
   font-weight: 500;
   font-family: var(--font-sans);
@@ -131,14 +131,14 @@
 }
 
 .filterBtn:hover {
-  background-color: #eef1ec;
+  background-color: var(--muted);
 }
 
 .filterBtnActive,
 .filterBtnActive:hover {
-  border-color: #60786a;
-  background: #60786a;
-  color: #fff;
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-foreground);
 }
 
 .tablePanel {
@@ -161,7 +161,7 @@
 }
 
 .thead {
-  background: #f7f8f5;
+  background: var(--muted);
 }
 
 .th {
@@ -170,7 +170,7 @@
   text-align: left;
   font-size: 10px;
   font-weight: 500;
-  color: #5f6673;
+  color: var(--muted-foreground);
   text-transform: uppercase;
   letter-spacing: 0;
   border-bottom: 1px solid var(--border);
@@ -179,7 +179,7 @@
 .td {
   height: 54px;
   padding: 0 18px;
-  color: #111827;
+  color: var(--foreground);
   border-bottom: 1px solid var(--border);
   vertical-align: middle;
 }
@@ -207,7 +207,7 @@
   margin-top: 2px;
   font-size: 10px;
   font-weight: 600;
-  color: #111827;
+  color: var(--muted-foreground);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -229,10 +229,15 @@
   height: 22px;
   padding: 0 9px;
   border-radius: 999px;
-  background: #dfe8c3;
-  color: #617335;
+  background: color-mix(in srgb, var(--primary) 18%, var(--card));
+  color: var(--accent-foreground);
   font-size: 10px;
   font-weight: 700;
+}
+
+:global(.dark) .statusBadge {
+  background: color-mix(in srgb, var(--primary) 22%, var(--card));
+  color: var(--accent-foreground);
 }
 
 .actions {
@@ -245,7 +250,7 @@
   border: none;
   background: transparent;
   padding: 0;
-  color: #4f5f54;
+  color: var(--muted-foreground);
   font-size: 12px;
   font-weight: 500;
   font-family: var(--font-sans);
@@ -254,6 +259,7 @@
 
 .editBtn:hover {
   text-decoration: underline;
+  color: var(--foreground);
 }
 
 .clickableRow {
@@ -262,7 +268,7 @@
 }
 
 .clickableRow:hover td {
-  background-color: #f7f8f5;
+  background-color: var(--muted);
 }
 
 .deleteBtn {

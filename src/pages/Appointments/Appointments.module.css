@@ -585,6 +585,19 @@
   line-height: 1.45;
 }
 
+:global(.dark) .warning {
+  background: rgb(234 179 8 / 0.08);
+  border-color: rgb(234 179 8 / 0.35);
+}
+
+:global(.dark) .warning strong {
+  color: #fde68a;
+}
+
+:global(.dark) .warning span {
+  color: #fcd34d;
+}
+
 .errorText {
   margin-top: 12px;
   color: var(--destructive);
@@ -1034,7 +1047,7 @@
 /* Tela de agendamento no visual do anexo. */
 .page {
   gap: 0;
-  color: #111827;
+  color: var(--foreground);
 }
 
 .pageHeader {
@@ -1044,12 +1057,12 @@
   gap: 16px;
   flex-shrink: 0;
   padding-bottom: 10px;
-  border-bottom: 1px solid #dfe3df;
+  border-bottom: 1px solid var(--border);
 }
 
 .title {
   margin: 0;
-  color: #111827;
+  color: var(--foreground);
   font-size: 22px;
   font-weight: 500;
   line-height: 1.05;
@@ -1057,7 +1070,7 @@
 
 .subtitle {
   margin: 3px 0 0;
-  color: #111827;
+  color: var(--muted-foreground);
   font-size: 12px;
   font-weight: 400;
 }
@@ -1084,9 +1097,9 @@
 
 .refreshBtn {
   padding: 0 10px;
-  border: 1px solid #d8ddd7;
-  background: #fff;
-  color: #1f2937;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--foreground);
 }
 
 .refreshBtn:disabled {
@@ -1096,9 +1109,9 @@
 
 .newBtn {
   padding: 0 14px;
-  border: 1px solid #5f7769;
-  background: #60786a;
-  color: #fff;
+  border: 1px solid var(--primary-hover);
+  background: var(--primary);
+  color: var(--primary-foreground);
   box-shadow: 0 1px 2px rgb(17 24 39 / 0.08);
 }
 
@@ -1106,27 +1119,27 @@
   height: 36px;
   margin-bottom: 8px;
   padding: 0;
-  border-bottom: 1px solid #dfe3df;
+  border-bottom: 1px solid var(--border);
   gap: 12px;
 }
 
 .tab {
   height: 36px;
   padding: 0 4px;
-  color: #5f6673;
+  color: var(--muted-foreground);
   font-size: 12px;
   font-weight: 500;
   border-bottom-width: 1px;
 }
 
 .tabActive {
-  color: #111827;
-  border-bottom-color: #60786a;
+  color: var(--foreground);
+  border-bottom-color: var(--primary);
 }
 
 .managerHint {
   padding: 0 0 7px;
-  color: #4b5563;
+  color: var(--muted-foreground);
   font-size: 10px;
   font-weight: 400;
 }
@@ -1147,9 +1160,9 @@
 .legendCard,
 .detailCard {
   border-radius: 8px !important;
-  border: 1px solid #dfe3df !important;
-  background: #fff !important;
-  box-shadow: 0 1px 2px rgb(17 24 39 / 0.06), 0 8px 18px rgb(17 24 39 / 0.04) !important;
+  border: 1px solid var(--border) !important;
+  background: var(--card) !important;
+  box-shadow: var(--shadow-sm) !important;
 }
 
 .calendarCard {
@@ -1159,7 +1172,7 @@
 .toolbar {
   min-height: 42px;
   padding: 8px 10px;
-  border-bottom: 1px solid #dfe3df;
+  border-bottom: 1px solid var(--border);
 }
 
 .toolbarRow {
@@ -1170,8 +1183,8 @@
   height: 30px;
   padding: 2px;
   border-radius: 6px;
-  border-color: #d5dbd3;
-  background: #f8f9f7;
+  border-color: var(--border);
+  background: var(--muted);
 }
 
 .viewBtn {
@@ -1179,15 +1192,15 @@
   height: 24px;
   padding: 0 8px;
   border-radius: 4px;
-  color: #1f2937;
+  color: var(--foreground);
   font-size: 10px;
   font-weight: 500;
 }
 
 .viewBtnActive,
 .viewBtnActive:hover {
-  background: #60786a;
-  color: #fff;
+  background: var(--primary);
+  color: var(--primary-foreground);
 }
 
 .toolbarSelect {
@@ -1198,10 +1211,12 @@
 .toolbarSelect :global(select),
 .toolbarSelect :global(button),
 .toolbarSelect :global(input) {
-  min-height: 30px !important;
-  height: 30px !important;
+  min-height: 34px !important;
+  height: auto !important;
+  padding-top: 6px !important;
+  padding-bottom: 6px !important;
   border-radius: 6px !important;
-  font-size: 10px !important;
+  font-size: 11px !important;
 }
 
 .monthContext {
@@ -1209,18 +1224,18 @@
   gap: 5px;
   padding: 0 10px;
   border-radius: 6px;
-  border-color: #d5dbd3;
-  background: #f8f9f7;
+  border-color: var(--border);
+  background: var(--muted);
 }
 
 .monthContextLabel {
-  color: #1f2937;
+  color: var(--foreground);
   font-size: 10px;
   font-weight: 500;
 }
 
 .monthContextHint {
-  color: #4b5563;
+  color: var(--muted-foreground);
   font-size: 9px;
   font-weight: 400;
   border-left: none;
@@ -1234,10 +1249,10 @@
 .navButton,
 .todayBtn {
   height: 30px;
-  border-color: #d5dbd3;
+  border-color: var(--border);
   border-radius: 6px;
-  background: #fff;
-  color: #1f2937;
+  background: var(--card);
+  color: var(--foreground);
 }
 
 .navButton {
@@ -1253,9 +1268,9 @@
 }
 
 .todayBtnActive {
-  color: #1f2937;
-  border-color: #d5dbd3;
-  background: #fff;
+  color: var(--foreground);
+  border-color: var(--border);
+  background: var(--card);
 }
 
 .calendarShell {
@@ -1274,36 +1289,36 @@
   --calendar-event-absent-fg: #ffffff;
   --calendar-event-blocked-bg: #79887b;
   --calendar-event-blocked-fg: #ffffff;
-  --calendar-cell-bg: #ffffff;
-  --calendar-cell-alt-bg: #f4f5f1;
-  --calendar-past-bg: #eff1ec;
-  --calendar-hover-bg: #f6f8f5;
+  --calendar-cell-bg: var(--card);
+  --calendar-cell-alt-bg: color-mix(in srgb, var(--card) 90%, var(--foreground) 10%);
+  --calendar-past-bg: color-mix(in srgb, var(--muted) 76%, var(--background) 24%);
+  --calendar-hover-bg: color-mix(in srgb, var(--muted) 78%, var(--primary) 8%);
 }
 
 :global(.fc) {
-  color: #111827;
+  color: var(--foreground);
   font-size: 11px;
   --fc-small-font-size: 10px;
 }
 
 :global(.fc-theme-standard .fc-scrollgrid) {
   border-radius: 5px;
-  border-color: #dfe3df;
+  border-color: var(--border);
 }
 
 :global(.fc-theme-standard td),
 :global(.fc-theme-standard th) {
-  border-color: #dfe3df;
+  border-color: var(--border);
 }
 
 :global(.fc .fc-col-header-cell) {
   height: 34px;
-  background: #e8eae5;
+  background: color-mix(in srgb, var(--muted) 86%, var(--foreground) 14%);
 }
 
 :global(.fc .fc-col-header-cell-cushion) {
   padding: 9px 6px;
-  color: #4b5563;
+  color: var(--muted-foreground);
   font-size: 10px;
   font-weight: 500;
   text-transform: lowercase;
@@ -1311,12 +1326,12 @@
 
 :global(.fc .fc-daygrid-day-frame) {
   padding: 2px;
-  background: #fff;
+  background: var(--card);
 }
 
 :global(.fc .fc-daygrid-day-number) {
   padding: 4px 5px;
-  color: #6b7280;
+  color: var(--muted-foreground);
   font-size: 10px;
   font-weight: 400;
 }
@@ -1331,7 +1346,7 @@
 
 :global(.fc .fc-daygrid-more-link) {
   margin-left: 4px;
-  color: #4b5563;
+  color: var(--muted-foreground);
   font-size: 9px;
   font-weight: 500;
 }
@@ -1360,17 +1375,17 @@
 
 .pastDay,
 .pastSlot {
-  background: #eff1ec !important;
+  background: var(--calendar-past-bg) !important;
   opacity: 0.72;
 }
 
 .monthCurrentWeek :global(.fc-daygrid-day-frame) {
-  background: #f4f5f1;
+  background: color-mix(in srgb, var(--primary) 4%, var(--card));
 }
 
 .monthTodayCell :global(.fc-daygrid-day-frame),
 :global(.fc .fc-day-today) {
-  background: #f4f5f1 !important;
+  background: color-mix(in srgb, var(--primary) 8%, var(--card)) !important;
   box-shadow: none;
 }
 
@@ -1390,7 +1405,7 @@
   height: auto;
   border-radius: 0;
   background: transparent;
-  color: #6b7280;
+  color: var(--muted-foreground);
   font-size: 10px;
   font-weight: 400;
 }
@@ -1408,14 +1423,14 @@
 .summaryTitle,
 .detailTitle {
   margin: 0 0 12px;
-  color: #111827;
+  color: var(--foreground);
   font-size: 12px;
   font-weight: 700;
 }
 
 .summaryRow {
   padding: 9px 0;
-  color: #1f2937;
+  color: var(--foreground);
   font-size: 11px;
 }
 
@@ -1423,14 +1438,17 @@
   font-size: 12px;
 }
 
-.summaryBlue { color: #60786a; }
+.summaryBlue  { color: var(--primary); }
 .summaryGreen { color: #047857; }
 .summaryAmber { color: #d97706; }
-.summaryRed { color: #b62222; }
+.summaryRed   { color: var(--destructive); }
+
+:global(.dark) .summaryGreen { color: #34d399; }
+:global(.dark) .summaryAmber { color: #fbbf24; }
 
 .legendItem {
   margin-top: 8px;
-  color: #1f2937;
+  color: var(--foreground);
   font-size: 11px;
 }
 
@@ -1441,13 +1459,14 @@
 
 .legendConfirmed { background: #60786a; }
 .legendScheduled { background: #e8b36d; }
-.legendPending { background: #d97908; }
+.legendPending   { background: #d97908; }
 .legendCompleted { background: #8fa897; }
 .legendCancelled { background: #9ca3af; }
-.legendAbsent { background: #b62222; }
+.legendAbsent    { background: #b62222; }
 
 @media (max-width: 1119px) {
   .layout {
     grid-template-columns: 1fr;
   }
 }
+
