@@ -43,7 +43,7 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
   const { user, logout, clinicName } = useAuth()
 
   const {
-    patients, addPatient, addPatientWithPassword, createPatientAccess, updatePatient, deletePatient,
+    patients, addPatient, addPatientWithPassword, createPatientAccess, resetPatientAccess, updatePatient, deletePatient,
     error: patientsError, reload: reloadPatients,
   } = usePatients()
   const {
@@ -54,7 +54,7 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
     prescriptions, addPrescription, addMedicalRecord,
     error: medicalDataError, reload: reloadMedicalData,
   } = useMedicalData()
-  const { addRecord: addFinancialRecord, reload: reloadFinancial } = useFinancial()
+  const { records: financialRecords, addRecord: addFinancialRecord, reload: reloadFinancial } = useFinancial()
   const {
     staff, addStaff, updateStaff, deleteStaff,
     error: staffError, reload: reloadStaff,
@@ -174,12 +174,15 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
   const aiPrescriptions = isPatient ? patientAIData.prescriptions : visiblePrescriptions
 
   const aiApiContextSnapshot = buildAIApiContextFromAppState({
-    role:          currentUser.role,
-    patients:      aiPatients,
-    appointments:  aiAppointments,
-    prescriptions: aiPrescriptions,
-    staff:         isPatient ? [] : staff,
-    reports:       isPatient ? patientAIData.reports : undefined,
+    role:             currentUser.role,
+    patients:         aiPatients,
+    appointments:     aiAppointments,
+    prescriptions:    aiPrescriptions,
+    staff:            isPatient ? [] : staff,
+    reports:          isPatient ? patientAIData.reports : undefined,
+    financialRecords: (currentUser.role === "manager" || currentUser.role === "financial")
+      ? financialRecords
+      : undefined,
   })
 
   const dataErrors = [
@@ -272,6 +275,16 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
     toast(`Acesso ao portal criado para ${saved.name}.`, "success")
     return saved
   }
+  async function handleResetPatientAccess(p: Patient, password: string) {
+    const saved = await resetPatientAccess(p, password)
+    toast(`Senha do portal redefinida para ${saved.name}.`, "success")
+    return saved
+  }
+  // Define/redefine a senha do portal a partir da lista de pacientes.
+  // Se o paciente já tem conta (userId), recria com a nova senha; senão cria o acesso.
+  async function handleSetPatientPassword(p: Patient, password: string) {
+    return p.userId ? resetPatientAccess(p, password) : createPatientAccess(p, password)
+  }
   async function handleUpdatePatient(p: Patient) {
     if (isRemovedPatientPlaceholder(p)) {
       toast("Paciente removido não pode ser editado.", "error")
@@ -328,6 +341,9 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
       case "dashboard":
         return currentUser.role === "manager" ? (
           <ManagerDashboard
+            patients={visiblePatients}
+            appointments={visibleAppointments}
+            currentUser={currentUser}
             onNavigate={handleNavigate}
             onRefresh={reloadAll}
             onOpenSidebar={() => setSidebarOpen(true)}
@@ -352,6 +368,7 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
             onViewProfile={handleViewProfile}
             // Somente gestão pode excluir pacientes
             onDeletePatient={canDo(currentUser.role, "delete_patients") ? handleDeletePatient : undefined}
+            onResetPassword={canDo(currentUser.role, "update_patients") ? handleSetPatientPassword : undefined}
             canCreatePatient={canAccess(currentUser.role, "register")}
             toast={toast}
             onRefresh={reloadPatients}
@@ -379,6 +396,7 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
             onEditPatient={handleEditPatient}
             onViewProfile={handleViewProfile}
             onDeletePatient={canDo(currentUser.role, "delete_patients") ? handleDeletePatient : undefined}
+            onResetPassword={canDo(currentUser.role, "update_patients") ? handleSetPatientPassword : undefined}
             canCreatePatient={canAccess(currentUser.role, "register")}
             toast={toast}
           />
@@ -394,6 +412,7 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
             onAddPatient={handleAddPatient}
             onAddPatientWithPassword={handleAddPatientWithPassword}
             onCreatePatientAccess={handleCreatePatientAccess}
+            onResetPatientAccess={handleResetPatientAccess}
             onUpdatePatient={handleUpdatePatient}
             onNavigate={handleNavigate}
             // Secretária não vê campos clínicos (step 5)
@@ -453,6 +472,9 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
       default:
         return currentUser.role === "manager" ? (
           <ManagerDashboard
+            patients={visiblePatients}
+            appointments={visibleAppointments}
+            currentUser={currentUser}
             onNavigate={handleNavigate}
             onRefresh={reloadAll}
             onOpenSidebar={() => setSidebarOpen(true)}

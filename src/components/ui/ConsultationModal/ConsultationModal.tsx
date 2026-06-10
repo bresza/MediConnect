@@ -31,6 +31,7 @@ import { useMemo, useState } from "react"
 import { Modal } from "../Modal/Modal"
 import { Button } from "../Button/Button"
 import { Avatar } from "../Avatar/Avatar"
+import { normalizeCid10, validateCid10 } from "../../../utils/cid10"
 import type {
   Appointment,
   FinancialRecord,
@@ -175,6 +176,7 @@ export function ConsultationModal({
   const [tab, setTab]           = useState<Tab>("record")
   const [form, setForm]         = useState<ConsultationForm>(() => buildInitialForm(defaultPrice))
   const [error, setError]       = useState<string | null>(null)
+  const [cidError, setCidError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
   function setField<K extends keyof ConsultationForm>(key: K, value: ConsultationForm[K]) {
@@ -210,6 +212,8 @@ export function ConsultationModal({
 
     if (!form.chiefComplaint.trim()) { setTab("record"); setError("Informe a queixa principal."); return }
     if (!form.diagnosis.trim())      { setTab("record"); setError("Informe o diagnóstico."); return }
+    const cidValidationError = validateCid10(form.cid10)
+    if (cidValidationError) { setTab("record"); setCidError(cidValidationError); setError("CID-10 inválido. Corrija antes de concluir."); return }
     if (totals.value <= 0)           { setTab("billing"); setError("Informe o valor do atendimento."); return }
 
     const today = new Date().toISOString().slice(0, 10)
@@ -434,8 +438,16 @@ export function ConsultationModal({
             <label className={styles.label}>CID-10</label>
             <input className={styles.input}
               value={form.cid10}
-              onChange={(e) => setField("cid10", e.target.value.toUpperCase().slice(0, 8))}
-              placeholder="Ex.: I10" />
+              onChange={(e) => {
+                const normalized = normalizeCid10(e.target.value).slice(0, 8)
+                setField("cid10", normalized)
+                setCidError(validateCid10(normalized))
+              }}
+              placeholder="Ex.: I10, E11.9"
+              style={cidError ? { borderColor: "var(--destructive, #ef4444)" } : undefined} />
+            {cidError && (
+              <p style={{ fontSize: 11, color: "var(--destructive, #ef4444)", marginTop: 2 }}>{cidError}</p>
+            )}
           </div>
           <div>
             <label className={styles.label}>Data de retorno</label>

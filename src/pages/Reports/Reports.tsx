@@ -150,8 +150,6 @@ function aiCompleteReportLocal(
     cidLine ? `<p><strong>CID-10:</strong> ${escapeHtml(cidLine)}</p>` : "",
     "<h2>Avaliação clínica</h2>",
     `<p>${escapeHtml(diagnosis)}</p>`,
-    patient?.observations ? "<h2>Observações</h2>" : "",
-    patient?.observations ? `<p>${escapeHtml(patient.observations)}</p>` : "",
     "<h2>Conduta sugerida</h2>",
     `<ul>${conductBlock}</ul>`,
     "<h2>Conclusão</h2>",
@@ -514,7 +512,6 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
       ageYears !== null ? `Idade: ${ageYears} anos` : "",
       patient?.gender ? `Sexo: ${patient.gender}` : "",
       patient?.healthInsurance ? `Convênio: ${patient.healthInsurance}` : "Convênio: Particular",
-      patient?.observations ? `Observações: ${patient.observations}` : "",
     ].filter(Boolean).join(", ")
 
     const useExternal = aiAvailable && !aiProxyDownRef.current

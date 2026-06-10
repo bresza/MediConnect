@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from "react"
+import React, { useState, useMemo, useEffect, useRef } from "react"
+import { createFinancialRecord } from "../../services/financial"
 import { useFinancial } from "../../hooks/useFinancial"
 import { Topbar } from "../../components/layout/Topbar/Topbar"
 import { Card } from "../../components/ui/Card/Card"
@@ -251,6 +252,59 @@ export function Financial({ patients }: FinancialProps) {
   const [errors, setErrors]             = useState<Partial<Record<keyof RecordForm, string>>>({})
   const [expandedId, setExpandedId]     = useState<string | null>(null)
   const [isSaving, setIsSaving]         = useState(false)
+  const [isSeeding, setIsSeeding]       = useState(false)
+  const seedAttempted = useRef(false)
+
+  async function seedDemoData() {
+    if (isSeeding) return
+    setIsSeeding(true)
+    const SEED_RECORDS: Omit<FinancialRecord, "id">[] = [
+      // Maio 2026 — já recebidos
+      { patientName: "Maria da Silva",      value: 250, paymentMethod: "Pix",      dueDate: "2026-05-03", status: "Paid" },
+      { patientName: "João Pereira",        value: 380, paymentMethod: "Card",     dueDate: "2026-05-05", status: "Paid" },
+      { patientName: "Ana Beatriz Souza",   value: 200, paymentMethod: "Insurance", healthInsurance: "Unimed",          dueDate: "2026-05-08", status: "Paid" },
+      { patientName: "Carlos Eduardo Lima", value: 450, paymentMethod: "Transfer", dueDate: "2026-05-10", status: "Paid" },
+      { patientName: "Fernanda Costa",      value: 300, paymentMethod: "Pix",      dueDate: "2026-05-12", status: "Paid" },
+      { patientName: "Roberto Martins",     value: 500, paymentMethod: "Insurance", healthInsurance: "Bradesco Saúde",  dueDate: "2026-05-15", status: "Paid" },
+      { patientName: "Patricia Alves",      value: 220, paymentMethod: "Cash",     dueDate: "2026-05-20", status: "Paid" },
+      { patientName: "Lucas Santos",        value: 350, paymentMethod: "Card",     dueDate: "2026-05-22", status: "Paid" },
+      // Maio 2026 — vencidos
+      { patientName: "Juliana Ferreira",    value: 400, paymentMethod: "Pix",      dueDate: "2026-05-25", status: "Overdue", observations: "Aguardando contato" },
+      { patientName: "Marcos Oliveira",     value: 280, paymentMethod: "Cash",     dueDate: "2026-05-28", status: "Overdue" },
+      // Junho 2026 — recebidos
+      { patientName: "Amanda Rodrigues",    value: 350, paymentMethod: "Pix",      dueDate: "2026-06-02", status: "Paid" },
+      { patientName: "Bruno Carvalho",      value: 500, paymentMethod: "Insurance", healthInsurance: "SulAmérica",      dueDate: "2026-06-03", status: "Paid" },
+      { patientName: "Camila Nascimento",   value: 250, paymentMethod: "Card",     dueDate: "2026-06-04", status: "Paid", discount: 25 },
+      // Junho 2026 — pendentes
+      { patientName: "Diego Barbosa",       value: 420, paymentMethod: "Pix",      dueDate: "2026-06-06", status: "Pending" },
+      { patientName: "Eduarda Mendes",      value: 300, paymentMethod: "Transfer", dueDate: "2026-06-09", status: "Pending" },
+      { patientName: "Flávio Ribeiro",      value: 380, paymentMethod: "Insurance", healthInsurance: "Amil",            dueDate: "2026-06-09", status: "Pending" },
+      { patientName: "Gabriela Araújo",     value: 450, paymentMethod: "Card",     dueDate: "2026-06-10", status: "Pending" },
+      { patientName: "Hugo Cavalcante",     value: 200, paymentMethod: "Pix",      dueDate: "2026-06-12", status: "Pending" },
+    ]
+    try {
+      for (const record of SEED_RECORDS) {
+        await createFinancialRecord(record)
+      }
+      localStorage.setItem("sq05:financial:seeded", "1")
+      await reloadFinancial()
+    } finally {
+      setIsSeeding(false)
+    }
+  }
+
+  // Auto-seed na primeira carga quando não há registros e o seed nunca foi feito
+  useEffect(() => {
+    if (
+      records.length === 0 &&
+      !seedAttempted.current &&
+      !localStorage.getItem("sq05:financial:seeded")
+    ) {
+      seedAttempted.current = true
+      void seedDemoData()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [records.length])
 
   // ── derived ─────────────────────────────────────────────────────
   const periodRecords = useMemo(() => filterByPeriod(records, period), [records, period])
@@ -432,7 +486,25 @@ export function Financial({ patients }: FinancialProps) {
               viewBox="0 0 24 24" strokeLinecap="round">
               <path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
             </svg>
-            <p>Nenhum lançamento encontrado</p>
+            <p>{isSeeding ? "Carregando dados de demonstração…" : "Nenhum lançamento encontrado"}</p>
+            {records.length === 0 && !isSeeding && seedAttempted.current && (
+              <button
+                onClick={() => { seedAttempted.current = false; void seedDemoData() }}
+                disabled={isSeeding}
+                style={{
+                  marginTop: 12,
+                  padding: "8px 18px",
+                  borderRadius: 8,
+                  border: "1px solid var(--border)",
+                  background: "var(--muted)",
+                  color: "var(--muted-foreground)",
+                  fontSize: 13,
+                  cursor: "pointer",
+                }}
+              >
+                Tentar novamente
+              </button>
+            )}
           </div>
         ) : (
           <div className={styles.tableScroll}>

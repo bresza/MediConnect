@@ -212,9 +212,11 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: Tea
       e.department = "Departamento obrigatório"
     }
     if (activeTab === "doctor") {
-      if (!form.crmNum.trim())    e.crmNum    = "CRM obrigatório"
-      if (!form.crmUf.trim())     e.crmUf     = "UF obrigatória"
-      if (!form.specialty.trim()) e.specialty = "Selecione uma especialidade"
+      const crmDigitsOnly = onlyDigits(form.crmNum)
+      if (!crmDigitsOnly)             e.crmNum = "CRM obrigatório"
+      else if (crmDigitsOnly.length < 4) e.crmNum = "CRM deve ter pelo menos 4 dígitos"
+      if (!form.crmUf.trim())         e.crmUf  = "UF obrigatória"
+      if (!form.specialty.trim())     e.specialty = "Selecione uma especialidade"
     }
     if (!editingMember) {
       if (!form.password)             e.password        = "Senha obrigatória"
@@ -346,8 +348,19 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: Tea
                     </td>
                     <td><p className={styles.cellMain}>{displayMaskedCpf(member.cpf)}</p></td>
                     {activeTab === "doctor"
-                      ? <td><p className={styles.cellMain}>{displayCrm(member.crm)}</p><p className={styles.cellSub}>{member.specialty ?? "—"}</p></td>
-                      : <td><p className={styles.cellMain}>{member.department ?? "—"}</p></td>
+                      ? (
+                        <td>
+                          <p className={styles.cellMain}>
+                            {displayCrm(member.crm)}
+                            {(!member.crm || !member.specialty) && (
+                              <span title="Dados profissionais incompletos — edite e preencha CRM e especialidade"
+                                style={{ marginLeft: 6, color: "#f59e0b", fontSize: 13, cursor: "default" }}>⚠</span>
+                            )}
+                          </p>
+                          <p className={styles.cellSub}>{member.specialty || "—"}</p>
+                        </td>
+                      )
+                      : <td><p className={styles.cellMain}>{member.department || "—"}</p></td>
                     }
                     <td><p className={styles.cellMain}>{displayMaskedPhone(member.phone)}</p></td>
                     <td><Badge>{formatRecordStatus(member.status)}</Badge></td>

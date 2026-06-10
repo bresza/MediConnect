@@ -3,7 +3,6 @@ import { getReports } from "../../services/domain"
 import type { Report } from "../../types"
 import { Avatar } from "../../components/ui/Avatar/Avatar"
 import { Badge } from "../../components/ui/Badge/Badge"
-import { Button } from "../../components/ui/Button/Button"
 import { RefreshButton } from "../../components/ui/RefreshButton/RefreshButton"
 import { formatDate, formatAppointmentType, sortByName, toTitleCase } from "../../utils"
 import type { PageId, Patient, Appointment, User } from "../../types"
@@ -16,13 +15,6 @@ interface DashboardProps {
   onNavigate: (page: PageId) => void
   onRefresh?: () => void | Promise<unknown>
 }
-
-const PlusIcon = () => (
-  <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.2"
-    viewBox="0 0 24 24" strokeLinecap="round">
-    <path d="M12 5v14M5 12h14" />
-  </svg>
-)
 
 interface StatConfig {
   label: string
@@ -169,11 +161,6 @@ export function Dashboard({ patients, appointments, currentUser, onNavigate, onR
         </div>
         <div className={styles.headerActions}>
           <RefreshButton onRefresh={handleRefresh} variant="outline" size="md" />
-          {!isDoctor && (
-            <Button onClick={() => onNavigate("register")} icon={<PlusIcon />}>
-              Novo paciente
-            </Button>
-          )}
         </div>
       </header>
 

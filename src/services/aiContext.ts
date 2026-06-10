@@ -3,7 +3,7 @@
  * que o restante do app) para o assistente usar nas respostas.
  * Nao expoe CPF completo nem tokens; limita tamanho para caber no prompt.
  */
-import type { Appointment, Patient, Prescription, Report, StaffMember, UserRole } from "../types"
+import type { Appointment, FinancialRecord, Patient, Prescription, Report, StaffMember, UserRole } from "../types"
 
 const MAX_SNAPSHOT_CHARS = 7500
 const MAX_PATIENTS       = 20
@@ -17,21 +17,26 @@ function clip(text: string, max: number): string {
 }
 
 export interface AIContextFromAppStateInput {
-  role:           UserRole
-  patients:       Patient[]
-  appointments:   Appointment[]
-  prescriptions:  Prescription[]
-  staff:          StaffMember[]
+  role:              UserRole
+  patients:          Patient[]
+  appointments:      Appointment[]
+  prescriptions:     Prescription[]
+  staff:             StaffMember[]
   /** Laudos visiveis ao paciente (portal). */
-  reports?:       Report[]
+  reports?:          Report[]
+  /** Registros financeiros — apenas para roles manager e financial. */
+  financialRecords?: FinancialRecord[]
 }
 
 export function buildAIApiContextFromAppState(input: AIContextFromAppStateInput): string {
-  const { role, patients, appointments, prescriptions, staff, reports = [] } = input
+  const { role, patients, appointments, prescriptions, staff, reports = [], financialRecords } = input
+
+  const todayStr = new Date().toISOString().slice(0, 10)
 
   const lines: string[] = []
   lines.push("[Contexto da API — dados desta sessao, mesmo backend Supabase do MediConnect]")
   lines.push(`Perfil: ${role}`)
+  lines.push(`Data de hoje: ${todayStr}`)
   lines.push(
     `Totais: ${patients.length} paciente(s) na visao, ${appointments.length} agendamento(s), ` +
     `${prescriptions.length} receita(s)` +
@@ -55,11 +60,18 @@ export function buildAIApiContextFromAppState(input: AIContextFromAppStateInput)
 
   if (appointments.length > 0) {
     lines.push("")
-    lines.push(`Agendamentos (ate ${MAX_APPOINTMENTS}):`)
-    const sorted = [...appointments].sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`))
-    for (const a of sorted.slice(0, MAX_APPOINTMENTS)) {
+    lines.push(`Agendamentos (ate ${MAX_APPOINTMENTS}, hoje primeiro):`)
+    const todayAppts = [...appointments]
+      .filter((a) => a.date === todayStr)
+      .sort((a, b) => a.time.localeCompare(b.time))
+    const otherAppts = [...appointments]
+      .filter((a) => a.date !== todayStr)
+      .sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`))
+    const contextAppts = [...todayAppts, ...otherAppts].slice(0, MAX_APPOINTMENTS)
+    for (const a of contextAppts) {
+      const isToday = a.date === todayStr ? " [HOJE]" : ""
       lines.push(
-        `- ${a.date} ${a.time} | ${a.patientName} | Dr(a). ${a.doctorName} | ${a.status} | tipo: ${a.type}`,
+        `- ${a.date} ${a.time}${isToday} | ${a.patientName} | Dr(a). ${a.doctorName} | ${a.status} | tipo: ${a.type}`,
       )
     }
   }
@@ -106,6 +118,41 @@ export function buildAIApiContextFromAppState(input: AIContextFromAppStateInput)
       const extra = m.role === "doctor" && m.specialty ? ` | ${m.specialty}` : m.department ? ` | ${m.department}` : ""
       lines.push(`- ${m.name} (${m.role})${extra}`)
     }
+  }
+
+  if ((role === "manager" || role === "financial") && financialRecords && financialRecords.length > 0) {
+    const now = new Date()
+    const isThisMonth = (dateStr: string) => {
+      const d = new Date(dateStr + "T00:00:00")
+      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
+    }
+    const monthRecords = financialRecords.filter((r) => isThisMonth(r.dueDate))
+    const allRecords   = financialRecords
+
+    const fmt = (v: number) => `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
+
+    const monthPaid    = monthRecords.filter((r) => r.status === "Paid").reduce((s, r) => s + r.value, 0)
+    const monthPending = monthRecords.filter((r) => r.status === "Pending").reduce((s, r) => s + r.value, 0)
+    const monthOverdue = monthRecords.filter((r) => r.status === "Overdue").reduce((s, r) => s + r.value, 0)
+    const monthTotal   = monthPaid + monthPending + monthOverdue
+
+    const allPaid    = allRecords.filter((r) => r.status === "Paid").reduce((s, r) => s + r.value, 0)
+    const allPending = allRecords.filter((r) => r.status === "Pending").reduce((s, r) => s + r.value, 0)
+    const allOverdue = allRecords.filter((r) => r.status === "Overdue").reduce((s, r) => s + r.value, 0)
+
+    const monthName = now.toLocaleDateString("pt-BR", { month: "long", year: "numeric" })
+    lines.push("")
+    lines.push(`Financeiro — mes corrente (${monthName}):`)
+    lines.push(`- Recebido: ${fmt(monthPaid)} (${monthRecords.filter((r) => r.status === "Paid").length} lancamentos)`)
+    lines.push(`- Pendente: ${fmt(monthPending)} (${monthRecords.filter((r) => r.status === "Pending").length} lancamentos)`)
+    if (monthOverdue > 0)
+      lines.push(`- Vencido: ${fmt(monthOverdue)} (${monthRecords.filter((r) => r.status === "Overdue").length} lancamentos)`)
+    lines.push(`- Total previsto no mes: ${fmt(monthTotal)}`)
+    lines.push("")
+    lines.push(`Financeiro — totais gerais (todos os periodos, ${allRecords.length} lancamentos):`)
+    lines.push(`- Total recebido: ${fmt(allPaid)}`)
+    lines.push(`- Total pendente: ${fmt(allPending)}`)
+    if (allOverdue > 0) lines.push(`- Total vencido: ${fmt(allOverdue)}`)
   }
 
   lines.push("")

@@ -257,9 +257,11 @@ function staffPhoneFromApi(api: { phone?: string | null; phone_mobile?: string |
   const main = api.phone?.trim()
   return main || mobile || ""
 }
+
 interface ApiUserRole {
   user_id: string; role: string
 }
+
 interface CreateUserWithPasswordResponse {
   success?: boolean
   user?: {
@@ -326,6 +328,7 @@ function apiDoctorToStaff(api: ApiDoctor): StaffMember {
     createdAt: api.created_at ?? new Date().toISOString().slice(0, 10),
   }
 }
+
 function roleToStaffRole(role?: string | null): StaffRole | null {
   const normalized = (role ?? "")
     .normalize("NFD")
@@ -438,32 +441,6 @@ async function loadDoctorsForStaff(): Promise<ApiDoctor[]> {
   return []
 }
 
-/** Perfis da equipe: comeca pelo select minimo para evitar 400 no console (F12). */
-async function loadProfilesForStaff(): Promise<ApiProfile[]> {
-  const paths = [
-    "/rest/v1/profiles?select=id,full_name,email&order=full_name.asc",
-    "/rest/v1/profiles?select=id,full_name,email",
-    "/rest/v1/profiles?select=id,full_name,email,created_at&order=full_name.asc",
-    "/rest/v1/profiles?select=id,full_name,email,created_at",
-    "/rest/v1/profiles?select=id,full_name,email,phone,created_at&order=full_name.asc",
-    "/rest/v1/profiles?select=id,full_name,email,phone,created_at",
-    "/rest/v1/profiles?select=*&order=full_name.asc",
-    "/rest/v1/profiles?select=*",
-  ]
-  let lastErr: unknown
-  for (const path of paths) {
-    try {
-      return await apiRequest<ApiProfile[]>(path, { logErrors: false })
-    } catch (err) {
-      lastErr = err
-      if (isRetryableStaffListError(err)) continue
-      throw err
-    }
-  }
-  console.warn("[getStaff] nao foi possivel carregar profiles com nenhuma variante de query:", lastErr)
-  return []
-}
-
 async function loadSecretariesForStaff(): Promise<ApiSecretary[]> {
   const paths = [
     "/rest/v1/secretaries?select=*&order=full_name.asc",
@@ -508,6 +485,31 @@ async function loadManagersForStaff(): Promise<ApiManager[]> {
   return []
 }
 
+async function loadProfilesForStaff(): Promise<ApiProfile[]> {
+  const paths = [
+    "/rest/v1/profiles?select=id,full_name,email&order=full_name.asc",
+    "/rest/v1/profiles?select=id,full_name,email",
+    "/rest/v1/profiles?select=id,full_name,email,created_at&order=full_name.asc",
+    "/rest/v1/profiles?select=id,full_name,email,created_at",
+    "/rest/v1/profiles?select=id,full_name,email,phone,created_at&order=full_name.asc",
+    "/rest/v1/profiles?select=id,full_name,email,phone,created_at",
+    "/rest/v1/profiles?select=*&order=full_name.asc",
+    "/rest/v1/profiles?select=*",
+  ]
+  let lastErr: unknown
+  for (const path of paths) {
+    try {
+      return await apiRequest<ApiProfile[]>(path, { logErrors: false })
+    } catch (err) {
+      lastErr = err
+      if (isRetryableStaffListError(err)) continue
+      throw err
+    }
+  }
+  console.warn("[getStaff] nao foi possivel carregar profiles com nenhuma variante de query:", lastErr)
+  return []
+}
+
 export async function getStaff(): Promise<StaffMember[]> {
   const [doctors, secretaries, managers, profiles, userRoles] = await Promise.all([
     loadDoctorsForStaff(),
@@ -516,9 +518,9 @@ export async function getStaff(): Promise<StaffMember[]> {
     loadProfilesForStaff(),
     apiRequest<ApiUserRole[]>("/rest/v1/user_roles?select=user_id,role", { logErrors: false }).catch(() => []),
   ])
-  const doctorStaff     = (doctors ?? []).map(apiDoctorToStaff)
-  const secretaryStaff  = (secretaries ?? []).map(apiSecretaryToStaff).filter((m) => m.id)
-  const managerStaff    = (managers ?? []).map(apiManagerToStaff).filter((m) => m.id)
+  const doctorStaff    = (doctors ?? []).map(apiDoctorToStaff)
+  const secretaryStaff = (secretaries ?? []).map(apiSecretaryToStaff).filter((m) => m.id)
+  const managerStaff   = (managers ?? []).map(apiManagerToStaff).filter((m) => m.id)
   const roleByUserId = new Map(
     (userRoles ?? [])
       .map((item) => [item.user_id, roleToStaffRole(item.role)] as const)
@@ -1090,14 +1092,14 @@ export async function getMedicalRecords(): Promise<MedicalRecord[]> {
     ...(profiles ?? []).map((p) => [p.id, p.full_name] as const),
   ])
   return (records ?? []).map((record) => {
-    const json = asMedicalRecordJson(record.content_json)
-    const doctorId = json.doctor_id ?? record.created_by ?? record.requested_by ?? ""
-    return reportToMedicalRecord(
-      record,
-      patientMap.get(record.patient_id) ?? "",
-      doctorMap.get(doctorId) ?? "",
-    )
-  })
+      const json = asMedicalRecordJson(record.content_json)
+      const doctorId = json.doctor_id ?? record.created_by ?? record.requested_by ?? ""
+      return reportToMedicalRecord(
+        record,
+        patientMap.get(record.patient_id) ?? "",
+        doctorMap.get(doctorId) ?? "",
+      )
+    })
 }
 
 export async function createMedicalRecord(data: Omit<MedicalRecord, "id">): Promise<MedicalRecord> {
@@ -1224,21 +1226,22 @@ export async function getPrescriptions(): Promise<Prescription[]> {
   ])
 
   return (prescriptions ?? []).map((prescription) => {
-    const json = asPrescriptionJson(prescription.content_json)
-    const doctorId = json.doctor_id ?? prescription.created_by ?? prescription.requested_by ?? ""
-    return reportToPrescription(
-      prescription,
-      patientMap.get(prescription.patient_id) ?? "",
-      doctorMap.get(doctorId) ?? "",
-    )
-  })
+      const json = asPrescriptionJson(prescription.content_json)
+      const doctorId = json.doctor_id ?? prescription.created_by ?? prescription.requested_by ?? ""
+      return reportToPrescription(
+        prescription,
+        patientMap.get(prescription.patient_id) ?? "",
+        doctorMap.get(doctorId) ?? "",
+      )
+    })
 }
 
 export async function createPrescription(data: Omit<Prescription, "id">): Promise<Prescription> {
+  const reportPayload = prescriptionToReport(data)
   const created = await apiRequest<ApiReport[]>("/rest/v1/reports", {
     method: "POST",
     headers: { Prefer: "return=representation" },
-    body: prescriptionToReport(data),
+    body: reportPayload,
   })
   const raw = Array.isArray(created) ? created[0] : (created as ApiReport)
   return reportToPrescription(raw, data.patientName, data.doctorName)
