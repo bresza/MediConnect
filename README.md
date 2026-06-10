@@ -19,7 +19,8 @@ VITE_SUPABASE_ANON_KEY=sua-chave-anon
 # Assistente de IA (escolha um ou mais providers — ver secao abaixo)
 VITE_AI_PROVIDER=auto
 # VITE_GROQ_API_KEY=gsk_...
-# VITE_GEMINI_API_KEY=...
+# VITE_GEMINI_ENABLED=true
+# GEMINI_API_KEY=...   # server-side no Vercel; NUNCA prefixar com VITE_
 # VITE_OPENAI_API_KEY=sk-...
 
 # Defaults de UI (opcionais; usados por OpenAI direto e proxy)
@@ -38,7 +39,7 @@ O botao **Completar com IA** em laudos (`src/pages/Reports/Reports.tsx`) reutili
 | Modo | Variavel(is) | Onde roda | Chave no bundle? | Login do usuario final? |
 | ---- | ------------ | --------- | ---------------- | ------------------------ |
 | **Groq** | `VITE_GROQ_API_KEY` | Browser → `api.groq.com` | Sim | Nao |
-| **Gemini** | `VITE_GEMINI_API_KEY` | Browser → Generative Language API | Sim | Nao |
+| **Gemini** | `VITE_GEMINI_ENABLED` + `GEMINI_API_KEY` (servidor) | Vercel `/api/gemini` → Google API | Nao | Nao |
 | **OpenAI direto** | `VITE_OPENAI_API_KEY` | Browser → `api.openai.com` | Sim | Nao |
 | **Proxy** | Supabase + Edge Function `ai-chat` | Servidor Supabase | Nao | Nao |
 | **Puter.js** | `VITE_PUTER_AI_ENABLED=true` + `VITE_AI_PROVIDER=puter` | Browser → `js.puter.com` | Nao (sem chave sua) | **Sim** — popup puter.com |
@@ -48,7 +49,7 @@ O botao **Completar com IA** em laudos (`src/pages/Reports/Reports.tsx`) reutili
 Com `auto` (padrao), o app usa o **primeiro provider configurado**, nesta ordem:
 
 1. Groq (`VITE_GROQ_API_KEY`)
-2. Gemini (`VITE_GEMINI_API_KEY`)
+2. Gemini (`VITE_GEMINI_ENABLED=true` + proxy Vercel)
 3. OpenAI direto (`VITE_OPENAI_API_KEY`)
 4. Proxy (Supabase URL + anon key, sem chaves de LLM no front)
 5. Puter — **somente** se `VITE_PUTER_AI_ENABLED=true` (nao entra sozinho em `auto` para evitar popup de login)
@@ -70,18 +71,20 @@ Crie a chave em [console.groq.com/keys](https://console.groq.com/keys). Se um mo
 
 **Aviso:** a chave fica no bundle do front. Em producao, restrinja uso/cota e considere um proxy no servidor.
 
-### 2) Gemini (Google AI Studio)
+### 2) Gemini (proxy seguro via Vercel)
 
-Chamada direta para `generativelanguage.googleapis.com/v1beta/.../generateContent`.
+O front chama `/api/gemini` ([`api/gemini.ts`](./api/gemini.ts)); a chave **nunca** vai para o bundle.
 
 ```env
-VITE_GEMINI_API_KEY=sua-chave
+# .env local / Vercel (client)
+VITE_GEMINI_ENABLED=true
 VITE_GEMINI_MODEL=gemini-2.0-flash
+
+# Vercel Dashboard → Environment Variables (server-side)
+GEMINI_API_KEY=sua-chave
 ```
 
-Chave em [aistudio.google.com/apikey](https://aistudio.google.com/apikey). O tier free **depende do projeto Google**; alguns projetos retornam `limit: 0` para certos modelos (sem free tier). Nesse caso o cliente tenta outros modelos da lista interna ou use Groq/proxy.
-
-Restrinja a chave por HTTP referrer no Google Cloud quando possivel.
+Chave em [aistudio.google.com/apikey](https://aistudio.google.com/apikey). Em desenvolvimento local use `vercel dev` para expor a Edge Function. **Não use** `VITE_GEMINI_API_KEY` — modo direto no browser foi removido por segurança.
 
 ### 3) OpenAI direto
 
@@ -97,7 +100,7 @@ VITE_OPENAI_MAX_TOKENS=600
 
 Chama a Edge Function [`supabase/functions/ai-chat`](./supabase/functions/ai-chat/README.md), que guarda a chave da OpenAI como **secret** do projeto. A chave nao aparece no bundle.
 
-Para este modo, deixe `VITE_GROQ_API_KEY`, `VITE_GEMINI_API_KEY` e `VITE_OPENAI_API_KEY` vazias (ou use `VITE_AI_PROVIDER=proxy`).
+Para este modo, deixe `VITE_GROQ_API_KEY`, `VITE_GEMINI_ENABLED` e `VITE_OPENAI_API_KEY` desativados/vazios (ou use `VITE_AI_PROVIDER=proxy`).
 
 Setup (uma vez):
 

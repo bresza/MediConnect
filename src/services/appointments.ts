@@ -25,6 +25,7 @@ interface ApiDoctor {
   id: string
   full_name: string
   active?: boolean | null
+  specialty?: string
 }
 interface ApiProfile {
   id: string
@@ -302,8 +303,7 @@ export async function getAppointments(): Promise<Appointment[]> {
     ]
   )
 
-  return (apts ?? []).map((a) =>
-    {
+  return (apts ?? []).map((a) => {
       const appointment = apiToAppointment(
         a,
         doctorMap.get(a.doctor_id) ?? ""
@@ -312,8 +312,7 @@ export async function getAppointments(): Promise<Appointment[]> {
         ...appointment,
         patientName: patientMap.get(a.patient_id) ?? appointment.patientName,
       }
-    }
-  )
+    })
 }
 
 export async function createAppointment(
@@ -766,16 +765,13 @@ export async function getAppointmentDoctors(): Promise<AppointmentDoctor[]> {
   // pode nao existir em alguns projetos (causa 400). Filtramos client-side
   // tratando ausencia / null como ativo (so excluimos active === false).
   const doctors = await apiRequest<ApiDoctor[]>(
-    "/rest/v1/doctors?select=id,full_name,active&order=full_name.asc",
+    "/rest/v1/doctors?select=id,full_name,specialty,active&order=full_name.asc",
     { logErrors: false },
   ).catch(async (err) => {
-    // Caso `active` (ou `full_name`) realmente nao existam, refazemos com
-    // variantes mais conservadoras. As tentativas tambem nao logam para
-    // evitar ruido enquanto o schema do projeto ainda esta sendo migrado.
     if (err instanceof ApiError && (err.status === 400 || err.status === 406)) {
       try {
         return await apiRequest<ApiDoctor[]>(
-          "/rest/v1/doctors?select=id,full_name&order=full_name.asc",
+          "/rest/v1/doctors?select=id,full_name,specialty&order=full_name.asc",
           { logErrors: false },
         )
       } catch (err2) {

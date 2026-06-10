@@ -259,7 +259,7 @@ export function AIAssistant({ currentUser, clinicName, apiContextSnapshot }: AIA
 
             {!configured && (
               <div className={styles.warning}>
-                Assistente nao configurado. Defina <code>VITE_GEMINI_API_KEY</code> (recomendado), <code>VITE_OPENAI_API_KEY</code> (OpenAI direto) ou configure a Edge Function <code>ai-chat</code> no Supabase.
+                Assistente nao configurado. Defina <code>VITE_GROQ_API_KEY</code> (recomendado) ou <code>VITE_GEMINI_ENABLED=true</code> com <code>GEMINI_API_KEY</code> no servidor, ou configure a Edge Function <code>ai-chat</code> no Supabase.
               </div>
             )}
 

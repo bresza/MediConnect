@@ -1,6 +1,9 @@
 import { useMemo, useState } from "react"
 import { Avatar } from "../../components/ui/Avatar/Avatar"
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog/ConfirmDialog"
+import { Modal } from "../../components/ui/Modal/Modal"
+import { Input } from "../../components/ui/Input/Input"
+import { Button } from "../../components/ui/Button/Button"
 import { formatCpfBR, formatDate, isRemovedPatientPlaceholder, onlyDigits, sortByName, toTitleCase } from "../../utils"
 import { formatRecordStatus } from "../../utils/statusLabels"
 import type { PageId, Patient } from "../../types"
@@ -13,6 +16,7 @@ interface PatientsProps {
   onEditPatient: (p: Patient) => void
   onViewProfile?: (p: Patient) => void
   onDeletePatient?: (id: string) => void | Promise<void>
+  onResetPassword?: (p: Patient, password: string) => Promise<Patient>
   canCreatePatient?: boolean
   toast?: UseToastReturn["toast"]
   onRefresh?: () => void | Promise<unknown>
@@ -40,12 +44,49 @@ const TrashIcon = () => (
     <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6M10 11v6M14 11v6M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2" />
   </svg>
 )
+const KeyIcon = () => (
+  <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />
+  </svg>
+)
 
-export function Patients({ patients, onNavigate, onEditPatient, onViewProfile, onDeletePatient, canCreatePatient = true, onRefresh }: PatientsProps) {
+export function Patients({ patients, onNavigate, onEditPatient, onViewProfile, onDeletePatient, onResetPassword, canCreatePatient = true, toast, onRefresh }: PatientsProps) {
   const [search, setSearch]             = useState("")
   const [filterStatus, setFilterStatus] = useState<"All" | "Active" | "Inactive">("All")
   const [confirmId, setConfirmId]       = useState<string | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
+
+  // Modal de redefinição de senha do portal
+  const [resetTarget, setResetTarget]   = useState<Patient | null>(null)
+  const [resetPwd, setResetPwd]         = useState("")
+  const [resetConfirm, setResetConfirm] = useState("")
+  const [resetError, setResetError]     = useState<string | null>(null)
+  const [resetSaving, setResetSaving]   = useState(false)
+  const [resetDone, setResetDone]       = useState<string | null>(null)
+
+  function openReset(p: Patient) {
+    setResetTarget(p); setResetPwd(""); setResetConfirm("")
+    setResetError(null); setResetDone(null); setResetSaving(false)
+  }
+  function closeReset() {
+    setResetTarget(null); setResetPwd(""); setResetConfirm("")
+    setResetError(null); setResetDone(null); setResetSaving(false)
+  }
+  async function submitReset() {
+    if (!resetTarget || !onResetPassword) return
+    if (resetPwd.length < 6) { setResetError("A senha deve ter pelo menos 6 caracteres."); return }
+    if (resetPwd !== resetConfirm) { setResetError("As senhas não coincidem."); return }
+    setResetSaving(true); setResetError(null)
+    try {
+      await onResetPassword(resetTarget, resetPwd)
+      setResetDone(resetPwd)
+      toast?.(`Senha definida para ${toTitleCase(resetTarget.name)}.`, "success")
+    } catch (err) {
+      setResetError(err instanceof Error ? err.message : "Não foi possível definir a senha.")
+    } finally {
+      setResetSaving(false)
+    }
+  }
 
   // Normaliza nome para exibicao e ordena alfabeticamente (case-insensitive, pt-BR).
   const orderedPatients = useMemo(() => {
@@ -153,6 +194,9 @@ export function Patients({ patients, onNavigate, onEditPatient, onViewProfile, o
                       <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}>
                         <div className={styles.actions} onClick={(e) => e.stopPropagation()}>
                           <button type="button" className={styles.editBtn} onClick={() => onEditPatient(p)}>Editar</button>
+                          {onResetPassword && (
+                            <button type="button" className={styles.deleteBtn} onClick={() => openReset(p)} title="Redefinir senha de acesso"><KeyIcon /></button>
+                          )}
                           {onDeletePatient && (
                             <button type="button" className={styles.deleteBtn} onClick={() => setConfirmId(p.id)} title="Remover paciente"><TrashIcon /></button>
                           )}
@@ -172,6 +216,62 @@ export function Patients({ patients, onNavigate, onEditPatient, onViewProfile, o
         title="Remover paciente" message={`Tem certeza que deseja remover ${confirmTarget?.name ?? "este paciente"}? Todos os dados vinculados serão perdidos.`}
         confirmLabel="Remover" variant="danger"
       />
+
+      <Modal
+        isOpen={resetTarget !== null}
+        onClose={closeReset}
+        title="Redefinir senha de acesso"
+        subtitle={resetTarget ? toTitleCase(resetTarget.name) : undefined}
+        size="sm"
+        footer={
+          resetDone ? (
+            <Button onClick={closeReset}>Concluir</Button>
+          ) : (
+            <>
+              <Button variant="ghost" onClick={closeReset}>Cancelar</Button>
+              <Button onClick={submitReset} disabled={resetSaving}>
+                {resetSaving ? "Definindo..." : "Definir senha"}
+              </Button>
+            </>
+          )
+        }
+      >
+        {resetDone ? (
+          <div>
+            <p style={{ fontSize:13, color:"var(--foreground)", marginBottom:10 }}>
+              Senha definida com sucesso. A lista de pacientes foi atualizada. Repasse estas credenciais ao paciente:
+            </p>
+            <div style={{ fontSize:13, color:"var(--foreground)", lineHeight:1.7 }}>
+              E-mail: <strong>{resetTarget?.email || "—"}</strong><br />
+              Senha: <code style={{ fontSize:14, fontWeight:700, background:"var(--muted)", padding:"2px 8px", borderRadius:4, border:"1px solid var(--border)" }}>{resetDone}</code>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+            <p style={{ fontSize:13, color:"var(--muted-foreground)" }}>
+              Defina uma nova senha de acesso ao portal para <strong>{resetTarget?.email || "este paciente"}</strong>.
+              A senha passa a valer imediatamente.
+            </p>
+            <p style={{ fontSize:12, color:"var(--muted-foreground)", padding:"10px 12px", borderRadius:8, background:"var(--muted)", border:"1px solid var(--border)" }}>
+              Atenção: a redefinição recria o cadastro do paciente. Consultas e laudos vinculados ao ID anterior não são transferidos automaticamente. A lista será atualizada após concluir.
+            </p>
+            <Input
+              label="Nova senha"
+              type="password"
+              placeholder="Mínimo 6 caracteres"
+              value={resetPwd}
+              onChange={(e) => { setResetPwd(e.target.value); setResetError(null) }}
+            />
+            <Input
+              label="Confirmar nova senha"
+              type="password"
+              value={resetConfirm}
+              onChange={(e) => { setResetConfirm(e.target.value); setResetError(null) }}
+              error={resetError ?? undefined}
+            />
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }

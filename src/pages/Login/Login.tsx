@@ -139,7 +139,10 @@ export function Login({ onLogin, darkMode, onToggleDark, onBackToLanding }: Logi
     setError(null); setSuccess(null); setIsLoading(true)
     try {
       const response = await requestPasswordReset(email)
-      setSuccess(response.message)
+      setSuccess(
+        `${response.message} Se o e-mail não chegar, o envio pode não estar configurado neste ambiente. ` +
+        `Pacientes: peça ao gestor para redefinir a senha na clínica (lista de pacientes → ícone de chave).`,
+      )
     }
     catch (err) { setError(err instanceof Error ? err.message : "Erro ao solicitar recuperação de senha.") }
     finally { setIsLoading(false) }

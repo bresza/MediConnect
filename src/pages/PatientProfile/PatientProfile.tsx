@@ -429,11 +429,6 @@ export function PatientProfile({
               </SectionCard>
             )}
 
-            {patient.observations && (
-              <SectionCard title="Observações">
-                <p className={styles.obsText}>{patient.observations}</p>
-              </SectionCard>
-            )}
           </div>
         )}
 

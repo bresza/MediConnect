@@ -16,7 +16,7 @@ export type {
 export { apiRequest, setApiContext, ApiError, setUnauthorizedHandler, setSessionRefresher } from "./api"
 
 export {
-  getPatients, createPatient, createPatientWithPassword, createPatientPortalAccess, updatePatient, deletePatient,
+  getPatients, createPatient, createPatientWithPassword, createPatientPortalAccess, resetPatientPortalPassword, OrphanAuthAccountError, updatePatient, deletePatient,
 } from "./patients"
 
 export {

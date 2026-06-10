@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────
 // AI Assistant — cliente do MediConnect.
 //
-// Providers suportados (todos rodam direto do front-end):
+// Providers suportados:
 //
 //   1) MODO GROQ (recomendado quando voce nao tem back-end):
 //      Chama https://api.groq.com/openai/v1/chat/completions direto
@@ -9,8 +9,10 @@
 //      ~30 RPM / 14400 RPD em llama-3.3-70b-versatile, sem cartao de
 //      credito). CORS aberto, API compativel com OpenAI.
 //
-//   2) MODO GEMINI: requer chave do Google AI Studio. Free tier
-//      depende do projeto/billing (alguns retornam `limit: 0`).
+//   2) MODO GEMINI (proxy seguro via Vercel Edge Function):
+//      O front-end chama `/api/gemini` (Vercel serverless). A chave
+//      `GEMINI_API_KEY` fica como secret no servidor e NUNCA vai para
+//      o bundle. Ativar com `VITE_GEMINI_ENABLED=true` no .env.
 //
 //   3) MODO DIRETO OPENAI (`VITE_OPENAI_API_KEY`): chama
 //      https://api.openai.com/v1/chat/completions diretamente. Custo
@@ -39,7 +41,7 @@ export type AIMode = "groq" | "gemini" | "direct" | "proxy" | "puter" | "none"
 const DEFAULT_MODEL      = (import.meta.env.VITE_OPENAI_MODEL      ?? "gpt-4o-mini") as string
 const DEFAULT_MAX_TOKENS = Number(import.meta.env.VITE_OPENAI_MAX_TOKENS ?? 600)
 const DIRECT_OPENAI_KEY  = (import.meta.env.VITE_OPENAI_API_KEY    ?? "").trim()
-const GEMINI_KEY         = (import.meta.env.VITE_GEMINI_API_KEY    ?? "").trim()
+const GEMINI_ENABLED     = (import.meta.env.VITE_GEMINI_ENABLED    ?? "false").toString().toLowerCase() === "true"
 const GEMINI_MODEL       = (import.meta.env.VITE_GEMINI_MODEL      ?? "gemini-2.0-flash") as string
 const GROQ_KEY           = (import.meta.env.VITE_GROQ_API_KEY      ?? "").trim()
 const GROQ_MODEL         = (import.meta.env.VITE_GROQ_MODEL        ?? "llama-3.3-70b-versatile") as string
@@ -100,16 +102,16 @@ interface GeminiResponse {
 
 /** Provider efetivo, considerando `VITE_AI_PROVIDER` se setado. */
 export function getAIMode(): AIMode {
-  if (FORCED_PROVIDER === "groq"   && GROQ_KEY)         return "groq"
-  if (FORCED_PROVIDER === "gemini" && GEMINI_KEY)       return "gemini"
+  if (FORCED_PROVIDER === "groq"   && GROQ_KEY)          return "groq"
+  if (FORCED_PROVIDER === "gemini" && GEMINI_ENABLED)    return "gemini"
   if (FORCED_PROVIDER === "direct" && DIRECT_OPENAI_KEY) return "direct"
-  if (FORCED_PROVIDER === "puter"  && PUTER_ENABLED)    return "puter"
+  if (FORCED_PROVIDER === "puter"  && PUTER_ENABLED)     return "puter"
   if (FORCED_PROVIDER === "proxy"  && SUPABASE_URL && SUPABASE_ANON_KEY) return "proxy"
   if (FORCED_PROVIDER !== "auto" && FORCED_PROVIDER !== "")              return "none"
-  // Ordem automatica: Groq (free) → Gemini → OpenAI direto → Proxy.
+  // Ordem automatica: Groq (free) → Gemini (proxy seguro) → OpenAI direto → Proxy Supabase.
   // Puter NAO entra em modo automatico porque exige login do usuario final.
   if (GROQ_KEY)                                return "groq"
-  if (GEMINI_KEY)                              return "gemini"
+  if (GEMINI_ENABLED)                          return "gemini"
   if (DIRECT_OPENAI_KEY)                       return "direct"
   if (SUPABASE_URL && SUPABASE_ANON_KEY)       return "proxy"
   if (PUTER_ENABLED)                           return "puter"
@@ -419,7 +421,10 @@ async function chatCompleteProxy(
   }
 }
 
-// ── Gemini direto do browser (Google Generative Language API) ─────
+// ── Gemini via proxy seguro (/api/gemini — Vercel Edge Function) ──
+//
+// O front-end NAO envia a chave ao Google diretamente. Toda requisicao
+// passa por /api/gemini que injeta GEMINI_API_KEY no servidor.
 //
 // Mapeamento de mensagens:
 //   - role "system"    -> `systemInstruction` (Gemini trata como instrucao global)
@@ -465,22 +470,18 @@ async function chatCompleteGemini(
   let lastStatus  = 0
 
   for (const model of tryModels) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`
     let res: Response
     try {
-      res = await fetch(url, {
+      res = await fetch("/api/gemini", {
         method:  "POST",
-        headers: {
-          "Content-Type":  "application/json",
-          "x-goog-api-key": GEMINI_KEY,
-        },
-        body:    JSON.stringify(bodyBase),
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ model, ...bodyBase }),
         signal:  options.signal,
       })
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") throw err
       const msg = err instanceof Error ? err.message : String(err)
-      throw new AIError(`Falha de rede ao chamar a API do Gemini: ${msg}`, err)
+      throw new AIError(`Falha de rede ao chamar o proxy do Gemini: ${msg}`, err)
     }
 
     const raw = await res.text().catch(() => "")
@@ -517,7 +518,7 @@ async function chatCompleteGemini(
     if (!res.ok) {
       const message = parsed?.error?.message
         ?? (res.status === 400 ? "Requisicao invalida para a API do Gemini."
-          : res.status === 401 || res.status === 403 ? "Chave do Gemini invalida ou sem permissao (VITE_GEMINI_API_KEY)."
+          : res.status === 401 || res.status === 403 ? "Chave do Gemini invalida ou sem permissao (verifique GEMINI_API_KEY no servidor)."
           : `Erro ${res.status} ao consultar o Gemini.`)
       throw new AIError(message)
     }
@@ -542,7 +543,7 @@ async function chatCompleteGemini(
   }
   throw new AIError(
     lastMessage ||
-      `Nenhum modelo Gemini respondeu. Defina VITE_GEMINI_MODEL no .env com um modelo valido (ex.: gemini-1.5-flash-latest). Ultimo status: ${lastStatus}.`,
+      `Nenhum modelo Gemini respondeu pelo proxy. Defina VITE_GEMINI_MODEL no .env com um modelo valido (ex.: gemini-1.5-flash-latest). Ultimo status: ${lastStatus}.`,
   )
 }
 
@@ -645,7 +646,7 @@ export async function chatComplete(
   if (mode === "none") {
     throw new AIError(
       "Assistente indisponivel: defina VITE_GROQ_API_KEY (recomendado), " +
-      "VITE_GEMINI_API_KEY, VITE_OPENAI_API_KEY ou configure a Edge Function ai-chat.",
+      "VITE_GEMINI_ENABLED=true, VITE_OPENAI_API_KEY ou configure a Edge Function ai-chat.",
     )
   }
   if (!messages?.length) {

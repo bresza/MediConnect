@@ -5,6 +5,7 @@ import {
   createPatient,
   createPatientWithPassword,
   createPatientPortalAccess,
+  resetPatientPortalPassword,
   updatePatient,
   deletePatient,
 } from "../services/patients"
@@ -16,6 +17,7 @@ export interface UsePatientsReturn {
   addPatient:    (p: Omit<Patient, "id">) => Promise<Patient>
   addPatientWithPassword: (p: Omit<Patient, "id">, password: string) => Promise<Patient>
   createPatientAccess: (p: Patient, password: string) => Promise<Patient>
+  resetPatientAccess: (p: Patient, password: string) => Promise<Patient>
   updatePatient: (p: Patient) => Promise<void>
   deletePatient: (id: string) => Promise<void>
   reload:        () => Promise<void>
@@ -55,6 +57,14 @@ export function usePatients(): UsePatientsReturn {
     return saved
   }, [])
 
+  const resetPatientAccess = useCallback(async (p: Patient, password: string) => {
+    const saved = await resetPatientPortalPassword(p, password)
+    // A recriação gera um novo id de paciente, então recarregamos a lista do
+    // servidor para refletir o registro atualizado (remove o id antigo).
+    await load()
+    return saved
+  }, [load])
+
   const updatePatientFn = useCallback(async (p: Patient) => {
     const saved = await updatePatient(p)
     setPatients((prev) => prev.map((x) => (x.id === saved.id ? saved : x)))
@@ -72,6 +82,7 @@ export function usePatients(): UsePatientsReturn {
     addPatient,
     addPatientWithPassword,
     createPatientAccess,
+    resetPatientAccess,
     updatePatient: updatePatientFn,
     deletePatient: deletePatientFn,
     reload: load,

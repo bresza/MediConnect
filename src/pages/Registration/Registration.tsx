@@ -3,6 +3,7 @@ import { Topbar }   from "../../components/layout/Topbar/Topbar"
 import { Card }     from "../../components/ui/Card/Card"
 import { Button }   from "../../components/ui/Button/Button"
 import { Input }    from "../../components/ui/Input/Input"
+import { DatePicker } from "../../components/ui/DatePicker/DatePicker"
 import { Select }   from "../../components/ui/Select/Select"
 import { Section }  from "../../components/ui/Section/Section"
 import {
@@ -18,6 +19,7 @@ interface RegistrationProps {
   onAddPatient:    (p: Omit<Patient, "id">) => Promise<Patient>
   onAddPatientWithPassword?: (p: Omit<Patient, "id">, password: string) => Promise<Patient>
   onCreatePatientAccess?: (p: Patient, password: string) => Promise<Patient>
+  onResetPatientAccess?: (p: Patient, password: string) => Promise<Patient>
   onUpdatePatient: (p: Patient) => Promise<void>
   onNavigate:      (page: PageId) => void
   isSecretary?:    boolean   // secretária vê apenas steps 1-4 (sem dados clínicos)
@@ -106,7 +108,6 @@ interface FormState {
   smokingStatus:    string
   alcoholUse:       string
   physicalActivity: string
-  observations:     string
 }
 
 const EMPTY: FormState = {
@@ -126,7 +127,7 @@ const EMPTY: FormState = {
   createPortalAccess:false,portalPassword:"",portalConfirmPassword:"",
   bloodType:"",allergies:"",chronicDiseases:"",currentMeds:"",
   previousSurgeries:"",familyHistory:"",smokingStatus:"",alcoholUse:"",
-  physicalActivity:"",observations:"",
+  physicalActivity:"",
 }
 
 function toForm(p: Patient): FormState {
@@ -153,14 +154,13 @@ function toForm(p: Patient): FormState {
     name: p.name ?? "",
     socialName: p.socialName ?? "",
 
-    gender:
-      p.gender === "Male"
-        ? "Masculino"
-        : p.gender === "Female"
-        ? "Feminino"
-        : p.gender === "Other"
-        ? "Outro"
-        : "",
+    gender: (() => {
+      const g = p.gender?.toLowerCase()
+      if (g === "male")   return "Masculino"
+      if (g === "female") return "Feminino"
+      if (g === "other")  return "Outro"
+      return ""
+    })(),
 
     dob: p.dob ?? "",
     birthplace: p.birthplace ?? "",
@@ -241,11 +241,11 @@ function toForm(p: Patient): FormState {
     smokingStatus: "",
     alcoholUse: "",
     physicalActivity: "",
-    observations: p.observations ?? "",
   }
 }
 
 function toGender(v: string): Patient["gender"] | undefined {
+  if (!v || v === "Não informado") return undefined
   if (v === "Masculino") return "Male"
   if (v === "Feminino")  return "Female"
   if (v === "Outro") return "Other"
@@ -322,11 +322,13 @@ export function Registration({
   onAddPatient,
   onAddPatientWithPassword,
   onCreatePatientAccess,
+  onResetPatientAccess,
   onUpdatePatient,
   onNavigate,
   isSecretary = false,
 }: RegistrationProps) {
   const isEditing   = !!editingPatient
+  const alreadyHasPortal = !!editingPatient?.userId
   const totalSteps = isSecretary ? 4 : STEP_LABELS.length
   const [step, setStep]       = useState(1)
   const [form, setForm]       = useState<FormState>(editingPatient ? toForm(editingPatient) : EMPTY)
@@ -335,6 +337,8 @@ export function Registration({
   const [saveError, setSaveError] = useState<string | null>(null)
   const [stepError, setStepError] = useState<string | null>(null)
   const [saved, setSaved]     = useState(false)
+  const [resetState, setResetState] = useState<"idle" | "sending" | "sent" | "error">("idle")
+  const [lastSetPassword, setLastSetPassword] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Reinicializa quando editingPatient muda
@@ -371,7 +375,6 @@ export function Registration({
     if (targetStep === 1) {
       if (!form.name.trim()) e.name = "Nome completo é obrigatório"
       else if (!hasAtLeastTwoNames(form.name)) e.name = "Informe pelo menos dois nomes"
-      if (!form.gender)      e.gender = "Sexo é obrigatório"
       if (!form.dob)         e.dob    = "Data de nascimento é obrigatória"
       else if (form.dob > TODAY) e.dob = "Data de nascimento deve estar no passado"
     }
@@ -390,9 +393,11 @@ export function Registration({
       else if (phone.length !== 11) e.phone = "Celular deve estar no formato (00)-00000-0000"
       if (!email) e.email = "E-mail é obrigatório"
       else if (!isValidEmail(email)) e.email = "E-mail inválido"
+      else if (patients.some((p) => p.email?.trim().toLowerCase() === email.toLowerCase() && p.id !== editingPatient?.id))
+        e.email = "E-mail já cadastrado para outro paciente"
       if (form.emergencyPhone && !form.emergencyName)
         e.emergencyName = "Informe o nome do contato de emergência"
-      if (form.createPortalAccess) {
+      if (form.createPortalAccess && !alreadyHasPortal) {
         if (!form.portalPassword) e.portalPassword = "Senha obrigatória"
         else if (form.portalPassword.length < 6) e.portalPassword = "Mínimo 6 caracteres"
         if (form.portalPassword !== form.portalConfirmPassword) e.portalConfirmPassword = "Senhas não coincidem"
@@ -470,7 +475,6 @@ export function Registration({
         state:        form.state,
         reference:    form.reference || undefined,
       } : undefined,
-      observations: form.observations || undefined,
       status:       "Active",
       createdAt:    editingPatient?.createdAt ?? new Date().toISOString().slice(0, 10),
       updatedAt:    new Date().toISOString().slice(0, 10),
@@ -482,7 +486,7 @@ export function Registration({
     try {
       const data = buildPatientData()
       if (isEditing && editingPatient) {
-        const patient = { ...data, id: editingPatient.id }
+        const patient = { ...data, id: editingPatient.id, userId: editingPatient.userId }
         if (form.createPortalAccess && onCreatePatientAccess) {
           await onCreatePatientAccess(patient, form.portalPassword)
         } else {
@@ -497,6 +501,33 @@ export function Registration({
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Não foi possível salvar o paciente.")
     } finally { setIsSaving(false) }
+  }
+
+  function validateResetPassword(): boolean {
+    const e: Partial<Record<keyof FormState, string>> = {}
+    if (!form.portalPassword) e.portalPassword = "Senha obrigatória"
+    else if (form.portalPassword.length < 6) e.portalPassword = "Mínimo 6 caracteres"
+    if (form.portalPassword !== form.portalConfirmPassword) e.portalConfirmPassword = "Senhas não coincidem"
+    setErrors(e)
+    return Object.keys(e).length === 0
+  }
+
+  async function handleResetPassword() {
+    if (!editingPatient || !onResetPatientAccess) return
+    if (!validateResetPassword()) return
+    const newPwd = form.portalPassword
+    setResetState("sending")
+    try {
+      await onResetPatientAccess(editingPatient, newPwd)
+      setLastSetPassword(newPwd)
+      setResetState("sent")
+      set("portalPassword", "")
+      set("portalConfirmPassword", "")
+    } catch (err) {
+      setResetState("error")
+      const msg = err instanceof Error ? err.message : "Não foi possível redefinir a senha."
+      setSaveError(msg)
+    }
   }
 
   async function handleNext() {
@@ -651,10 +682,10 @@ export function Registration({
                 </div>
               </div>
               <div className={`${styles.grid3} ${styles.marginTop}`}>
-                <Select label="Sexo biológico" required options={GENDERS}
+                <Select label="Sexo biológico (opcional)" options={GENDERS}
                   value={form.gender} onChange={(e) => set("gender", e.target.value)}
                   error={errors.gender} />
-                <Input label="Data de nascimento" type="date" required max={TODAY}
+                <DatePicker label="Data de nascimento" required max={TODAY}
                   value={form.dob} onChange={(e) => set("dob", e.target.value)} error={errors.dob} />
                 <Select label="Estado civil" options={MARITAL}
                   value={form.maritalStatus} onChange={(e) => set("maritalStatus", e.target.value)} />
@@ -692,7 +723,7 @@ export function Registration({
                   value={form.rgIssuer} onChange={(e) => set("rgIssuer", e.target.value)} />
                 <Select label="UF emissão RG" options={BR_STATES}
                   value={form.rgState} onChange={(e) => set("rgState", e.target.value)} />
-                <Input label="Data de emissão RG" type="date"
+                <DatePicker label="Data de emissão RG"
                   value={form.rgDate} onChange={(e) => set("rgDate", e.target.value)} />
                 <Input label="CNH" placeholder="Número da CNH"
                   value={form.cnh} onChange={(e) => set("cnh", e.target.value)} />
@@ -711,7 +742,7 @@ export function Registration({
                   value={form.healthInsuranceNumber} onChange={(e) => set("healthInsuranceNumber", e.target.value)} />
                 <Input label="Plano/Modalidade" placeholder="Ex: Enfermaria, Apartamento"
                   value={form.healthInsurancePlan} onChange={(e) => set("healthInsurancePlan", e.target.value)} />
-                <Input label="Validade do plano" type="date"
+                <DatePicker label="Validade do plano"
                   value={form.healthInsuranceExpiry} onChange={(e) => set("healthInsuranceExpiry", e.target.value)} />
                 <div style={{ paddingTop:20 }}>
                   <CheckRow field="isNewbornOnInsurance" label="Recém-nascido incluído no plano" />
@@ -785,31 +816,97 @@ export function Registration({
 
             <Section title="Acesso do paciente">
               <div className={`${styles.portalAccessBox} ${styles.marginTop}`}>
-                <CheckRow
-                  field="createPortalAccess"
-                  label={isEditing ? "Criar acesso ao portal para este paciente" : "Criar usuário paciente com e-mail e senha"}
-                />
-                <p className={styles.portalAccessText}>
-                  O paciente poderá entrar com o e-mail cadastrado e acessar consultas, exames, receitas e laudos vinculados ao CPF/e-mail.
-                </p>
-                {form.createPortalAccess && (
-                  <div className={styles.grid2}>
-                    <Input
-                      label="Senha de acesso"
-                      type="password"
-                      placeholder="Mínimo 6 caracteres"
-                      value={form.portalPassword}
-                      onChange={(e) => set("portalPassword", e.target.value)}
-                      error={errors.portalPassword}
+                {alreadyHasPortal ? (
+                  <>
+                    <div style={{ display:"flex",alignItems:"center",gap:8,fontSize:13,fontWeight:600,color:"var(--foreground)" }}>
+                      <span style={{ display:"inline-flex",alignItems:"center",justifyContent:"center",width:18,height:18,borderRadius:"50%",background:"var(--primary)",color:"var(--primary-foreground)",fontSize:11 }}>✓</span>
+                      Este paciente já possui acesso ao portal
+                    </div>
+                    <p className={styles.portalAccessText}>
+                      Defina uma nova senha de acesso para <strong>{form.email || "sem e-mail"}</strong>.
+                      A nova senha passa a valer imediatamente — anote e informe ao paciente.
+                    </p>
+                    <p className={styles.portalAccessText} style={{ color:"var(--muted-foreground)" }}>
+                      Atenção: a redefinição recria o cadastro do paciente. Consultas e laudos vinculados ao ID anterior não são transferidos automaticamente.
+                    </p>
+                    {resetState === "sent" ? (
+                      <div style={{ padding:"12px 14px",borderRadius:8,background:"rgb(124 144 130 / 0.12)",border:"1px solid var(--primary)" }}>
+                        <div style={{ fontSize:13,fontWeight:600,color:"var(--foreground)",marginBottom:4 }}>
+                          ✓ Senha redefinida com sucesso
+                        </div>
+                        <div style={{ fontSize:13,color:"var(--foreground)" }}>
+                          E-mail: <strong>{form.email}</strong><br />
+                          Nova senha: <code style={{ fontSize:14,fontWeight:700,background:"var(--background)",padding:"2px 8px",borderRadius:4,border:"1px solid var(--border)" }}>{lastSetPassword}</code>
+                        </div>
+                        <p style={{ fontSize:11,color:"var(--muted-foreground)",margin:"8px 0 0" }}>
+                          Repasse essas credenciais ao paciente. Ele já pode entrar no portal com elas.
+                        </p>
+                      </div>
+                    ) : (
+                      <>
+                        <div className={styles.grid2}>
+                          <Input
+                            label="Nova senha"
+                            type="password"
+                            placeholder="Mínimo 6 caracteres"
+                            value={form.portalPassword}
+                            onChange={(e) => { set("portalPassword", e.target.value); setResetState("idle") }}
+                            error={errors.portalPassword}
+                          />
+                          <Input
+                            label="Confirmar nova senha"
+                            type="password"
+                            value={form.portalConfirmPassword}
+                            onChange={(e) => { set("portalConfirmPassword", e.target.value); setResetState("idle") }}
+                            error={errors.portalConfirmPassword}
+                          />
+                        </div>
+                        <div style={{ display:"flex",alignItems:"center",gap:12,marginTop:8 }}>
+                          <Button
+                            variant="outline"
+                            onClick={handleResetPassword}
+                            disabled={resetState === "sending" || !onResetPatientAccess}
+                          >
+                            {resetState === "sending" ? "Redefinindo..." : "Redefinir senha de acesso"}
+                          </Button>
+                          {resetState === "error" && (
+                            <span style={{ fontSize:12,color:"var(--destructive)",fontWeight:600 }}>
+                              Não foi possível redefinir. Tente novamente.
+                            </span>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <CheckRow
+                      field="createPortalAccess"
+                      label={isEditing ? "Criar acesso ao portal para este paciente" : "Criar usuário paciente com e-mail e senha"}
                     />
-                    <Input
-                      label="Confirmar senha"
-                      type="password"
-                      value={form.portalConfirmPassword}
-                      onChange={(e) => set("portalConfirmPassword", e.target.value)}
-                      error={errors.portalConfirmPassword}
-                    />
-                  </div>
+                    <p className={styles.portalAccessText}>
+                      O paciente poderá entrar com o e-mail cadastrado e acessar consultas, exames, receitas e laudos vinculados ao CPF/e-mail. A senha definida aqui passa a valer imediatamente.
+                    </p>
+                    {form.createPortalAccess && (
+                      <div className={styles.grid2}>
+                        <Input
+                          label="Senha de acesso"
+                          type="password"
+                          placeholder="Mínimo 6 caracteres"
+                          value={form.portalPassword}
+                          onChange={(e) => set("portalPassword", e.target.value)}
+                          error={errors.portalPassword}
+                        />
+                        <Input
+                          label="Confirmar senha"
+                          type="password"
+                          value={form.portalConfirmPassword}
+                          onChange={(e) => set("portalConfirmPassword", e.target.value)}
+                          error={errors.portalConfirmPassword}
+                        />
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </Section>
@@ -863,8 +960,6 @@ export function Registration({
                   placeholder="Ex: Apendicectomia (2010), fratura de fêmur (2015)..." />
                 <Textarea label="Histórico familiar relevante" field="familyHistory"
                   placeholder="Ex: Pai com infarto, mãe com diabetes..." />
-                <Textarea label="Observações gerais / Anotações adicionais" field="observations"
-                  placeholder="Qualquer outra informação relevante para o atendimento..." rows={4} />
               </div>
             </Section>
           </>

@@ -113,17 +113,18 @@ export async function getFinancialRecords(): Promise<FinancialRecord[]> {
   ])
   const patientMap = new Map((patients ?? []).map((p) => [p.id, p.full_name]))
   return (records ?? []).map((record) =>
-    apiToFinancialRecord(record, patientMap.get(record.patient_id) ?? ""),
-  )
+      apiToFinancialRecord(record, patientMap.get(record.patient_id) ?? ""),
+    )
 }
 
 export async function createFinancialRecord(
   data: Omit<FinancialRecord, "id">,
 ): Promise<FinancialRecord> {
+  const reportPayload = financialRecordToReport(data)
   const created = await apiRequest<ApiReport[]>("/rest/v1/reports", {
     method: "POST",
     headers: { Prefer: "return=representation" },
-    body: financialRecordToReport(data),
+    body: reportPayload,
   })
   const raw = Array.isArray(created) ? created[0] : (created as ApiReport)
   return apiToFinancialRecord(raw, data.patientName)
