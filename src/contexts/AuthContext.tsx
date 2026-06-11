@@ -38,10 +38,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSessionRefresher(async () => {
       if (!state.refreshToken) return null
       const refreshed = await refreshSession(state.refreshToken)
+      setApiContext({
+        token:        refreshed.token,
+        userId:       state.user?.id ?? null,
+        refreshToken: refreshed.refreshToken,
+        expiresAt:    refreshed.expiresAt,
+      })
       dispatch({ type: "REFRESH", payload: refreshed })
       return refreshed.token
     })
-  }, [state.refreshToken])
+  }, [state.refreshToken, state.user?.id])
 
   const login = useCallback((payload: AuthState) => {
     dispatch({ type: "LOGIN", payload })
