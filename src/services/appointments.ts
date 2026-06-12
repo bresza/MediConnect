@@ -666,12 +666,19 @@ async function patchAppointmentFields(
   body: Record<string, unknown>,
 ): Promise<void> {
   const filter = `id=eq.${encodeURIComponent(appointmentId)}&patient_id=eq.${encodeURIComponent(patientId)}`
-  await apiRequest(`/rest/v1/appointments?${filter}`, {
-    method: "PATCH",
-    headers: { Prefer: "return=minimal" },
-    body,
-    logErrors: false,
-  })
+  const updated = await apiRequest<ApiAppointment[] | ApiAppointment>(
+    `/rest/v1/appointments?${filter}&select=id`,
+    {
+      method: "PATCH",
+      headers: { Prefer: "return=representation" },
+      body,
+      logErrors: false,
+    },
+  )
+  const rows = Array.isArray(updated) ? updated : updated ? [updated] : []
+  if (rows.length === 0) {
+    throw new Error("Não foi possível confirmar a alteração da consulta. Atualize a agenda e tente novamente.")
+  }
 }
 
 function buildCancellationNotes(
