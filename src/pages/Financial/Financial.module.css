@@ -106,20 +106,48 @@
   background-color: var(--border); opacity: 0.6;
 }
 
-.chartBars {
-  display: flex; align-items: flex-end;
-  gap: 6px; height: 120px; padding-bottom: 20px;
+.plot {
   position: relative;
+  height: 100px;
 }
 
-.chartCol {
-  flex: 1; display: flex; flex-direction: column;
-  align-items: center; gap: 4px; height: 100%;
+.lineSvg {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  overflow: visible;
 }
 
-.barGroup {
-  flex: 1; width: 100%;
-  position: relative; display: flex; align-items: flex-end;
+.lineSeries {
+  fill: none;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.lineGreen { stroke: #10b981; }
+.lineAmber { stroke: #f59e0b; }
+.lineRed   { stroke: var(--destructive); }
+:global(.dark) .lineGreen { stroke: #34d399; }
+:global(.dark) .lineAmber { stroke: #fbbf24; }
+
+.marker {
+  position: absolute;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  border: 2px solid var(--card);
+  box-sizing: border-box;
+}
+
+.xLabels {
+  display: flex;
+  height: 20px;
+  align-items: flex-end;
+}
+.xLabels span {
+  flex: 1; text-align: center;
+  font-size: 10px; color: var(--muted-foreground); font-weight: 500;
 }
 
 /* tooltip */
@@ -141,7 +169,7 @@
 .dotRed   { width: 6px; height: 6px; border-radius: 50%; background: var(--destructive); flex-shrink: 0; }
 
 .chartStack {
-  width: 100%; display: flex;
+  width: 100%; height: 100%; display: flex;
   flex-direction: column-reverse;
   gap: 1px; border-radius: 4px 4px 0 0; overflow: hidden;
 }
