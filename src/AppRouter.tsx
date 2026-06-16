@@ -81,7 +81,6 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
   const isDoctor    = currentUser.role === "doctor"
   const isPatient   = currentUser.role === "patient"
   const isSecretary = currentUser.role === "secretary"
-  const onlyDigits = (value?: string) => value?.replace(/\D/g, "") ?? ""
   const isCurrentDoctor = (doctorId?: string, doctorName?: string) =>
     doctorId === currentUser.id ||
     doctorName === currentUser.name ||
@@ -91,13 +90,11 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
   const linkedPatient = isPatient
     ? patients.find((p) =>
       (currentUser.patientId && p.id === currentUser.patientId) ||
-      p.userId === currentUser.id ||
-      (!!currentUser.patientCpf && onlyDigits(p.cpf) === currentUser.patientCpf) ||
-      (!!currentUser.email && p.email?.toLowerCase().trim() === currentUser.email.toLowerCase().trim())) ?? null
+      p.userId === currentUser.id) ?? null
     : null
-  const fallbackPatient: Patient | null = isPatient && !linkedPatient
+  const fallbackPatient: Patient | null = isPatient && !linkedPatient && currentUser.patientId
     ? {
-      id: currentUser.patientId ?? currentUser.id,
+      id: currentUser.patientId,
       name: currentUser.name,
       cpf: currentUser.patientCpf ?? "",
       email: currentUser.email,

@@ -480,39 +480,32 @@ async function getDeletedPatientPlaceholderId(): Promise<string> {
 }
 
 function patientIdentityFilters(identity: PatientIdentity): string[] {
-  const cpf = onlyDigits(identity.cpf)
-  const name = identity.name?.trim()
+  const patientId = identity.patientId?.trim()
+  const userId = identity.userId?.trim()
   return [
-    identity.patientId ? `id.eq.${encodeURIComponent(identity.patientId)}` : "",
-    identity.userId ? `user_id.eq.${encodeURIComponent(identity.userId)}` : "",
-    identity.email ? `email.eq.${encodeURIComponent(identity.email.trim().toLowerCase())}` : "",
-    cpf ? `cpf.eq.${encodeURIComponent(cpf)}` : "",
-    name ? `full_name.ilike.*${encodeURIComponent(name)}*` : "",
+    patientId ? `id.eq.${encodeURIComponent(patientId)}` : "",
+    userId ? `user_id.eq.${encodeURIComponent(userId)}` : "",
   ].filter(Boolean)
 }
 
 function scorePatientMatch(api: ApiPatient, identity: PatientIdentity): number {
-  const cpf = onlyDigits(identity.cpf)
-  const email = identity.email?.trim().toLowerCase()
-  const name = identity.name?.trim().toLowerCase()
-  if (identity.patientId && api.id === identity.patientId) return 50
-  if (identity.userId && api.user_id === identity.userId) return 45
-  if (cpf && onlyDigits(api.cpf) === cpf) return 40
-  if (email && api.email?.trim().toLowerCase() === email) return 30
-  if (name && api.full_name?.trim().toLowerCase() === name) return 25
-  if (name && api.full_name?.trim().toLowerCase().includes(name)) return 15
+  const patientId = identity.patientId?.trim()
+  const userId = identity.userId?.trim()
+  if (userId && api.user_id === userId) return 50
+  if (patientId && api.id === patientId) return 40
   return 0
 }
 
-async function syncResolvedPatientProfile(userId: string | undefined, patient: ApiPatient): Promise<void> {
-  if (!userId) return
+function isAuthorizedPatientMatch(api: ApiPatient, identity: PatientIdentity): boolean {
+  const patientId = identity.patientId?.trim()
+  const userId = identity.userId?.trim()
+  const linkedUserId = api.user_id?.trim()
 
-  await apiRequest(`/rest/v1/patients?id=eq.${encodeURIComponent(patient.id)}`, {
-    method: "PATCH",
-    headers: { Prefer: "return=minimal" },
-    body: { user_id: userId },
-    logErrors: false,
-  }).catch(() => undefined)
+  if (userId && linkedUserId && linkedUserId !== userId) return false
+  return Boolean(
+    (userId && linkedUserId === userId) ||
+    (patientId && api.id === patientId),
+  )
 }
 
 async function linkPatientToUser(patientId: string, userId: string): Promise<void> {
@@ -551,10 +544,10 @@ export async function getPatientByIdentity(identity: PatientIdentity): Promise<P
   const uniqueRows = Array.from(new Map(rows.map((row) => [row.id, row])).values())
   const best = uniqueRows
     .map((row) => ({ row, score: scorePatientMatch(row, identity) }))
+    .filter((match) => match.score > 0 && isAuthorizedPatientMatch(match.row, identity))
     .sort((a, b) => b.score - a.score)[0]?.row
 
   if (!best) return null
-  await syncResolvedPatientProfile(identity.userId, best)
   return attachPatientPhoto(apiToPatient(best))
 }
 

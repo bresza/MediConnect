@@ -1224,18 +1224,11 @@ interface PatientLookup {
   cpf?: string
 }
 
-function sameLookupText(a?: string, b?: string): boolean {
-  return Boolean(a && b && a.trim().toLowerCase() === b.trim().toLowerCase())
-}
-
 function recordMatchesPatient(
   item: { patientId: string; patientName: string },
   identity: PatientLookup,
 ): boolean {
-  return Boolean(
-    (identity.patientId && item.patientId === identity.patientId) ||
-    sameLookupText(item.patientName, identity.name),
-  )
+  return Boolean(identity.patientId && item.patientId === identity.patientId)
 }
 
 export async function getPatientReportsByIdentity(identity: PatientLookup): Promise<Report[]> {

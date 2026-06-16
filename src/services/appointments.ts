@@ -606,25 +606,11 @@ function mergeAppointments(rows: ApiAppointment[][]): ApiAppointment[] {
 export async function getPatientAppointmentsByIdentity(identity: PatientLookup): Promise<Appointment[]> {
   const queries: Array<Promise<ApiAppointment[]>> = []
   const patientIds = compactValues([identity.patientId])
-  const email = identity.email?.trim().toLowerCase()
-  const cpf = identity.cpf?.replace(/\D/g, "")
   const userId = identity.userId?.trim()
 
   if (patientIds.length > 0) {
     queries.push(apiRequest<ApiAppointment[]>(
       `/rest/v1/appointments?patient_id=eq.${encodeURIComponent(patientIds[0])}&select=*,patients(id,full_name,email,cpf,user_id)&order=scheduled_at.asc`,
-      { logErrors: false },
-    ).catch(() => []))
-  }
-  if (email) {
-    queries.push(apiRequest<ApiAppointment[]>(
-      `/rest/v1/appointments?select=*,patients!inner(id,full_name,email,cpf,user_id)&patients.email=eq.${encodeURIComponent(email)}&order=scheduled_at.asc`,
-      { logErrors: false },
-    ).catch(() => []))
-  }
-  if (cpf) {
-    queries.push(apiRequest<ApiAppointment[]>(
-      `/rest/v1/appointments?select=*,patients!inner(id,full_name,email,cpf,user_id)&patients.cpf=eq.${encodeURIComponent(cpf)}&order=scheduled_at.asc`,
       { logErrors: false },
     ).catch(() => []))
   }

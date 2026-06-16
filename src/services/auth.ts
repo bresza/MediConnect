@@ -628,16 +628,12 @@ async function fetchProfileFallback(token: string, userId: string, email: string
 async function fetchPatientLink(
   token: string,
   userId: string,
-  email: string,
-  cpf?: string,
   patientId?: string,
 ): Promise<PatientLinkResponse | null> {
   const filters = [
     patientId ? `id.eq.${encodeURIComponent(patientId)}` : "",
     userId ? `user_id.eq.${encodeURIComponent(userId)}` : "",
     userId ? `id.eq.${encodeURIComponent(userId)}` : "",
-    email ? `email.eq.${encodeURIComponent(email)}` : "",
-    cpf ? `cpf.eq.${encodeURIComponent(onlyDigits(cpf))}` : "",
   ].filter(Boolean)
   if (filters.length === 0) return null
 
@@ -681,12 +677,9 @@ async function fetchDoctorLink(
 
 async function withPatientLink(user: User, token: string): Promise<User> {
   if (user.role !== "patient") return user
-  const patient = await fetchPatientLink(token, user.id, user.email, user.patientCpf, user.patientId)
+  const patient = await fetchPatientLink(token, user.id, user.patientId)
   if (!patient) {
-    return {
-      ...user,
-      patientId: user.patientId ?? user.id,
-    }
+    return user
   }
   return {
     ...user,
@@ -770,8 +763,6 @@ export async function login(payload: LoginPayload): Promise<LoginResponse> {
     const patient = await fetchPatientLink(
       authData.access_token,
       authData.user.id,
-      authData.user.email,
-      profile?.cpf,
       profile?.patient_id,
     )
     const user: User = {
