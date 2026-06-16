@@ -128,6 +128,14 @@ function BarChart({ records }: { records: FinancialRecord[] }) {
     return <p className={styles.chartEmpty}>Sem dados para exibir.</p>
   }
 
+  const series = [
+    { key: "paid"    as const, line: styles.lineGreen, dot: styles.barGreen },
+    { key: "pending" as const, line: styles.lineAmber, dot: styles.barAmber },
+    { key: "overdue" as const, line: styles.lineRed,   dot: styles.barRed   },
+  ]
+  const xAt = (i: number) => (months.length === 1 ? 50 : (i / (months.length - 1)) * 100)
+  const yAt = (v: number) => (1 - v / maxVal) * 100
+
   return (
     <div className={styles.chartWrap}>
       <div className={styles.chartInner}>
@@ -139,38 +147,34 @@ function BarChart({ records }: { records: FinancialRecord[] }) {
             </span>
           ))}
         </div>
-        {/* Grid + bars */}
+        {/* Grid + lines */}
         <div className={styles.chartArea}>
           <div className={styles.gridLines}>
             {ticks.map((t) => <div key={t} className={styles.gridLine} />)}
           </div>
-          <div className={styles.chartBars}>
-            {months.map((m) => (
-              <div key={m.label} className={styles.chartCol}>
-                <div className={styles.barGroup}>
-                  <div className={styles.barTooltip}>
-                    <p><span className={styles.dotGreen} />Pago: {fmt(m.paid)}</p>
-                    <p><span className={styles.dotAmber} />Pendente: {fmt(m.pending)}</p>
-                    {m.overdue > 0 && <p><span className={styles.dotRed} />Atrasado: {fmt(m.overdue)}</p>}
-                  </div>
-                  <div className={styles.chartStack}>
-                    {m.overdue > 0 && (
-                      <div className={`${styles.bar} ${styles.barRed}`}
-                        style={{ height: `${(m.overdue / maxVal) * 100}%` }} />
-                    )}
-                    {m.pending > 0 && (
-                      <div className={`${styles.bar} ${styles.barAmber}`}
-                        style={{ height: `${(m.pending / maxVal) * 100}%` }} />
-                    )}
-                    {m.paid > 0 && (
-                      <div className={`${styles.bar} ${styles.barGreen}`}
-                        style={{ height: `${(m.paid / maxVal) * 100}%` }} />
-                    )}
-                  </div>
-                </div>
-                <span className={styles.xLabel}>{m.label}</span>
-              </div>
-            ))}
+          <div className={styles.plot}>
+            <svg className={styles.lineSvg} viewBox="0 0 100 100" preserveAspectRatio="none">
+              {series.map((s) => (
+                <polyline
+                  key={s.key}
+                  className={`${styles.lineSeries} ${s.line}`}
+                  points={months.map((m, i) => `${xAt(i)},${yAt(m[s.key])}`).join(" ")}
+                />
+              ))}
+            </svg>
+            {series.map((s) =>
+              months.map((m, i) => (
+                <span
+                  key={`${s.key}-${m.label}`}
+                  className={`${styles.marker} ${s.dot}`}
+                  style={{ left: `${xAt(i)}%`, top: `${yAt(m[s.key])}%` }}
+                  title={`${m.label} • ${fmt(m[s.key])}`}
+                />
+              ))
+            )}
+          </div>
+          <div className={styles.xLabels}>
+            {months.map((m) => <span key={m.label}>{m.label}</span>)}
           </div>
         </div>
       </div>
