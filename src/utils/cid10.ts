@@ -20,3 +20,15 @@ export function validateCid10(value: string): string | null {
   }
   return null
 }
+
+/** CID obrigatório: retorna mensagem de erro se vazio ou formato inválido. */
+export function assertCid10Required(value: string): string | null {
+  const normalized = normalizeCid10(value)
+  if (!normalized) {
+    return "Informe o CID-10 (ex.: I10, E11.9)."
+  }
+  if (!CID10_PATTERN.test(normalized)) {
+    return "CID-10 inválido. Use o formato I10, E11.9 ou R10.1."
+  }
+  return null
+}

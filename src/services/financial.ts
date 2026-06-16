@@ -1,5 +1,7 @@
 import { apiRequest, getApiUserId } from "./api"
-import type { FinancialRecord, PaymentMethod, PaymentStatus } from "../types"
+import { getAppointmentPrice } from "../constants/appointmentPricing"
+import { formatAppointmentType } from "../utils"
+import type { Appointment, FinancialRecord, PaymentMethod, PaymentStatus } from "../types"
 
 const FINANCIAL_RECORD_EXAM = "Registro Financeiro"
 
@@ -164,4 +166,41 @@ export async function getPatientFinancialRecordsByIdentity(
 ): Promise<FinancialRecord[]> {
   const records = await getFinancialRecords()
   return records.filter((record) => recordMatchesPatient(record, identity))
+}
+
+export function buildFinancialRecordFromAppointment(
+  appointment: Appointment,
+): Omit<FinancialRecord, "id"> {
+  const typeLabel = formatAppointmentType(appointment.type)
+  return {
+    patientId:       appointment.patientId,
+    patientName:     appointment.patientName,
+    appointmentId:   appointment.id,
+    value:           getAppointmentPrice(appointment.type),
+    paymentMethod:   "Pix" as PaymentMethod,
+    dueDate:         appointment.date,
+    status:          "Pending" as PaymentStatus,
+    observations:    `Gerado automaticamente — ${typeLabel}`,
+  }
+}
+
+export async function findFinancialRecordByAppointmentId(
+  appointmentId: string,
+): Promise<FinancialRecord | null> {
+  if (!appointmentId) return null
+  const records = await getFinancialRecords()
+  return records.find((r) => r.appointmentId === appointmentId) ?? null
+}
+
+export async function syncFinancialRecordForAppointment(
+  appointment: Appointment,
+  overrides: Partial<Omit<FinancialRecord, "id">> = {},
+): Promise<FinancialRecord> {
+  const base = buildFinancialRecordFromAppointment(appointment)
+  const payload: Omit<FinancialRecord, "id"> = { ...base, ...overrides }
+  const existing = await findFinancialRecordByAppointmentId(appointment.id)
+  if (existing) {
+    return updateFinancialRecord({ ...existing, ...payload })
+  }
+  return createFinancialRecord(payload)
 }

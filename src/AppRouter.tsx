@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Sidebar }        from "./components/layout/Sidebar/Sidebar"
 import { AIAssistant }    from "./components/ui/AIAssistant/AIAssistant"
 import { ToastContainer } from "./components/ui/ToastContainer/ToastContainer"
@@ -17,6 +17,7 @@ import {
   createPatientAppointment,
   updatePatientAppointment,
 } from "./services/appointments"
+import { applyAppointmentUpdate } from "./services/appointmentLifecycle"
 import { Messages }       from "./pages/Messages/Messages"
 import { Financial }      from "./pages/Financial/Financial"
 import { Settings }       from "./pages/Settings/Settings"
@@ -34,7 +35,7 @@ import { useFinancial }     from "./hooks/useFinancial"
 import { useStaff }         from "./hooks/useStaff"
 import { usePatientAIData } from "./hooks/usePatientAIData"
 import { useToast }         from "./hooks/useToast"
-import type { Appointment, PageId, Patient } from "./types"
+import type { Appointment, FinancialRecord, PageId, Patient } from "./types"
 import styles from "./App.module.css"
 
 interface AppRouterProps { darkMode: boolean; onToggleDark: () => void }
@@ -47,20 +48,34 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
     error: patientsError, reload: reloadPatients,
   } = usePatients()
   const {
-    appointments, addAppointment, updateAppointment,
+    appointments, addAppointment,
     error: appointmentsError, reload: reloadAppointments,
   } = useAppointments()
   const {
     prescriptions, addPrescription, addMedicalRecord,
     error: medicalDataError, reload: reloadMedicalData,
   } = useMedicalData()
-  const { records: financialRecords, addRecord: addFinancialRecord, reload: reloadFinancial } = useFinancial()
+  const {
+    records: financialRecords,
+    addRecord: addFinancialRecord,
+    updateRecord: updateFinancialRecord,
+    reload: reloadFinancial,
+  } = useFinancial()
   const {
     staff, addStaff, updateStaff, deleteStaff,
     error: staffError, reload: reloadStaff,
   } = useStaff()
   const { toasts,       toast,         dismiss }                                       = useToast()
   const patientAIData = usePatientAIData(user)
+
+  const handleUpsertFinancialRecord = useCallback(async (record: Omit<FinancialRecord, "id">) => {
+    const existing = financialRecords.find((r) => r.appointmentId === record.appointmentId)
+    if (existing) {
+      await updateFinancialRecord({ ...existing, ...record })
+      return { ...existing, ...record }
+    }
+    return addFinancialRecord(record)
+  }, [financialRecords, addFinancialRecord, updateFinancialRecord])
 
   const reloadAll = async () => {
     await Promise.all([
@@ -214,13 +229,23 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
 
   async function handlePatientUpdateAppointment(appointment: Appointment) {
     try {
-      await updatePatientAppointment(appointment, patientIdentity)
+      const previous = appointments.find((item) => item.id === appointment.id)
+      if (!previous) {
+        throw new Error("Consulta não encontrada para remarcação.")
+      }
+      await updatePatientAppointment(previous, appointment, patientIdentity)
       await reloadAppointments()
       toast("Consulta atualizada com sucesso.", "success")
     } catch (err) {
       toast(err instanceof Error ? err.message : "Não foi possível atualizar a consulta.", "error")
       throw err
     }
+  }
+
+  async function handleStaffUpdateAppointment(previous: Appointment, next: Appointment) {
+    const result = await applyAppointmentUpdate(previous, next)
+    await reloadAppointments()
+    return result
   }
 
   // ── Navegação ────────────────────────────────────────────────────
@@ -429,11 +454,11 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
             patients={visiblePatients}
             currentUser={currentUser}
             onAddAppointment={addAppointment}
-            onUpdateAppointment={updateAppointment}
+            onUpdateAppointment={handleStaffUpdateAppointment}
             onRefresh={reloadAppointments}
             onAddMedicalRecord={addMedicalRecord}
             onAddPrescription={addPrescription}
-            onAddFinancialRecord={addFinancialRecord}
+            onAddFinancialRecord={handleUpsertFinancialRecord}
           />
         )
 

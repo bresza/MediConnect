@@ -13,7 +13,7 @@ import { RefreshButton } from "../../components/ui/RefreshButton/RefreshButton"
 import { RichTextEditor } from "../../components/ui/RichTextEditor/RichTextEditor"
 import { chatComplete, isAIConfigured, AIError, type ChatMessage } from "../../services/ai"
 import { formatCrm, formatDate, sortByName, toTitleCase } from "../../utils"
-import { normalizeCid10, validateCid10 } from "../../utils/cid10"
+import { normalizeCid10, assertCid10Required, validateCid10 } from "../../utils/cid10"
 import { fillReportTemplate } from "../../utils/reportPlaceholders"
 import { canDo } from "../../utils/permissions"
 import { ReportPreview, type ReportPreviewData } from "./ReportPreview"
@@ -320,6 +320,7 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
   const [isAiLoading, setIsAiLoading] = useState(false)
   const [aiNotice,    setAiNotice]    = useState<{ tone: "ai" | "local"; text: string } | null>(null)
   const [error,       setError]       = useState<string | null>(null)
+  const [cidFieldError, setCidFieldError] = useState<string | null>(null)
   const [listError,   setListError]   = useState<string | null>(null)
   const [updatingId,  setUpdatingId]  = useState<string | null>(null)
   const [search,      setSearch]      = useState("")
@@ -382,10 +383,21 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
     setForm((p) => ({ ...p, [k]: v })); setError(null)
   }
 
+  function handleCid10Change(raw: string) {
+    const normalized = normalizeCid10(raw).slice(0, 8)
+    setField("cid10", normalized)
+    if (!normalized) {
+      setCidFieldError(null)
+      return
+    }
+    setCidFieldError(validateCid10(normalized))
+  }
+
   function closeEditor() {
     setEditorOpen(false)
     setEditingReport(null)
     setError(null)
+    setCidFieldError(null)
     setAiNotice(null)
     setPreviewData(null)
   }
@@ -431,8 +443,8 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
       setError("Selecione o paciente antes de pré-visualizar.")
       return
     }
-    const cidError = validateCid10(form.cid10)
-    if (cidError) { setError(cidError); return }
+    const cidError = assertCid10Required(form.cid10)
+    if (cidError) { setCidFieldError(cidError); setError(cidError); return }
     setPreviewData(buildPreviewFromForm())
   }
 
@@ -563,6 +575,7 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
     setEditingReport(null)
     setForm(EMPTY_FORM)
     setError(null)
+    setCidFieldError(null)
     setAiNotice(null)
     setEditorContentKey((k) => k + 1)
     setEditorOpen(true)
@@ -588,6 +601,7 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
       status:        r.status,
     })
     setError(null)
+    setCidFieldError(null)
     setAiNotice(null)
     setEditorContentKey((k) => k + 1)
     setEditorOpen(true)
@@ -614,9 +628,9 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
     }
     if (!form.patientId && !form.patientName) { setError("Selecione o paciente."); return }
     if (!form.type)                           { setError("Informe o tipo de laudo."); return }
-    const cidError = validateCid10(form.cid10)
-    if (cidError) { setError(cidError); return }
-    setIsSaving(true); setError(null)
+    const cidError = assertCid10Required(form.cid10)
+    if (cidError) { setCidFieldError(cidError); setError(cidError); return }
+    setIsSaving(true); setError(null); setCidFieldError(null)
     try {
       const normalizedCid = normalizeCid10(form.cid10)
       const payload = {
@@ -730,14 +744,22 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
                   onChange={(e: ChangeEvent<HTMLSelectElement>) => setField("type", e.target.value)}
                   options={EXAM_TYPES} required />
                 <div>
-                  <label style={labelStyle}>CID-10</label>
+                  <label style={labelStyle}>CID-10 *</label>
                   <input
                     value={form.cid10}
-                    onChange={(e) => setField("cid10", normalizeCid10(e.target.value))}
+                    onChange={(e) => handleCid10Change(e.target.value)}
+                    onBlur={() => setCidFieldError(assertCid10Required(form.cid10))}
                     placeholder="Ex: I10, E11.9..."
                     className={styles.metaInput}
                     maxLength={8}
+                    style={cidFieldError ? { borderColor: "var(--destructive, #ef4444)" } : undefined}
+                    required
                   />
+                  {cidFieldError && (
+                    <p style={{ fontSize: 11, color: "var(--destructive, #ef4444)", marginTop: 4, marginBottom: 0 }}>
+                      {cidFieldError}
+                    </p>
+                  )}
                 </div>
               </div>
 

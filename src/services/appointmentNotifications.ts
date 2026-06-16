@@ -16,6 +16,10 @@ function formatSlotLabel(date: string, time: string): string {
   return `${datePart} às ${time.slice(0, 5)}`
 }
 
+function firstName(patientName: string): string {
+  return patientName.trim().split(/\s+/)[0] || patientName
+}
+
 export function buildAppointmentScheduledSms(
   patientName: string,
   doctorName: string,
@@ -23,12 +27,59 @@ export function buildAppointmentScheduledSms(
   time: string,
   type?: Appointment["type"],
 ): string {
-  const firstName = patientName.trim().split(/\s+/)[0] || patientName
   const slot = formatSlotLabel(date, time)
   const typeLabel = type ? formatAppointmentType(type).toLowerCase() : "consulta"
   return (
-    `Olá ${firstName}, sua ${typeLabel} com ${doctorName} foi agendada para ${slot}. ` +
+    `Olá ${firstName(patientName)}, sua ${typeLabel} com ${doctorName} foi agendada para ${slot}. ` +
     "Para remarcar ou cancelar, fale conosco."
+  )
+}
+
+export function buildAppointmentCancelledSms(
+  patientName: string,
+  doctorName: string,
+  date: string,
+  time: string,
+  type?: Appointment["type"],
+): string {
+  const slot = formatSlotLabel(date, time)
+  const typeLabel = type ? formatAppointmentType(type).toLowerCase() : "consulta"
+  return (
+    `Olá ${firstName(patientName)}, sua ${typeLabel} com ${doctorName} em ${slot} foi cancelada. ` +
+    "Para remarcar, entre em contato conosco."
+  )
+}
+
+export function buildAppointmentRescheduledSms(
+  patientName: string,
+  doctorName: string,
+  prevDate: string,
+  prevTime: string,
+  nextDate: string,
+  nextTime: string,
+  type?: Appointment["type"],
+): string {
+  const fromSlot = formatSlotLabel(prevDate, prevTime)
+  const toSlot = formatSlotLabel(nextDate, nextTime)
+  const typeLabel = type ? formatAppointmentType(type).toLowerCase() : "consulta"
+  return (
+    `Olá ${firstName(patientName)}, sua ${typeLabel} com ${doctorName} foi remarcada de ${fromSlot} para ${toSlot}. ` +
+    "Para alterar novamente, fale conosco."
+  )
+}
+
+export function buildAppointmentAbsentSms(
+  patientName: string,
+  doctorName: string,
+  date: string,
+  time: string,
+  type?: Appointment["type"],
+): string {
+  const slot = formatSlotLabel(date, time)
+  const typeLabel = type ? formatAppointmentType(type).toLowerCase() : "consulta"
+  return (
+    `Olá ${firstName(patientName)}, registramos ausência na sua ${typeLabel} com ${doctorName} em ${slot}. ` +
+    "Entre em contato para remarcar."
   )
 }
 
@@ -76,6 +127,66 @@ export async function notifyAppointmentScheduled(
     appointment.type,
   )
 
+  return sendPatientSmsNotification({
+    patientId: appointment.patientId,
+    patientName: appointment.patientName,
+    content,
+    sentBy,
+  })
+}
+
+export async function notifyAppointmentCancelled(
+  appointment: Pick<Appointment, "patientId" | "patientName" | "doctorName" | "date" | "time" | "type">,
+  sentBy = "Sistema — cancelamento",
+): Promise<boolean> {
+  const content = buildAppointmentCancelledSms(
+    appointment.patientName,
+    appointment.doctorName,
+    appointment.date,
+    appointment.time,
+    appointment.type,
+  )
+  return sendPatientSmsNotification({
+    patientId: appointment.patientId,
+    patientName: appointment.patientName,
+    content,
+    sentBy,
+  })
+}
+
+export async function notifyAppointmentRescheduled(
+  previous: Pick<Appointment, "patientId" | "patientName" | "doctorName" | "date" | "time" | "type">,
+  next: Pick<Appointment, "date" | "time">,
+  sentBy = "Sistema — remarcação",
+): Promise<boolean> {
+  const content = buildAppointmentRescheduledSms(
+    previous.patientName,
+    previous.doctorName,
+    previous.date,
+    previous.time,
+    next.date,
+    next.time,
+    previous.type,
+  )
+  return sendPatientSmsNotification({
+    patientId: previous.patientId,
+    patientName: previous.patientName,
+    content,
+    sentBy,
+  })
+}
+
+export async function notifyAppointmentAbsent(
+  appointment: Pick<Appointment, "patientId" | "patientName" | "doctorName" | "date" | "time" | "type">,
+  sentBy = "Sistema — ausência",
+): Promise<boolean> {
+  const content = buildAppointmentAbsentSms(
+    appointment.patientName,
+    appointment.doctorName,
+    appointment.date,
+    appointment.time,
+    appointment.type,
+  )
   return sendPatientSmsNotification({
     patientId: appointment.patientId,
     patientName: appointment.patientName,

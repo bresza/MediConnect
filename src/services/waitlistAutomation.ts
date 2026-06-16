@@ -1,10 +1,9 @@
 import type { Appointment, WaitlistEntry } from "../types"
 import { createAppointment } from "./appointments"
 import { sendPatientSmsNotification } from "./appointmentNotifications"
+import { updateFreedSlotStatus } from "./freedSlots"
 import {
   enrollPatientInWaitlist,
-  getWaitlist,
-  suggestForGap,
   updateWaitlistEntry,
   WAITLIST_COLOR_LABEL,
   type EnrollPatientInput,
@@ -13,12 +12,17 @@ import {
 export type GapFillTrigger = "patient_cancellation" | "staff_cancellation" | "no_show"
 
 export interface WaitlistFillResult {
-  filled: boolean
+  filled:    boolean
   appointment?: Appointment
-  entry?: WaitlistEntry
-  notified?: boolean
-  message?: string
+  entry?:      WaitlistEntry
+  notified?:   boolean
+  message?:    string
 }
+
+export type FreedSlot = Pick<
+  Appointment,
+  "id" | "patientId" | "patientName" | "doctorId" | "doctorName" | "date" | "time" | "duration" | "type"
+>
 
 function formatSlotLabel(date: string, time: string): string {
   const dt = new Date(`${date}T${time}:00`)
@@ -31,7 +35,7 @@ function formatSlotLabel(date: string, time: string): string {
   return `${datePart} às ${time}`
 }
 
-function buildPromotionSms(
+export function buildPromotionSms(
   patientName: string,
   doctorName: string,
   date: string,
@@ -46,15 +50,6 @@ function buildPromotionSms(
   return `Olá ${firstName}, sua consulta com ${doctorName} foi agendada para ${slot} após ${reason} na fila prioritária. Veja detalhes no portal. Para remarcar, fale conosco.`
 }
 
-async function sendPatientSms(
-  patientId: string,
-  patientName: string,
-  content: string,
-  sentBy: string,
-): Promise<boolean> {
-  return sendPatientSmsNotification({ patientId, patientName, content, sentBy })
-}
-
 async function notifyPromotedPatient(
   patientId: string,
   patientName: string,
@@ -64,7 +59,12 @@ async function notifyPromotedPatient(
   trigger: GapFillTrigger,
 ): Promise<boolean> {
   const sms = buildPromotionSms(patientName, doctorName, date, time, trigger)
-  return sendPatientSms(patientId, patientName, sms, "Sistema — fila de espera")
+  return sendPatientSmsNotification({
+    patientId,
+    patientName,
+    content: sms,
+    sentBy: "Sistema — fila de espera",
+  })
 }
 
 export async function notifyWaitlistEnrollment(
@@ -78,7 +78,12 @@ export async function notifyWaitlistEnrollment(
   const target = specialty ? `${doctorName} (${specialty})` : doctorName
   const priorityLabel = WAITLIST_COLOR_LABEL[priorityColor]
   const sms = `Olá ${firstName}, você entrou na fila de espera para consulta com ${target}. Prioridade: ${priorityLabel}. Avisaremos por SMS quando surgir vaga.`
-  await sendPatientSms(patientId, patientName, sms, "Sistema — fila de espera")
+  await sendPatientSmsNotification({
+    patientId,
+    patientName,
+    content: sms,
+    sentBy: "Sistema — fila de espera",
+  })
 }
 
 /** Inscreve o paciente na fila e envia confirmação por SMS quando houver telefone. */
@@ -98,41 +103,25 @@ export async function enrollPatientInWaitlistFromPortal(
   return result
 }
 
-type FreedSlot = Pick<
-  Appointment,
-  "id" | "patientId" | "patientName" | "doctorId" | "doctorName" | "date" | "time" | "duration" | "type"
->
-
 /**
- * Preenche uma vaga liberada com o próximo paciente prioritário da fila
- * (`appointment_waitlist` via REST ou fallback localStorage).
+ * Agenda manualmente um paciente da fila no horário liberado (confirmação da recepção).
  */
-export async function fillGapFromWaitlist(
+export async function bookWaitlistEntryForSlot(
+  entry: WaitlistEntry,
   freed: FreedSlot,
   trigger: GapFillTrigger = "staff_cancellation",
+  options?: { freedSlotId?: string; filledBy?: string },
 ): Promise<WaitlistFillResult> {
   const slotTime = new Date(`${freed.date}T${freed.time}:00`)
   if (Number.isNaN(slotTime.getTime()) || slotTime <= new Date()) {
     return { filled: false, message: "Horário não é futuro." }
   }
 
-  let waitlist: WaitlistEntry[]
-  try {
-    waitlist = await getWaitlist()
-  } catch {
-    return { filled: false, message: "Não foi possível consultar a fila." }
+  if (entry.patientId === freed.patientId) {
+    return { filled: false, message: "Paciente é o mesmo da vaga liberada." }
   }
 
-  const candidate = suggestForGap(waitlist, { doctorId: freed.doctorId })
-  if (!candidate) {
-    return { filled: false, message: "Nenhum paciente na fila compatível." }
-  }
-
-  if (candidate.patientId === freed.patientId) {
-    return { filled: false, message: "Próximo da fila é o mesmo paciente." }
-  }
-
-  const notePrefix = `Encaixe automático (fila ${WAITLIST_COLOR_LABEL[candidate.priorityColor]}).`
+  const notePrefix = `Encaixe confirmado (fila ${WAITLIST_COLOR_LABEL[entry.priorityColor]}).`
   const observations = [
     notePrefix,
     trigger === "patient_cancellation"
@@ -144,38 +133,51 @@ export async function fillGapFromWaitlist(
 
   try {
     const appointment = await createAppointment({
-      patientId: candidate.patientId,
-      patientName: candidate.patientName,
-      doctorId: freed.doctorId,
-      doctorName: freed.doctorName,
-      date: freed.date,
-      time: freed.time,
-      duration: freed.duration,
-      type: freed.type,
-      status: "scheduled",
+      patientId:   entry.patientId,
+      patientName: entry.patientName,
+      doctorId:    freed.doctorId,
+      doctorName:  freed.doctorName,
+      date:        freed.date,
+      time:        freed.time,
+      duration:    freed.duration,
+      type:        freed.type,
+      status:      "scheduled",
       observations,
     }, { skipConfirmationSms: true })
 
     await updateWaitlistEntry({
-      ...candidate,
+      ...entry,
       status: "scheduled",
-      notes: [candidate.notes, observations].filter(Boolean).join("\n"),
+      notes: [entry.notes, observations].filter(Boolean).join("\n"),
     })
 
+    if (options?.freedSlotId) {
+      await updateFreedSlotStatus(options.freedSlotId, "filled", options.filledBy).catch(() => {})
+    }
+
     const notified = await notifyPromotedPatient(
-      candidate.patientId,
-      candidate.patientName,
+      entry.patientId,
+      entry.patientName,
       freed.doctorName,
       freed.date,
       freed.time,
       trigger,
     )
 
-    return { filled: true, appointment, entry: candidate, notified }
+    return { filled: true, appointment, entry, notified }
   } catch (err) {
     return {
       filled: false,
       message: err instanceof Error ? err.message : "Falha ao agendar encaixe.",
     }
   }
+}
+
+/** @deprecated Use bookWaitlistEntryForSlot após confirmação da recepção. */
+export async function fillGapFromWaitlist(
+  _freed: FreedSlot,
+  _trigger: GapFillTrigger = "staff_cancellation",
+): Promise<WaitlistFillResult> {
+  console.warn("[waitlist] fillGapFromWaitlist está obsoleto — use sugestão manual + bookWaitlistEntryForSlot")
+  return { filled: false, message: "Encaixe automático desativado. Use a sugestão da fila na agenda." }
 }
