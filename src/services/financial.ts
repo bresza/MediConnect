@@ -154,7 +154,6 @@ interface PatientLookup {
 
 function recordMatchesPatient(record: FinancialRecord, identity: PatientLookup): boolean {
   if (identity.patientId && record.patientId === identity.patientId) return true
-  if (identity.name && record.patientName.trim().toLowerCase() === identity.name.trim().toLowerCase()) return true
   return false
 }
 

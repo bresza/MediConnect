@@ -7,7 +7,6 @@ import { getPatientAppointmentsByIdentity } from "../../services/appointments"
 import { getPatientFinancialRecordsByIdentity } from "../../services/financial"
 import { getPatientByIdentity } from "../../services/patients"
 import { attachPatientPhoto } from "../../services/patientPhoto"
-import { resolveRememberedPatientId } from "../../services/patientLinks"
 import { Topbar } from "../../components/layout/Topbar/Topbar"
 import { Card } from "../../components/ui/Card/Card"
 import { Badge } from "../../components/ui/Badge/Badge"
@@ -106,12 +105,7 @@ export function PatientPortal({
   const [apiPrescriptions, setApiPrescriptions] = useState<Prescription[]>([])
 
   const portalPatient = resolvedPatient ?? patient
-  const rememberedPatientId = resolveRememberedPatientId({
-    name: portalPatient?.name ?? patient?.name ?? currentUser.name,
-    email: portalPatient?.email ?? patient?.email ?? currentUser.email,
-    cpf: portalPatient?.cpf ?? patient?.cpf ?? currentUser.patientCpf,
-  })
-  const patientId = portalPatient?.id ?? rememberedPatientId ?? currentUser.patientId ?? ""
+  const patientId = portalPatient?.id ?? currentUser.patientId ?? ""
   const patientIdentity = useMemo(() => ({
     patientId,
     userId: currentUser.id,
