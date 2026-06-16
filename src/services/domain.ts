@@ -1,5 +1,6 @@
 import { apiRequest, ApiError, getApiToken, getApiUserId } from "./api"
 import { formatSpecialtyLabel, onlyDigits } from "../utils"
+import { assertCid10Required } from "../utils/cid10"
 import type {
   MedicalRecord, Prescription, Report, ReportStatus,
   Message, StaffMember, StaffRole, StaffStatus,
@@ -183,6 +184,9 @@ export async function getReports(): Promise<Report[]> {
 export async function createReport(
   data: Partial<Report> & { patientId: string },
 ): Promise<Report> {
+  const cidErr = assertCid10Required(data.cid10 ?? "")
+  if (cidErr) throw new Error(cidErr)
+
   const created = await apiRequest<ApiReport[]>("/rest/v1/reports", {
     method: "POST",
     headers: { Prefer: "return=representation" },
@@ -198,6 +202,9 @@ export async function createReport(
 }
 
 export async function updateReport(report: Report): Promise<Report> {
+  const cidErr = assertCid10Required(report.cid10 ?? "")
+  if (cidErr) throw new Error(cidErr)
+
   await apiRequest(`/rest/v1/reports?id=eq.${report.id}`, {
     method: "PATCH",
     headers: { Prefer: "return=minimal" },

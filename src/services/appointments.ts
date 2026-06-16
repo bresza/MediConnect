@@ -1,7 +1,11 @@
 import { ApiError, apiRequest, getApiUserId } from "./api"
+import {
+  applyPatientAppointmentCancellation,
+  onAppointmentRescheduled,
+} from "./appointmentLifecycle"
 import { notifyAppointmentScheduled } from "./appointmentNotifications"
+import { syncFinancialRecordForAppointment } from "./financial"
 import { getPatientByIdentity, type PatientIdentity } from "./patients"
-import { fillGapFromWaitlist } from "./waitlistAutomation"
 import type {
   Appointment,
   AppointmentStatus,
@@ -345,6 +349,10 @@ export async function createAppointment(
   if (!options?.skipConfirmationSms) {
     await notifyAppointmentScheduled(appointment)
   }
+
+  await syncFinancialRecordForAppointment(appointment).catch((err) => {
+    console.warn("[financial] auto-lançamento falhou:", err)
+  })
 
   return appointment
 }
@@ -948,16 +956,18 @@ export async function cancelPatientAppointment(
     notes: buildCancellationNotes(appointment.type, appointment.observations, reason),
   })
 
+  const cancelled = { ...appointment, status: "cancelled" as const }
   try {
-    await fillGapFromWaitlist(appointment, "patient_cancellation")
+    await applyPatientAppointmentCancellation(cancelled)
   } catch {
-    // Cancelamento do paciente não deve falhar se o encaixe automático der erro.
+    // Cancelamento do paciente não deve falhar se registrar vaga/sugestão der erro.
   }
 
-  return { ...appointment, status: "cancelled" }
+  return cancelled
 }
 
 export async function updatePatientAppointment(
+  previous: Appointment,
   appointment: Appointment,
   identity: PatientIdentity,
 ): Promise<Appointment> {
@@ -982,6 +992,12 @@ export async function updatePatientAppointment(
     duration_minutes: appointment.duration,
     status: appointment.status ?? "scheduled",
   })
+
+  try {
+    await onAppointmentRescheduled(previous, appointment)
+  } catch {
+    // Remarcação do paciente não deve falhar se o SMS der erro.
+  }
 
   return appointment
 }

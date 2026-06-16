@@ -11,11 +11,17 @@ import { Badge } from "../../components/ui/Badge/Badge"
 import { Avatar } from "../../components/ui/Avatar/Avatar"
 import { Button } from "../../components/ui/Button/Button"
 import { Select } from "../../components/ui/Select/Select"
-import { WaitlistPanel, WaitlistSuggestionModal, type AddWaitlistInput } from "../../components/ui/Waitlist/Waitlist"
+import { GapSuggestionModal, WaitlistPanel, type AddWaitlistInput, type GapSuggestionSession } from "../../components/ui/Waitlist/Waitlist"
 import { ConsultationModal } from "../../components/ui/ConsultationModal/ConsultationModal"
 import { useWaitlist } from "../../hooks/useWaitlist"
-import { filterVisible, suggestForGap } from "../../services/waitlist"
+import { filterVisible } from "../../services/waitlist"
+import type { ApplyAppointmentUpdateResult } from "../../services/appointmentLifecycle"
+import { freedSlotToAppointmentShape, getPendingFreedSlots, updateFreedSlotStatus } from "../../services/freedSlots"
+import { isAIConfigured } from "../../services/ai"
+import { rankWaitlistForGap, type GapSuggestion } from "../../services/waitlistAi"
+import { bookWaitlistEntryForSlot, type GapFillTrigger } from "../../services/waitlistAutomation"
 import { checkConflict, formatAppointmentType } from "../../utils"
+import { getAppointmentPrice } from "../../constants/appointmentPricing"
 import {
   canBookAppointments,
   canCancelAppointments,
@@ -51,7 +57,7 @@ interface AppointmentsProps {
   patients: Patient[]
   currentUser: User
   onAddAppointment: (a: Omit<Appointment, "id">) => Promise<void>
-  onUpdateAppointment: (a: Appointment) => Promise<void>
+  onUpdateAppointment: (prev: Appointment, next: Appointment) => Promise<ApplyAppointmentUpdateResult | void>
   onDeleteAppointment?: (id: string) => Promise<void>
   onRefresh?: () => void | Promise<unknown>
   /** Médico: criar prontuário + receita + cobrança ao concluir um atendimento. */
@@ -217,7 +223,7 @@ export function Appointments({
   const canManageWaitlist = isDoctor || isSecretary
   const today = toDateStr(new Date())
   const [activeTab, setActiveTab] = useState<AppointmentsTab>("calendar")
-  const [suggested, setSuggested] = useState<WaitlistEntry | null>(null)
+  const [gapSession, setGapSession] = useState<GapSuggestionSession | null>(null)
   const [consultationFor, setConsultationFor] = useState<Appointment | null>(null)
 
   const waitlist = useWaitlist()
@@ -317,6 +323,58 @@ export function Appointments({
     }
     return waitlist.sorted
   }, [waitlist.sorted, isDoctor, currentDoctor?.id, currentUser.id])
+
+  const openGapSessionFromFreed = useCallback(async (
+    freed: GapSuggestionSession["freed"],
+    trigger: GapFillTrigger,
+    freedSlot: GapSuggestionSession["freedSlot"] = null,
+  ) => {
+    setGapSession({
+      freedSlot,
+      freed,
+      trigger,
+      suggestions: [],
+      loading: true,
+      aiAvailable: isAIConfigured(),
+    })
+    try {
+      const suggestions = await rankWaitlistForGap(freed, visibleWaitlist, 3)
+      setGapSession({
+        freedSlot,
+        freed,
+        trigger,
+        suggestions,
+        loading: false,
+        aiAvailable: isAIConfigured(),
+      })
+    } catch {
+      setGapSession({
+        freedSlot,
+        freed,
+        trigger,
+        suggestions: [],
+        loading: false,
+        aiAvailable: false,
+      })
+    }
+  }, [visibleWaitlist])
+
+  const pendingGapOpenedRef = useRef(false)
+
+  useEffect(() => {
+    if (!canBook && !canEdit) return
+    if (pendingGapOpenedRef.current || gapSession) return
+    let active = true
+
+    void getPendingFreedSlots().then((pending) => {
+      if (!active || pending.length === 0) return
+      pendingGapOpenedRef.current = true
+      const slot = pending[0]
+      void openGapSessionFromFreed(freedSlotToAppointmentShape(slot), slot.trigger, slot)
+    })
+
+    return () => { active = false }
+  }, [canBook, canEdit, gapSession, openGapSessionFromFreed, waitlist.sorted.length])
 
   const visibleAppointments = useMemo(() => {
     if (isDoctor) {
@@ -609,7 +667,7 @@ export function Appointments({
       observations: modal.observations || undefined,
     }
 
-    if (editingAppointment) await onUpdateAppointment({ ...payload, id: editingAppointment.id })
+    if (editingAppointment) await onUpdateAppointment(editingAppointment, { ...payload, id: editingAppointment.id })
     else await onAddAppointment(payload)
     closeModal()
   }
@@ -656,7 +714,7 @@ export function Appointments({
         window.alert("Horário indisponível para este médico nesta data.")
         return
       }
-      await onUpdateAppointment({ ...appointment, date: nextDate, time: nextTime })
+      await onUpdateAppointment(appointment, { ...appointment, date: nextDate, time: nextTime })
     } catch (err) {
       info.revert()
       window.alert(err instanceof Error ? err.message : "Não foi possível remarcar o agendamento.")
@@ -664,15 +722,20 @@ export function Appointments({
   }
 
   async function handleStatus(appointment: Appointment, status: Appointment["status"]) {
-    await onUpdateAppointment({ ...appointment, status })
+    const result = await onUpdateAppointment(appointment, { ...appointment, status })
     setSelected((current) => current?.id === appointment.id ? { ...current, status } : current)
 
-    // Desistência → procura sugestão na fila de espera compatível com a vaga.
-    if (status === "cancelled" || status === "absent") {
-      const candidate = suggestForGap(visibleWaitlist, {
-        doctorId: appointment.doctorId,
+    if ((status === "cancelled" || status === "absent") && result?.slotFreed) {
+      const trigger: GapFillTrigger = status === "absent" ? "no_show" : "staff_cancellation"
+      const { freedSlot, suggestions } = result.slotFreed
+      setGapSession({
+        freedSlot,
+        freed: appointment,
+        trigger,
+        suggestions,
+        loading: false,
+        aiAvailable: suggestions.some((s) => s.usedAi),
       })
-      if (candidate) setSuggested(candidate)
     }
   }
 
@@ -716,7 +779,7 @@ export function Appointments({
   function handleScheduleFromWaitlist(entry: WaitlistEntry) {
     if (!canBook) return
     setActiveTab("calendar")
-    setSuggested(null)
+    setGapSession(null)
     setEditingAppointment(null)
     const fallbackDoctor = entry.doctorId
       ? doctors.find((d) => d.id === entry.doctorId)
@@ -733,6 +796,43 @@ export function Appointments({
     setModalError(null)
     setAvailableSlots([])
     setSlotsError(null)
+  }
+
+  async function handleAcceptGapSuggestion(suggestion: GapSuggestion) {
+    if (!gapSession) return
+    const freed = {
+      ...gapSession.freed,
+      patientId: gapSession.freed.patientId ?? "",
+      patientName: gapSession.freed.patientName ?? "",
+    }
+    const result = await bookWaitlistEntryForSlot(
+      suggestion.entry,
+      freed,
+      gapSession.trigger,
+      { freedSlotId: gapSession.freedSlot?.id, filledBy: currentUser.id },
+    )
+    if (!result.filled) {
+      window.alert(result.message ?? "Não foi possível agendar o encaixe.")
+      return
+    }
+    setGapSession(null)
+    setSelected(null)
+    await onRefresh?.()
+  }
+
+  async function handleDismissGapEntry(suggestion: GapSuggestion) {
+    if (!gapSession) return
+    await waitlist.update({ ...suggestion.entry, status: "removed" })
+    const remaining = gapSession.suggestions.filter((s) => s.entry.id !== suggestion.entry.id)
+      .map((s, index) => ({ ...s, rank: index + 1 }))
+    setGapSession({ ...gapSession, suggestions: remaining })
+  }
+
+  async function handleDismissGapSlot() {
+    if (gapSession?.freedSlot?.id) {
+      await updateFreedSlotStatus(gapSession.freedSlot.id, "dismissed", currentUser.id)
+    }
+    setGapSession(null)
   }
 
   const slotOptions = modal.doctorId && modal.date ? availableSlots : []
@@ -1129,6 +1229,7 @@ export function Appointments({
         appointment={consultationFor}
         patient={consultationFor ? patients.find((p) => p.id === consultationFor.patientId) ?? null : null}
         currentUser={currentUser}
+        defaultPrice={consultationFor ? getAppointmentPrice(consultationFor.type) : 0}
         onComplete={async ({ appointmentId, medicalRecord, prescription, financialRecord }) => {
           if (!onAddMedicalRecord || !onAddFinancialRecord) return
           await onAddMedicalRecord(medicalRecord)
@@ -1138,29 +1239,18 @@ export function Appointments({
           await onAddFinancialRecord(financialRecord)
           const target = appointments.find((a) => a.id === appointmentId)
           if (target && target.status !== "completed") {
-            await onUpdateAppointment({ ...target, status: "completed" })
+            await onUpdateAppointment(target, { ...target, status: "completed" })
           }
           await onRefresh?.()
         }}
       />
 
-      <WaitlistSuggestionModal
-        isOpen={!!suggested}
-        entry={suggested}
-        onCancel={() => setSuggested(null)}
-        onAccept={(entry) => {
-          handleScheduleFromWaitlist(entry)
-        }}
-        onDismissEntry={(entry) => {
-          // Pula esse paciente: marca como removido e tenta o próximo.
-          void waitlist.update({ ...entry, status: "removed" }).then(() => {
-            const next = suggestForGap(
-              visibleWaitlist.filter((e) => e.id !== entry.id),
-              { doctorId: entry.doctorId },
-            )
-            setSuggested(next)
-          })
-        }}
+      <GapSuggestionModal
+        session={gapSession}
+        onClose={() => setGapSession(null)}
+        onAccept={(suggestion) => { void handleAcceptGapSuggestion(suggestion) }}
+        onDismissEntry={(suggestion) => { void handleDismissGapEntry(suggestion) }}
+        onDismissSlot={() => { void handleDismissGapSlot() }}
       />
 
       {showModal && (

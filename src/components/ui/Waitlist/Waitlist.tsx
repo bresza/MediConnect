@@ -10,8 +10,11 @@ import {
   inferPriority, WAITLIST_COLOR_HEX, WAITLIST_COLOR_LABEL,
   type InferPriorityResult,
 } from "../../../services/waitlist"
+import type { GapSuggestion } from "../../../services/waitlistAi"
+import type { FreedAppointmentSlot } from "../../../services/freedSlots"
+import type { GapFillTrigger } from "../../../services/waitlistAutomation"
 import type {
-  Patient, User, WaitlistEntry, WaitlistLegalFlags, WaitlistPriorityColor,
+  Patient, User, WaitlistEntry, WaitlistLegalFlags, WaitlistPriorityColor, AppointmentType,
 } from "../../../types"
 import styles from "./Waitlist.module.css"
 
@@ -113,9 +116,11 @@ export function WaitlistPanel(props: WaitlistPanelProps) {
         <div>
           <p className={styles.title}>Fila de espera por prioridade</p>
           <p className={styles.subtitle}>
-            Em caso de desistência ou cancelamento, o sistema sugere automaticamente o próximo
-            paciente prioritário. Cores seguem o protocolo de regulação ambulatorial do SUS;
-            prioridades legais (Lei 10.048/2000) elevam a posição na fila.
+            Em caso de desistência ou cancelamento, o sistema sugere até três pacientes
+            prioritários para a vaga (regras SUS e IA quando disponível). A recepção ou
+            o médico confirma o encaixe antes de agendar. Cores seguem o protocolo de
+            regulação ambulatorial do SUS; prioridades legais (Lei 10.048/2000) elevam
+            a posição na fila.
           </p>
         </div>
         {canManage && (
@@ -155,7 +160,9 @@ export function WaitlistPanel(props: WaitlistPanelProps) {
       ) : entries.length === 0 ? (
         <EmptyState
           title="Sem pacientes na fila"
-          description={canManage ? "Adicione pacientes que precisam aguardar vaga e o sistema cuida da ordem de prioridade." : "Nenhum paciente aguardando vaga no momento."}
+          description={canManage
+            ? "Adicione pacientes que precisam aguardar vaga; ao liberar horário, o sistema sugere encaixes para você confirmar."
+            : "Nenhum paciente aguardando vaga no momento. Inclusões na fila são feitas pela recepção ou pelo médico."}
         />
       ) : (
         <table className={styles.table}>
@@ -378,59 +385,203 @@ function AddWaitlistModal({ patients, doctors, currentUser, onCancel, onConfirm 
   )
 }
 
-// ─── Modal de sugestão (acionado ao cancelar/ausência) ────────────
+// ─── Modal de sugestão com IA (cancelamento / ausência) ───────────
 
-interface SuggestionModalProps {
+const TRIGGER_LABELS: Record<GapFillTrigger, string> = {
+  patient_cancellation: "Cancelamento do paciente",
+  staff_cancellation:   "Cancelamento pela clínica",
+  no_show:              "Ausência registrada",
+}
+
+function formatSlotDate(date: string, time: string): string {
+  const dt = new Date(`${date}T${time.slice(0, 5)}:00`)
+  if (Number.isNaN(dt.getTime())) return `${date} às ${time.slice(0, 5)}`
+  return dt.toLocaleDateString("pt-BR", {
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+  }) + ` às ${time.slice(0, 5)}`
+}
+
+export interface GapSuggestionSession {
+  freedSlot:   FreedAppointmentSlot | null
+  freed:       {
+    id:          string
+    doctorId:    string
+    doctorName:  string
+    date:        string
+    time:        string
+    duration:    number
+    type:        AppointmentType
+    patientId?:  string
+    patientName?: string
+  }
+  trigger:     GapFillTrigger
+  suggestions: GapSuggestion[]
+  loading?:    boolean
+  aiAvailable?: boolean
+}
+
+interface GapSuggestionModalProps {
+  session:          GapSuggestionSession | null
+  onClose:          () => void
+  onAccept:         (suggestion: GapSuggestion) => void
+  onDismissEntry?:  (suggestion: GapSuggestion) => void
+  onDismissSlot?:   () => void
+}
+
+function SuggestionCandidate({
+  suggestion,
+  selected,
+  onSelect,
+}: {
+  suggestion: GapSuggestion
+  selected:   boolean
+  onSelect:   () => void
+}) {
+  const { entry } = suggestion
+  return (
+    <button
+      type="button"
+      className={`${styles.suggestionCard} ${styles.suggestionSelectable} ${selected ? styles.suggestionSelected : ""}`}
+      onClick={onSelect}
+    >
+      <div className={styles.suggestionHeader}>
+        <p className={styles.suggestionTitle}>{entry.patientName}</p>
+        <span className={styles.suggestionRank}>#{suggestion.rank}</span>
+      </div>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+        <PriorityBadge color={entry.priorityColor} />
+        <FlagsCell flags={entry.flags} />
+        {suggestion.usedAi && (
+          <span className={styles.aiBadge}>IA</span>
+        )}
+      </div>
+      <p className={styles.suggestionRationale}>{suggestion.rationale}</p>
+      <div style={{ fontSize: 12, color: "var(--muted-foreground)" }}>
+        Aguarda desde {formatDate(entry.enteredAt)} · prazo-alvo {formatDate(entry.dueBy)}
+      </div>
+      {entry.clinicalNotes && (
+        <p style={{ fontSize: 12, margin: 0 }}>
+          <strong>Queixa:</strong> {entry.clinicalNotes}
+        </p>
+      )}
+      {entry.cid10 && (
+        <p style={{ fontSize: 12, margin: 0 }}>
+          <strong>CID-10:</strong> {entry.cid10}
+        </p>
+      )}
+    </button>
+  )
+}
+
+export function GapSuggestionModal({
+  session,
+  onClose,
+  onAccept,
+  onDismissEntry,
+  onDismissSlot,
+}: GapSuggestionModalProps) {
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+
+  useEffect(() => {
+    setSelectedId(session?.suggestions[0]?.entry.id ?? null)
+  }, [session])
+
+  if (!session) return null
+
+  const selected = session.suggestions.find((s) => s.entry.id === selectedId) ?? session.suggestions[0]
+  const slotLabel = formatSlotDate(session.freed.date, session.freed.time)
+
+  return (
+    <Modal
+      isOpen
+      onClose={onClose}
+      title="Vaga liberada — sugestões da fila"
+      subtitle={`${slotLabel} · ${session.freed.doctorName} · ${TRIGGER_LABELS[session.trigger]}`}
+      size="md"
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>Fechar</Button>
+          {onDismissSlot && (
+            <Button variant="outline" onClick={onDismissSlot}>Dispensar vaga</Button>
+          )}
+          {onDismissEntry && selected && session.suggestions.length > 1 && (
+            <Button variant="outline" onClick={() => onDismissEntry(selected)}>
+              Próximo da fila
+            </Button>
+          )}
+          <Button
+            variant="primary"
+            disabled={!selected || session.loading}
+            onClick={() => selected && onAccept(selected)}
+          >
+            Agendar paciente selecionado
+          </Button>
+        </>
+      }
+    >
+      {session.loading ? (
+        <p className={styles.gapLoading}>Analisando fila com IA…</p>
+      ) : session.suggestions.length === 0 ? (
+        <EmptyState
+          title="Nenhum paciente na fila"
+          description="Não há candidatos compatíveis com este horário. A vaga permanece disponível na agenda."
+        />
+      ) : (
+        <div className={styles.gapSuggestionList}>
+          {!session.aiAvailable && (
+            <p className={styles.gapFallbackNote}>Sugestão por regras SUS (IA indisponível).</p>
+          )}
+          {session.suggestions.map((suggestion) => (
+            <SuggestionCandidate
+              key={suggestion.entry.id}
+              suggestion={suggestion}
+              selected={selected?.entry.id === suggestion.entry.id}
+              onSelect={() => setSelectedId(suggestion.entry.id)}
+            />
+          ))}
+        </div>
+      )}
+    </Modal>
+  )
+}
+
+/** @deprecated Use GapSuggestionModal */
+export function WaitlistSuggestionModal(props: {
   isOpen:        boolean
   entry:         WaitlistEntry | null
   onCancel:      () => void
   onAccept:      (entry: WaitlistEntry) => void
   onDismissEntry?: (entry: WaitlistEntry) => void
-}
-
-export function WaitlistSuggestionModal({ isOpen, entry, onCancel, onAccept, onDismissEntry }: SuggestionModalProps) {
-  if (!entry) return null
+}) {
+  if (!props.entry || !props.isOpen) return null
+  const session: GapSuggestionSession = {
+    freedSlot: null,
+    freed: {
+      id: "",
+      doctorId: props.entry.doctorId ?? "",
+      doctorName: props.entry.doctorName ?? "",
+      date: "",
+      time: "",
+      duration: 30,
+      type: "consultation",
+    },
+    trigger: "staff_cancellation",
+    suggestions: [{
+      entry: props.entry,
+      rank: 1,
+      rationale: "Maior prioridade na fila.",
+      ruleScore: 100,
+      usedAi: false,
+    }],
+  }
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onCancel}
-      title="Vaga liberada — sugestão da fila"
-      subtitle="Paciente com maior prioridade compatível com o horário liberado."
-      size="md"
-      footer={
-        <>
-          <Button variant="ghost" onClick={onCancel}>Fechar</Button>
-          {onDismissEntry && (
-            <Button variant="outline" onClick={() => onDismissEntry(entry)}>
-              Próximo da fila
-            </Button>
-          )}
-          <Button variant="primary" onClick={() => onAccept(entry)}>
-            Agendar este paciente
-          </Button>
-        </>
-      }
-    >
-      <div className={styles.suggestionCard}>
-        <p className={styles.suggestionTitle}>{entry.patientName}</p>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-          <PriorityBadge color={entry.priorityColor} />
-          <FlagsCell flags={entry.flags} />
-        </div>
-        <div style={{ fontSize: 12, color: "var(--muted-foreground)" }}>
-          Aguarda desde {formatDate(entry.enteredAt)} · prazo-alvo {formatDate(entry.dueBy)}
-        </div>
-        {entry.clinicalNotes && (
-          <p style={{ fontSize: 12, margin: 0 }}>
-            <strong>Queixa:</strong> {entry.clinicalNotes}
-          </p>
-        )}
-        {entry.cid10 && (
-          <p style={{ fontSize: 12, margin: 0 }}>
-            <strong>CID-10:</strong> {entry.cid10}
-          </p>
-        )}
-      </div>
-    </Modal>
+    <GapSuggestionModal
+      session={session}
+      onClose={props.onCancel}
+      onAccept={(s) => props.onAccept(s.entry)}
+      onDismissEntry={props.onDismissEntry ? (s) => props.onDismissEntry!(s.entry) : undefined}
+    />
   )
 }
