@@ -166,7 +166,6 @@ export function PatientRescheduleModal({
         date,
         time,
         duration,
-        status: "scheduled",
       })
       onSuccess?.()
       handleClose()

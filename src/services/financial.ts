@@ -152,15 +152,23 @@ interface PatientLookup {
   cpf?: string
 }
 
-function recordMatchesPatient(record: FinancialRecord, identity: PatientLookup): boolean {
-  if (identity.patientId && record.patientId === identity.patientId) return true
-  if (identity.name && record.patientName.trim().toLowerCase() === identity.name.trim().toLowerCase()) return true
-  return false
-}
-
 export async function getPatientFinancialRecordsByIdentity(
   identity: PatientLookup,
 ): Promise<FinancialRecord[]> {
-  const records = await getFinancialRecords()
-  return records.filter((record) => recordMatchesPatient(record, identity))
+  const patientId = identity.patientId?.trim()
+  if (!patientId) return []
+
+  const [records, patients] = await Promise.all([
+    apiRequest<ApiReport[]>(
+      `/rest/v1/reports?select=*&patient_id=eq.${encodeURIComponent(patientId)}&exam=eq.${encodeURIComponent(FINANCIAL_RECORD_EXAM)}&order=created_at.desc`,
+    ),
+    apiRequest<ApiPatientName[]>(
+      `/rest/v1/patients?select=id,full_name&id=eq.${encodeURIComponent(patientId)}&limit=1`,
+      { logErrors: false },
+    ).catch(() => []),
+  ])
+  const patientName = patients?.[0]?.full_name ?? ""
+  return (records ?? [])
+    .filter((record) => record.patient_id === patientId)
+    .map((record) => apiToFinancialRecord(record, patientName))
 }
