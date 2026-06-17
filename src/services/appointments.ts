@@ -660,18 +660,32 @@ function canPatientManageAppointment(appointment: Appointment): boolean {
   return active && isFutureAppointmentDateTime(appointment.date, appointment.time)
 }
 
+const PATIENT_MANAGED_FINAL_STATUSES = "cancelled,completed,absent"
+
 async function patchAppointmentFields(
   appointmentId: string,
   patientId: string,
   body: Record<string, unknown>,
-): Promise<void> {
-  const filter = `id=eq.${encodeURIComponent(appointmentId)}&patient_id=eq.${encodeURIComponent(patientId)}`
-  await apiRequest(`/rest/v1/appointments?${filter}`, {
+): Promise<ApiAppointment> {
+  const filters = [
+    `id=eq.${encodeURIComponent(appointmentId)}`,
+    `patient_id=eq.${encodeURIComponent(patientId)}`,
+    `status=not.in.(${PATIENT_MANAGED_FINAL_STATUSES})`,
+    `scheduled_at=gt.${encodeURIComponent(new Date().toISOString())}`,
+    "select=*",
+  ]
+  const updated = await apiRequest<ApiAppointment[]>(`/rest/v1/appointments?${filters.join("&")}`, {
     method: "PATCH",
-    headers: { Prefer: "return=minimal" },
+    headers: { Prefer: "return=representation" },
     body,
     logErrors: false,
   })
+
+  const raw = updated?.[0]
+  if (!raw) {
+    throw new Error("Esta consulta não pode mais ser alterada. Atualize a agenda e tente novamente.")
+  }
+  return raw
 }
 
 function buildCancellationNotes(
@@ -730,7 +744,7 @@ export async function cancelPatientAppointment(
     throw new Error("Informe o motivo do cancelamento.")
   }
 
-  await patchAppointmentFields(appointment.id, linked.id, {
+  const updated = await patchAppointmentFields(appointment.id, linked.id, {
     status: "cancelled",
     notes: buildCancellationNotes(appointment.type, appointment.observations, reason),
   })
@@ -741,7 +755,10 @@ export async function cancelPatientAppointment(
     // Cancelamento do paciente não deve falhar se o encaixe automático der erro.
   }
 
-  return { ...appointment, status: "cancelled" }
+  return {
+    ...apiToAppointment(updated, appointment.doctorName),
+    patientName: appointment.patientName,
+  }
 }
 
 export async function updatePatientAppointment(
@@ -764,11 +781,13 @@ export async function updatePatientAppointment(
     throw new Error("Esta consulta não pode mais ser reagendada.")
   }
 
-  await patchAppointmentFields(appointment.id, linked.id, {
+  const updated = await patchAppointmentFields(appointment.id, linked.id, {
     scheduled_at: localDateTimeIso(appointment.date, appointment.time),
     duration_minutes: appointment.duration,
-    status: appointment.status ?? "scheduled",
   })
 
-  return appointment
+  return {
+    ...apiToAppointment(updated, appointment.doctorName),
+    patientName: appointment.patientName,
+  }
 }
