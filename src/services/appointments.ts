@@ -163,6 +163,26 @@ function rangesOverlap(startA: number, endA: number, startB: number, endB: numbe
   return startA < endB && endA > startB
 }
 
+/** Conflito de horário com agendamentos já carregados no client (ex.: assistente IA). */
+export function isAppointmentSlotBusy(
+  appointments: Appointment[],
+  doctorId: string,
+  date: string,
+  time: string,
+  durationMinutes = 30,
+): boolean {
+  if (!doctorId || !date || !time) return false
+  const start = timeToMinutes(time.slice(0, 5))
+  const end = start + durationMinutes
+  return appointments.some((appointment) => {
+    if (appointment.doctorId !== doctorId || appointment.date !== date) return false
+    if (appointment.status === "cancelled") return false
+    const otherStart = timeToMinutes(appointment.time.slice(0, 5))
+    const otherEnd = otherStart + (appointment.duration ?? 30)
+    return rangesOverlap(start, end, otherStart, otherEnd)
+  })
+}
+
 function apiToAvailability(api: ApiDoctorAvailability): DoctorAvailability {
   return {
     doctorId: api.doctor_id,

@@ -20,7 +20,10 @@ export {
   formatZipCodeBR as formatZipCode,
 } from "./masks"
 export {
-  canPatientManageAppointment,
+  buildDoctorPatientIdSet,
+  filterPatientsForDoctor,
+} from "./doctorPatientVisibility"
+export {
   enrichPatientsWithVisits,
   getPatientDisplayStatus,
   getPatientLastVisitFromAppointments,

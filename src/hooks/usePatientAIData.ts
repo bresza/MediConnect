@@ -5,6 +5,7 @@ import {
   getPatientReportsByIdentity,
 } from "../services/domain"
 import { getPatientByIdentity } from "../services/patients"
+import { resolvePatientIdFromApi } from "../services/userInfo"
 import { resolveRememberedPatientId } from "../services/patientLinks"
 import type { Appointment, Patient, Prescription, Report, User } from "../types"
 
@@ -19,6 +20,7 @@ export interface PatientIdentity {
 function buildIdentity(user: User, seed?: Patient | null): PatientIdentity {
   const portal = seed ?? null
   const patientId = resolveRememberedPatientId({
+    authUserId: user.id,
     name:  portal?.name ?? user.name,
     email: portal?.email ?? user.email,
     cpf:   portal?.cpf ?? user.patientCpf,
@@ -63,6 +65,8 @@ export function usePatientAIData(user: User | null, seedPatient?: Patient | null
     if (!user || !identity) return
     setLoading(true)
     try {
+      await resolvePatientIdFromApi().catch(() => null)
+
       const linked = await getPatientByIdentity({
         patientId: user.patientId ?? seedPatient?.id,
         userId:    user.id,

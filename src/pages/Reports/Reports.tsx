@@ -11,18 +11,28 @@ import { Avatar }  from "../../components/ui/Avatar/Avatar"
 import { Select }  from "../../components/ui/Select/Select"
 import { RefreshButton } from "../../components/ui/RefreshButton/RefreshButton"
 import { RichTextEditor } from "../../components/ui/RichTextEditor/RichTextEditor"
-import { chatComplete, isAIConfigured, AIError, type ChatMessage } from "../../services/ai"
+import { isAIConfigured, AIError } from "../../services/ai"
+import { completeReportWithAI, complementReportContentWithAI, htmlToPlainText, type ReportAICompletion } from "../../services/reportAI"
+import {
+  appendSpokenToObservations,
+  complementReportContentFromCid,
+  extractObservationsText,
+  findReportTemplateByCid,
+} from "../../utils/reportContentSections"
+import { useSpeechRecognition } from "../../hooks/useSpeechRecognition"
 import { formatCrm, formatDate, sortByName, toTitleCase } from "../../utils"
 import { normalizeCid10, assertCid10Required, validateCid10 } from "../../utils/cid10"
 import { fillReportTemplate } from "../../utils/reportPlaceholders"
 import { canDo } from "../../utils/permissions"
 import { ReportPreview, type ReportPreviewData } from "./ReportPreview"
+import { Modal } from "../../components/ui/Modal/Modal"
+import { printElement } from "../../utils/printReport"
 import styles from "./Reports.module.css"
 
 interface ReportsProps { currentUser: User; patients?: Patient[] }
 
 const STATUS_PT: Record<ReportStatus, string> = {
-  Draft: "Rascunho", Finalized: "Finalizado", Sent: "Enviado",
+  Draft: "Rascunho", Finalized: "Liberado", Sent: "Liberado",
 }
 
 function isReportLocked(status: ReportStatus): boolean {
@@ -63,24 +73,7 @@ const EXAM_TYPES = Array.from(
 // Quando o modelo retorna texto fora do JSON (lixo antes/depois),
 // extraimos o primeiro bloco "{ ... }" e tentamos parsear.
 
-interface AiCompletionResult {
-  diagnosis:   string
-  conclusion:  string
-  contentHtml: string
-}
-
-function extractJsonBlock(raw: string): string | null {
-  if (!raw) return null
-  const trimmed = raw.trim()
-  if (trimmed.startsWith("{") && trimmed.endsWith("}")) return trimmed
-  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]+?)\s*```/i)
-  if (fenced?.[1]) return fenced[1].trim()
-  const first = trimmed.indexOf("{")
-  const last  = trimmed.lastIndexOf("}")
-  if (first >= 0 && last > first) return trimmed.slice(first, last + 1)
-  return null
-}
-
+// ─── Fallback offline (sem chamar OpenAI) ─────────────────────────
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
@@ -88,15 +81,6 @@ function escapeHtml(value: string): string {
     .replace(/>/g, "&gt;")
 }
 
-function plainTextToHtml(value: string): string {
-  return value
-    .split(/\n{2,}/)
-    .filter(Boolean)
-    .map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, "<br/>")}</p>`)
-    .join("\n")
-}
-
-// ─── Fallback offline (sem chamar OpenAI) ─────────────────────────
 // Quando a IA externa nao esta disponivel (sem chave direta + proxy
 // `ai-chat` bloqueando CORS), montamos um laudo coerente a partir do
 // template ativo, dos dados ja preenchidos e do paciente. NAO e
@@ -106,7 +90,7 @@ function aiCompleteReportLocal(
   form: ReportForm,
   patient: Patient | undefined,
   currentUser: User,
-): AiCompletionResult {
+): ReportAICompletion {
   const today    = new Date().toLocaleDateString("pt-BR")
   const template = REPORT_TEMPLATES.find((t) => t.exam === form.type)
   const ageYears = patient?.dob
@@ -158,87 +142,6 @@ function aiCompleteReportLocal(
   ].filter(Boolean).join("\n")
 
   return { diagnosis, conclusion, contentHtml }
-}
-
-async function aiCompleteReport(
-  form: ReportForm,
-  patientInfo: string,
-  currentUser: User,
-): Promise<AiCompletionResult> {
-  const template = REPORT_TEMPLATES.find((t) => t.exam === form.type)
-  const baseContent = form.contentHtml.trim()
-
-  const systemMessages: ChatMessage[] = [
-    {
-      role: "system",
-      content: [
-        "Voce e o assistente clinico do MediConnect que ajuda medicos a redigir laudos em portugues do Brasil.",
-        "Gere SEMPRE um JSON valido (UTF-8) e nada mais, sem comentarios, sem texto fora do JSON e sem markdown.",
-        "Estrutura obrigatoria: { \"diagnosis\": string, \"conclusion\": string, \"contentHtml\": string }.",
-        "diagnosis: paragrafo objetivo (1-3 frases) descrevendo o quadro do paciente.",
-        "conclusion: paragrafo (1-2 frases) com a conclusao do laudo e orientacao geral.",
-        "contentHtml: HTML simples usando apenas <h2>, <p>, <ul>, <li>, <strong>. Sem <html>, <body>, <style>, scripts ou classes.",
-        "Estruture contentHtml em secoes: Identificacao do paciente, Anamnese e achados, Avaliacao clinica, Conduta sugerida e Conclusao.",
-        "Nao invente exames, valores numericos, doses ou nomes que nao tenham sido informados; use [VALOR] ou [A DEFINIR] quando faltarem dados.",
-        "Nao inclua diagnostico definitivo, prescricao ou doses sem ressalva: deixe explicito que a decisao final e do(a) medico(a).",
-      ].join(" "),
-    },
-  ]
-
-  const userPrompt: ChatMessage = {
-    role: "user",
-    content: [
-      `Medico responsavel: ${currentUser.name}${currentUser.crm ? ` (CRM ${formatCrm(currentUser.crm)})` : ""}.`,
-      `Paciente: ${patientInfo}.`,
-      `Tipo de laudo: ${form.type}.`,
-      form.cid10 ? `CID-10 informado: ${form.cid10}.` : "Sem CID-10 informado.",
-      form.diagnosis ? `Diagnostico em rascunho: ${form.diagnosis}.` : "Sem diagnostico em rascunho.",
-      form.conclusion ? `Conclusao em rascunho: ${form.conclusion}.` : "Sem conclusao em rascunho.",
-      template?.diagnosis ? `Diagnostico de referencia do template: ${template.diagnosis}.` : "",
-      template?.conclusion ? `Conclusao de referencia do template: ${template.conclusion}.` : "",
-      baseContent ? `Rascunho atual do laudo (HTML ou texto): ${baseContent}` : "Sem rascunho de conteudo.",
-      "Refine os campos com base nesse contexto, mantendo o que ja faz sentido e completando o que falta.",
-      "Responda APENAS com o JSON descrito.",
-    ].filter(Boolean).join("\n"),
-  }
-
-  const raw = await chatComplete([...systemMessages, userPrompt], {
-    temperature: 0.3,
-    maxTokens:   900,
-  })
-
-  const jsonBlock = extractJsonBlock(raw)
-  let parsed: Partial<AiCompletionResult> = {}
-  if (jsonBlock) {
-    try {
-      parsed = JSON.parse(jsonBlock) as Partial<AiCompletionResult>
-    } catch {
-      parsed = {}
-    }
-  }
-
-  const diagnosis  = (parsed.diagnosis  ?? form.diagnosis ?? "").trim()
-  const conclusion = (parsed.conclusion ?? form.conclusion ?? "").trim()
-  let contentHtml  = (parsed.contentHtml ?? "").trim()
-
-  // Fallback resiliente: se o modelo nao devolveu JSON valido, usamos
-  // a resposta como texto e montamos paragrafos.
-  if (!contentHtml) {
-    if (raw.trim().startsWith("<")) {
-      contentHtml = raw.trim()
-    } else {
-      contentHtml = plainTextToHtml(raw.trim() || [
-        diagnosis ? `Diagnostico: ${diagnosis}` : "",
-        conclusion ? `Conclusao: ${conclusion}` : "",
-      ].filter(Boolean).join("\n\n"))
-    }
-  }
-
-  return {
-    diagnosis:  diagnosis  || "Quadro clinico em avaliacao, correlacionado aos achados apresentados.",
-    conclusion: conclusion || "Conclusao compativel com os dados informados; seguimento conforme criterio medico.",
-    contentHtml,
-  }
 }
 
 // ─── Selector de templates (painel lateral do editor) ─────────────
@@ -318,10 +221,13 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
   const [form,        setForm]        = useState<ReportForm>(EMPTY_FORM)
   const [isSaving,    setIsSaving]    = useState(false)
   const [isAiLoading, setIsAiLoading] = useState(false)
+  const [isFormattingContent, setIsFormattingContent] = useState(false)
+  const [voicePreview, setVoicePreview] = useState("")
   const [aiNotice,    setAiNotice]    = useState<{ tone: "ai" | "local"; text: string } | null>(null)
   const [error,       setError]       = useState<string | null>(null)
   const [cidFieldError, setCidFieldError] = useState<string | null>(null)
   const [listError,   setListError]   = useState<string | null>(null)
+  const [listNotice,  setListNotice]  = useState<string | null>(null)
   const [updatingId,  setUpdatingId]  = useState<string | null>(null)
   const [search,      setSearch]      = useState("")
   const [filterStatus, setFilterStatus] = useState<ReportStatus | "All">("All")
@@ -329,13 +235,41 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
   const [filterDateFrom, setFilterDateFrom] = useState("")
   const [filterDateTo, setFilterDateTo] = useState("")
   const [previewData, setPreviewData] = useState<ReportPreviewData | null>(null)
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [annulTarget, setAnnulTarget] = useState<Report | null>(null)
+  const [annulReason, setAnnulReason] = useState("")
   const [deletingId, setDeletingId] = useState<string | null>(null)
   // Marca a Edge Function `ai-chat` como inacessível depois da primeira
   // falha de CORS/rede; nas próximas tentativas, pulamos direto para o
   // fallback local sem tentar de novo o proxy.
   const aiProxyDownRef = useRef(false)
+  const pendingPdfTitleRef = useRef<string | null>(null)
   const aiAvailable = useMemo(() => isAIConfigured(), [])
+  const cidTemplate = useMemo(
+    () => (normalizeCid10(form.cid10) ? findReportTemplateByCid(form.cid10) : undefined),
+    [form.cid10],
+  )
+  const appendDictationRef = useRef<(chunk: string) => void>(() => {})
+
+  const {
+    supported: voiceSupported,
+    listening: isDictatingContent,
+    toggle: toggleContentDictation,
+    abort: abortContentDictation,
+  } = useSpeechRecognition({
+    continuous: true,
+    autoSendOnEnd: false,
+    onFinalChunk: (chunk) => appendDictationRef.current(chunk),
+    onInterimTranscript: setVoicePreview,
+    onError: (message) => setError(message),
+  })
+
+  appendDictationRef.current = (chunk: string) => {
+    setForm((prev) => ({
+      ...prev,
+      contentHtml: appendSpokenToObservations(prev.contentHtml, chunk),
+    }))
+    setVoicePreview("")
+  }
   const canDeleteReports = currentUser.role === "manager" || currentUser.role === "admin"
   const canCreateReports = canDo(currentUser.role, "create_reports")
   const canUpdateReports = canDo(currentUser.role, "update_reports")
@@ -379,6 +313,16 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
 
   useEffect(() => { void load() }, [load])
 
+  useEffect(() => {
+    if (!previewData || !pendingPdfTitleRef.current) return
+    const title = pendingPdfTitleRef.current
+    pendingPdfTitleRef.current = null
+    const timer = window.setTimeout(() => {
+      printElement("report-print-area", title)
+    }, 350)
+    return () => window.clearTimeout(timer)
+  }, [previewData])
+
   function setField<K extends keyof ReportForm>(k: K, v: ReportForm[K]) {
     setForm((p) => ({ ...p, [k]: v })); setError(null)
   }
@@ -394,6 +338,8 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
   }
 
   function closeEditor() {
+    abortContentDictation()
+    setVoicePreview("")
     setEditorOpen(false)
     setEditingReport(null)
     setError(null)
@@ -449,16 +395,32 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
   }
 
   function openPreviewFromReport(r: Report) {
+    pendingPdfTitleRef.current = null
     setPreviewData(buildPreviewFromReport(r))
   }
 
-  async function handleDeleteReport(id: string) {
+  function openPdfForReport(r: Report) {
+    pendingPdfTitleRef.current = r.type?.trim() || r.exam?.trim() || "Laudo Médico"
+    setPreviewData(buildPreviewFromReport(r))
+  }
+
+  async function handleDeleteReport(id: string, justification?: string) {
     setListError(null)
     setDeletingId(id)
     try {
+      if (justification?.trim()) {
+        const target = reports.find((r) => r.id === id)
+        if (target) {
+          await updateReport({
+            ...target,
+            conclusion: `${target.conclusion ?? ""}\n\n[ANULAÇÃO] ${justification.trim()}`.trim(),
+          })
+        }
+      }
       await deleteReport(id)
       setReports((prev) => prev.filter((r) => r.id !== id))
-      setConfirmDeleteId(null)
+      setAnnulTarget(null)
+      setAnnulReason("")
     } catch (err) {
       setListError(err instanceof Error ? err.message : "Não foi possível anular o laudo.")
     } finally {
@@ -527,11 +489,8 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
     ].filter(Boolean).join(", ")
 
     const useExternal = aiAvailable && !aiProxyDownRef.current
-    const applyResult = (
-      result: AiCompletionResult,
-      source: "ai" | "local",
-      reason?: "fallback" | "unconfigured",
-    ) => {
+    const template = REPORT_TEMPLATES.find((t) => t.exam === form.type)
+    const applyResult = (result: ReportAICompletion, source: "ai" | "local") => {
       setForm((prev) => ({
         ...prev,
         diagnosis:   result.diagnosis,
@@ -539,22 +498,30 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
         contentHtml: result.contentHtml,
       }))
       setEditorContentKey((k) => k + 1)
-      const text = source === "ai"
-        ? "Laudo gerado com IA. Revise antes de finalizar."
-        : reason === "fallback"
-          ? "Laudo gerado localmente porque a IA externa não respondeu agora. Você pode finalizar ou clicar novamente para tentar a IA."
-          : "Laudo gerado localmente a partir do template e dos dados do paciente. Para ativar a IA generativa, defina VITE_OPENAI_API_KEY no .env."
-      setAiNotice({ tone: source, text })
+      setAiNotice({
+        tone: source === "local" ? "local" : "ai",
+        text: "Revise antes de finalizar",
+      })
     }
 
     try {
       if (useExternal) {
-        const result = await aiCompleteReport(form, patientInfo, currentUser)
+        const result = await completeReportWithAI({
+          examType: form.type,
+          patientInfo,
+          doctor: currentUser,
+          cid10: form.cid10,
+          diagnosis: form.diagnosis,
+          conclusion: form.conclusion,
+          contentHtml: form.contentHtml,
+          templateDiagnosis: template?.diagnosis,
+          templateConclusion: template?.conclusion,
+        })
         applyResult(result, "ai")
         return
       }
       const result = aiCompleteReportLocal(form, patient, currentUser)
-      applyResult(result, "local", "unconfigured")
+      applyResult(result, "local")
     } catch (err) {
       // Falha de proxy/CORS/rede → cai no fallback local automaticamente.
       const msg = err instanceof AIError ? err.message
@@ -564,9 +531,110 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
         aiProxyDownRef.current = true
       }
       const result = aiCompleteReportLocal(form, patient, currentUser)
-      applyResult(result, "local", "fallback")
+      applyResult(result, "local")
     } finally {
       setIsAiLoading(false)
+    }
+  }
+
+  async function handleComplementContent() {
+    const cidError = assertCid10Required(form.cid10)
+    if (cidError) {
+      setCidFieldError(cidError)
+      setError("Informe o CID-10 antes de complementar o laudo.")
+      return
+    }
+
+    const observations = extractObservationsText(form.contentHtml)
+      || htmlToPlainText(form.contentHtml).trim()
+    if (!observations) {
+      setError("Dicte ou escreva observações antes de complementar com IA.")
+      return
+    }
+    if (isDictatingContent) {
+      abortContentDictation()
+      setVoicePreview("")
+    }
+
+    setIsFormattingContent(true)
+    setError(null)
+    setAiNotice(null)
+
+    const patient = patients.find((p) => p.id === form.patientId)
+    const ageYears = patient?.dob
+      ? new Date().getFullYear() - new Date(patient.dob).getFullYear()
+      : null
+    const patientInfo = [
+      `Nome: ${patient?.name ?? (form.patientName || "Não informado")}`,
+      ageYears !== null ? `Idade: ${ageYears} anos` : "",
+      patient?.gender ? `Sexo: ${patient.gender}` : "",
+    ].filter(Boolean).join(", ")
+
+    const normalizedCid = normalizeCid10(form.cid10)
+    const template = findReportTemplateByCid(normalizedCid)
+    const today = new Date().toLocaleDateString("pt-BR")
+    const placeholderCtx = {
+      patientName: (patient?.name ?? form.patientName) || "(nome do paciente)",
+      doctorName: currentUser.name ?? "(nome do médico)",
+      date: today,
+      crm: formatCrm(currentUser.crm) || "(CRM)",
+      cpf: patient?.cpf,
+    }
+
+    const useExternal = aiAvailable && !aiProxyDownRef.current
+
+    const applyComplement = (result: { contentHtml: string; diagnosis: string; conclusion: string }) => {
+      setForm((prev) => ({
+        ...prev,
+        contentHtml: result.contentHtml,
+        diagnosis: prev.diagnosis.trim() || result.diagnosis,
+        conclusion: prev.conclusion.trim() || result.conclusion,
+        type: template?.exam && prev.type === "Laudo Médico" ? template.exam : prev.type,
+      }))
+      setEditorContentKey((k) => k + 1)
+    }
+
+    try {
+      const result = useExternal
+        ? await complementReportContentWithAI({
+            cid10: normalizedCid,
+            examType: form.type || template?.exam || "Laudo Médico",
+            patientInfo,
+            doctor: currentUser,
+            observations,
+            templateReference: template?.content,
+            templateDiagnosis: template?.diagnosis,
+            templateConclusion: template?.conclusion,
+          })
+        : complementReportContentFromCid({
+            cid10: normalizedCid,
+            observations,
+            placeholderCtx,
+          })
+
+      applyComplement(result)
+      setAiNotice({
+        tone: useExternal ? "ai" : "local",
+        text: "Revise antes de finalizar",
+      })
+    } catch (err) {
+      const msg = err instanceof AIError ? err.message
+        : err instanceof Error ? err.message
+        : ""
+      if (/CORS|rede|Edge Function|nao encontrada|404|fetch|network/i.test(msg)) {
+        aiProxyDownRef.current = true
+      }
+      applyComplement(complementReportContentFromCid({
+        cid10: normalizedCid,
+        observations,
+        placeholderCtx,
+      }))
+      setAiNotice({
+        tone: "local",
+        text: "Revise antes de finalizar",
+      })
+    } finally {
+      setIsFormattingContent(false)
     }
   }
 
@@ -609,10 +677,16 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
 
   async function handleQuickStatusUpdate(r: Report, nextStatus: ReportStatus) {
     setListError(null)
+    setListNotice(null)
     setUpdatingId(r.id)
     try {
       const updated = await updateReport({ ...r, status: nextStatus })
       setReports((prev) => prev.map((x) => (x.id === updated.id ? updated : x)))
+      if (nextStatus === "Sent") {
+        setListNotice(`Laudo enviado. ${r.patientName} já pode visualizá-lo no portal, em Laudos.`)
+      } else if (nextStatus === "Finalized") {
+        setListNotice("Laudo finalizado. Use «PDF» ou «Visualizar» para gerar o documento.")
+      }
       await load()
     } catch (err) {
       setListError(err instanceof Error ? err.message : "Erro ao atualizar status do laudo")
@@ -683,7 +757,7 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
         backLabel={editorOpen ? "← Voltar para edição" : "← Voltar para laudos"}
         primaryAction={
           editorOpen && !isReportLocked(form.status)
-            ? { label: "Finalizar laudo", onClick: () => void handleSave("Finalized") }
+            ? { label: "Liberar laudo", onClick: () => void handleSave("Finalized") }
             : undefined
         }
       />
@@ -704,7 +778,7 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
                 Salvar rascunho
               </Button>
               <Button onClick={() => handleSave("Finalized")} disabled={isSaving}>
-                {isSaving ? "Salvando..." : "Finalizar"}
+                {isSaving ? "Salvando..." : "Liberar laudo"}
               </Button>
             </div>
           }
@@ -770,13 +844,64 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
               </div>
 
               <div>
-                <label style={labelStyle}>Conteúdo do laudo</label>
+                <div className={styles.contentLabelRow}>
+                  <label style={labelStyle}>Conteúdo do laudo</label>
+                  <div className={styles.contentActions}>
+                    {voiceSupported && (
+                      <button
+                        type="button"
+                        className={`${styles.dictateBtn} ${isDictatingContent ? styles.dictateBtnActive : ""}`}
+                        onClick={toggleContentDictation}
+                        disabled={isFormattingContent}
+                        title={isDictatingContent ? "Parar transcrição" : "Dictar observações do laudo"}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                          <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                        {isDictatingContent ? "Parar" : "Dictar"}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className={styles.formatBtn}
+                      onClick={() => void handleComplementContent()}
+                      disabled={
+                        isFormattingContent
+                        || !normalizeCid10(form.cid10)
+                        || (!extractObservationsText(form.contentHtml) && !htmlToPlainText(form.contentHtml).trim())
+                      }
+                      title="Monta o laudo conforme o CID-10, usando suas observações dictadas"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                        <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d="M5 19h14" strokeLinecap="round" />
+                      </svg>
+                      {isFormattingContent ? "Complementando..." : "Complementar com IA"}
+                    </button>
+                  </div>
+                </div>
+                {isDictatingContent && voicePreview && (
+                  <p className={styles.dictationPreview}>
+                    Transcrevendo (Observações): {voicePreview}
+                  </p>
+                )}
+                {isDictatingContent && !voicePreview && (
+                  <p className={styles.dictationPreview}>Ouvindo… fale suas observações clínicas.</p>
+                )}
+                {!isDictatingContent && normalizeCid10(form.cid10) && (
+                  <p className={styles.dictationPreview}>
+                    {cidTemplate
+                      ? `CID ${normalizeCid10(form.cid10)} — template: ${cidTemplate.name}. Dictado vai para Observações; use Complementar com IA para montar o laudo.`
+                      : `Dictado vai para Observações. Informe um CID com template (ex.: E11, I10) e clique em Complementar com IA.`}
+                  </p>
+                )}
                 <div className={styles.editorContentEditor}>
                   <RichTextEditor
                     key={`${editingReport?.id ?? "new"}-${editorContentKey}`}
                     value={form.contentHtml}
                     onChange={(html) => setField("contentHtml", html)}
-                    placeholder="Escolha um template ao lado ou escreva o conteúdo completo do laudo..."
+                    placeholder="Dictado e anotações vão para a seção Observações. Informe o CID e use Complementar com IA."
                   />
                 </div>
               </div>
@@ -848,6 +973,11 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
                     ? "Preenche diagnóstico, conclusão e corpo do laudo com base nos dados informados."
                     : "Sem IA externa configurada: monta o laudo localmente a partir do template e do paciente."}
                 </p>
+                {!voiceSupported && (
+                  <p className={styles.voiceHint}>
+                    Dictado por voz no conteúdo requer Chrome ou Edge com microfone liberado.
+                  </p>
+                )}
               </div>
             </Card>
           </aside>
@@ -871,6 +1001,9 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
 
       {listError && (
         <p style={{ fontSize: 12, color: "var(--destructive)", marginBottom: 12 }}>{listError}</p>
+      )}
+      {listNotice && (
+        <p style={{ fontSize: 12, color: "var(--primary)", marginBottom: 12 }}>{listNotice}</p>
       )}
 
       {/* Filtros */}
@@ -941,6 +1074,11 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
             {listError}
           </div>
         )}
+        {listNotice && (
+          <div style={{ padding: "10px 14px", margin: "10px 10px 0", borderRadius: 8, fontSize: 12, color: "var(--primary)", background: "var(--primary-light, #eff6ff)", border: "1px solid var(--primary)" }}>
+            {listNotice}
+          </div>
+        )}
         {isLoading ? (
           <div style={{ padding: 40, textAlign: "center", color: "var(--muted-foreground)", fontSize: 13 }}>
             Carregando laudos...
@@ -991,9 +1129,14 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
                               Visualizar
                             </Button>
                           )}
+                          {isReportLocked(r.status) && (
+                            <Button size="sm" variant="ghost" onClick={() => openPdfForReport(r)}>
+                              PDF
+                            </Button>
+                          )}
                           {canUpdateReports && r.status === "Draft" && (
                             <Button size="sm" variant="ghost" disabled={updatingId === r.id} onClick={() => handleQuickStatusUpdate(r, "Finalized")}>
-                              {updatingId === r.id ? "Finalizando..." : "Finalizar"}
+                              {updatingId === r.id ? "Liberando..." : "Liberar laudo"}
                             </Button>
                           )}
                           {canUpdateReports && r.status === "Finalized" && (
@@ -1002,16 +1145,16 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
                             </Button>
                           )}
                           {canDeleteReports && isReportLocked(r.status) && (
-                            confirmDeleteId === r.id ? (
-                              <>
-                                <Button size="sm" variant="ghost" disabled={deletingId === r.id} onClick={() => void handleDeleteReport(r.id)}>
-                                  {deletingId === r.id ? "Anulando..." : "Confirmar anulação"}
-                                </Button>
-                                <Button size="sm" variant="ghost" onClick={() => setConfirmDeleteId(null)}>Cancelar</Button>
-                              </>
-                            ) : (
-                              <Button size="sm" variant="ghost" onClick={() => setConfirmDeleteId(r.id)}>Anular</Button>
-                            )
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                setAnnulTarget(r)
+                                setAnnulReason("")
+                              }}
+                            >
+                              Anular
+                            </Button>
                           )}
                         </div>
                       </td>
@@ -1023,6 +1166,40 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
           </div>
         )}
       </Card>
+
+      <Modal
+        isOpen={Boolean(annulTarget)}
+        onClose={() => { setAnnulTarget(null); setAnnulReason("") }}
+        title="Anular laudo liberado"
+      >
+        <p style={{ fontSize: 13, color: "var(--muted-foreground)", marginBottom: 12 }}>
+          Laudos liberados exigem justificativa para anulação. Informe o motivo abaixo.
+        </p>
+        <textarea
+          value={annulReason}
+          onChange={(e) => setAnnulReason(e.target.value)}
+          placeholder="Descreva o motivo da anulação..."
+          rows={4}
+          style={{
+            width: "100%", padding: "9px 12px", borderRadius: 8, fontSize: 13,
+            border: "1px solid var(--border)", background: "var(--background)",
+            color: "var(--foreground)", outline: "none", resize: "vertical",
+            boxSizing: "border-box", fontFamily: "inherit",
+          }}
+        />
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
+          <Button variant="ghost" onClick={() => { setAnnulTarget(null); setAnnulReason("") }}>
+            Cancelar
+          </Button>
+          <Button
+            variant="danger"
+            disabled={annulReason.trim().length < 10 || deletingId === annulTarget?.id}
+            onClick={() => annulTarget && void handleDeleteReport(annulTarget.id, annulReason)}
+          >
+            {deletingId === annulTarget?.id ? "Anulando..." : "Confirmar anulação"}
+          </Button>
+        </div>
+      </Modal>
     </div>
   )
 }

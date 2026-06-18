@@ -133,7 +133,7 @@ export async function uploadPatientPhoto(
 
   const { blob, mime } = await toUploadBlob(source)
   if (blob.size > MAX_PHOTO_BYTES) {
-    throw new Error("A foto deve ter no maximo 5 MB.")
+    throw new Error("A foto deve ter no máximo 5 MB.")
   }
 
   const ext = extensionFromMime(mime)

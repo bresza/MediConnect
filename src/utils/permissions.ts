@@ -1,4 +1,4 @@
-import type { UserRole, PageId } from "../types"
+import type { Gender, PageId, StaffRole, UserRole } from "../types"
 
 // ─────────────────────────────────────────────────────────────────
 // Páginas permitidas por perfil
@@ -89,7 +89,41 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   manager:   "Gestão",
   admin:     "Administrador",
   financial: "Financeiro",
-  secretary: "Secretaria",
+  secretary: "Secretário(a)",
+}
+
+const GENDERED_ROLE_LABELS: Record<Exclude<UserRole, "patient">, Record<"Male" | "Female" | "Other", string>> = {
+  doctor: {
+    Male: "Médico",
+    Female: "Médica",
+    Other: "Médico(a)",
+  },
+  manager: {
+    Male: "Gestor",
+    Female: "Gestora",
+    Other: "Gestor(a)",
+  },
+  admin: {
+    Male: "Administrador",
+    Female: "Administradora",
+    Other: "Administrador(a)",
+  },
+  financial: {
+    Male: "Financeiro",
+    Female: "Financeira",
+    Other: "Financeiro(a)",
+  },
+  secretary: {
+    Male: "Secretário",
+    Female: "Secretária",
+    Other: "Secretário(a)",
+  },
+}
+
+export function getRoleLabel(role: UserRole | StaffRole, gender?: Gender): string {
+  if (role === "patient") return ROLE_LABELS.patient
+  if (!gender) return ROLE_LABELS[role]
+  return GENDERED_ROLE_LABELS[role][gender] ?? ROLE_LABELS[role]
 }
 
 export const ROLE_COLORS: Record<UserRole, string> = {

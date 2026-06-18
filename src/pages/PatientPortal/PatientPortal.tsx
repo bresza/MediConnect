@@ -6,6 +6,7 @@ import {
 import { getPatientAppointmentsByIdentity } from "../../services/appointments"
 import { getPatientFinancialRecordsByIdentity } from "../../services/financial"
 import { getPatientByIdentity } from "../../services/patients"
+import { resolvePatientIdFromApi } from "../../services/userInfo"
 import { attachPatientPhoto } from "../../services/patientPhoto"
 import { resolveRememberedPatientId } from "../../services/patientLinks"
 import { Topbar } from "../../components/layout/Topbar/Topbar"
@@ -89,6 +90,7 @@ export function PatientPortal({
 
   const portalPatient = resolvedPatient ?? patient
   const rememberedPatientId = resolveRememberedPatientId({
+    authUserId: currentUser.id,
     name: portalPatient?.name ?? patient?.name ?? currentUser.name,
     email: portalPatient?.email ?? patient?.email ?? currentUser.email,
     cpf: portalPatient?.cpf ?? patient?.cpf ?? currentUser.patientCpf,
@@ -107,6 +109,8 @@ export function PatientPortal({
   ])
 
   const loadPatient = useCallback(async () => {
+    await resolvePatientIdFromApi().catch(() => null)
+
     const linked = await getPatientByIdentity({
       patientId: currentUser.patientId ?? patient?.id,
       userId: currentUser.id,
@@ -128,12 +132,20 @@ export function PatientPortal({
   useEffect(() => { void loadPatient() }, [loadPatient])
 
   const loadReports = useCallback(async () => {
-    if (!patientId) { setReports([]); setReportsLoading(false); return }
+    const identity = {
+      ...patientIdentity,
+      patientId: resolvedPatient?.id ?? patientIdentity.patientId,
+    }
+    if (!identity.patientId && !identity.userId && !identity.email && !identity.cpf) {
+      setReports([])
+      setReportsLoading(false)
+      return
+    }
     setReportsLoading(true)
-    try { setReports(await getPatientReportsByIdentity(patientIdentity)) }
+    try { setReports(await getPatientReportsByIdentity(identity)) }
     catch { setReports([]) }
     finally { setReportsLoading(false) }
-  }, [patientId, patientIdentity])
+  }, [patientIdentity, resolvedPatient?.id])
 
   const loadBilling = useCallback(async () => {
     if (!patientId) { setBillingRecords([]); setBillingLoading(false); return }

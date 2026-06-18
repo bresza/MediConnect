@@ -1,4 +1,7 @@
+import { getApiUserId } from "./api"
+
 interface PatientLinkInput {
+  authUserId?: string
   patientId?: string
   name?: string
   email?: string
@@ -20,11 +23,19 @@ function onlyDigits(value?: string): string {
   return value?.replace(/\D/g, "") ?? ""
 }
 
+function resolveAuthUserId(input: PatientLinkInput): string | undefined {
+  return input.authUserId?.trim() || getApiUserId() || undefined
+}
+
 function keysFor(input: PatientLinkInput): string[] {
+  const uid = resolveAuthUserId(input)
+  if (!uid) return []
+
+  const prefix = `uid:${uid}:`
   return [
-    input.email ? `email:${normalizeText(input.email)}` : "",
-    input.cpf ? `cpf:${onlyDigits(input.cpf)}` : "",
-    input.name ? `name:${normalizeText(input.name)}` : "",
+    input.email ? `${prefix}email:${normalizeText(input.email)}` : "",
+    input.cpf ? `${prefix}cpf:${onlyDigits(input.cpf)}` : "",
+    input.name ? `${prefix}name:${normalizeText(input.name)}` : "",
   ].filter(Boolean)
 }
 
@@ -41,7 +52,7 @@ function writeLinks(links: Record<string, string>) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(links))
   } catch {
-    // localStorage indisponivel; o fluxo da API continua normal.
+    // localStorage indisponível; o fluxo da API continua normal.
   }
 }
 
@@ -56,8 +67,29 @@ export function rememberPatientLink(input: PatientLinkInput): void {
 }
 
 export function resolveRememberedPatientId(input: PatientLinkInput): string | undefined {
+  const keys = keysFor(input)
+  if (keys.length === 0) return undefined
+
   const links = readLinks()
-  return keysFor(input)
-    .map((key) => links[key])
-    .find(Boolean)
+  return keys.map((key) => links[key]).find(Boolean)
+}
+
+export function getAllRememberedPatientIds(): string[] {
+  return [...new Set(Object.values(readLinks()).filter(Boolean))]
+}
+
+/** Evita reutilizar vínculo de outro login no mesmo navegador. */
+export function clearPatientLinksForUser(authUserId: string): void {
+  const uid = authUserId.trim()
+  if (!uid) return
+  const prefix = `uid:${uid}:`
+  const links = readLinks()
+  let changed = false
+  for (const key of Object.keys(links)) {
+    if (key.startsWith(prefix)) {
+      delete links[key]
+      changed = true
+    }
+  }
+  if (changed) writeLinks(links)
 }

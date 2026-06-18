@@ -39,6 +39,43 @@
   flex-wrap: wrap;
 }
 
+.alertBanner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 8px;
+  border: 1px solid #fcd34d;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.alertIcon {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: #f59e0b;
+  color: #fff;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.alertContent { min-width: 0; }
+
+.alertTitle {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.alertText {
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 /* ── Stats grid ───────────────────────────────────────────────── */
 .statsGrid {
   display: grid;

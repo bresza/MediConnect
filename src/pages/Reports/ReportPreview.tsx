@@ -27,7 +27,7 @@ export function ReportPreview({
             variant="outline"
             onClick={() => printElement("report-print-area", reportType || "Laudo Médico")}
           >
-            Baixar PDF
+            Gerar PDF
           </Button>
           {primaryAction && (
             <Button onClick={primaryAction.onClick}>{primaryAction.label}</Button>

@@ -1,8 +1,8 @@
 /* ── FAB ─────────────────────────────────────────────────────── */
 .fab {
   position: fixed;
-  right: 24px;
-  bottom: 24px;
+  right: max(24px, env(safe-area-inset-right, 0px));
+  bottom: max(24px, env(safe-area-inset-bottom, 0px));
   z-index: 60;
   width: 56px;
   height: 56px;
@@ -54,10 +54,10 @@
 
 .panel {
   position: fixed;
-  right: 24px;
-  bottom: 24px;
-  width: min(420px, calc(100vw - 32px));
-  height: min(640px, calc(100vh - 48px));
+  right: max(24px, env(safe-area-inset-right, 0px));
+  bottom: max(24px, env(safe-area-inset-bottom, 0px));
+  width: min(420px, calc(100vw - 32px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)));
+  height: min(640px, calc(100dvh - 48px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)));
   background: var(--card, #fff);
   color: var(--foreground, #0f172a);
   border-radius: 18px;
@@ -395,14 +395,80 @@
   transform: translateY(-1px);
 }
 
+.confirmCard {
+  margin: 0 14px 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border, #e2e8f0);
+  background: var(--card, #fff);
+}
+
+.confirmTitle {
+  font-size: 12px;
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+
+.confirmText {
+  font-size: 12px;
+  color: var(--muted-foreground, #64748b);
+  margin: 0 0 10px;
+  line-height: 1.45;
+}
+
+.confirmActions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.confirmCancel,
+.confirmOk {
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border, #e2e8f0);
+  cursor: pointer;
+  background: var(--background, #fff);
+}
+
+.confirmOk {
+  background: linear-gradient(135deg, #10b981 0%, #0ea5e9 100%);
+  color: #fff;
+  border: none;
+}
+
 @media (max-width: 640px) {
   .panel {
-    right: 8px;
-    left: 8px;
-    bottom: 8px;
+    right: max(8px, env(safe-area-inset-right, 0px));
+    left: max(8px, env(safe-area-inset-left, 0px));
+    bottom: max(8px, env(safe-area-inset-bottom, 0px));
     width: auto;
-    height: calc(100vh - 16px);
+    height: calc(100dvh - 16px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
     border-radius: 14px;
   }
-  .fab { right: 16px; bottom: 16px; }
+  .fab {
+    right: max(16px, env(safe-area-inset-right, 0px));
+    bottom: max(16px, env(safe-area-inset-bottom, 0px));
+  }
+
+  .confirmActions {
+    flex-wrap: wrap;
+    justify-content: stretch;
+  }
+
+  .confirmActions > * {
+    flex: 1;
+  }
+}
+
+@media (min-width: 1920px) {
+  .panel {
+    width: min(480px, calc(100vw - 48px));
+    height: min(720px, calc(100dvh - 64px));
+  }
+
+  .headerTitle {
+    font-size: var(--text-base);
+  }
 }

@@ -244,3 +244,92 @@
   .grid2 { grid-template-columns: 1fr; }
   .colSpan2 { grid-column: span 1; }
 }
+
+/* ── Voice fill ─────────────────────────────────────────────────── */
+.voicePanel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: var(--muted);
+}
+
+.voicePanelText {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  line-height: 1.45;
+}
+
+.voicePanelHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.voiceStepBadge {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--primary-light, #eff6ff);
+  color: var(--primary);
+}
+
+.voicePrompt {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+  line-height: 1.4;
+}
+
+.voicePreview {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+
+.voicePanelActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.voiceMicBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.voiceMicBtnActive {
+  border-color: var(--destructive, #ef4444);
+  color: var(--destructive, #ef4444);
+  background: rgb(239 68 68 / 0.08);
+}
+
+.voiceUnsupported {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+.voiceFieldActive input,
+.voiceFieldActive select {
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 3px rgb(124 144 130 / 0.2);
+}

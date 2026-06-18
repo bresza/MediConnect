@@ -6,12 +6,135 @@ import {
   RegisterPatientApiError,
 } from "./registerPatient"
 import { messageFromProblemDetails, parseProblemDetails } from "./problemDetails"
+import { fetchUserInfo, resolvePatientIdFromApi } from "./userInfo"
+import { syncPatientAuthLink } from "./patients"
+import { resolveLoginRole } from "./loginRole"
 import { isValidCpf } from "../utils"
-import type { User, UserRole } from "../types"
+import type { User } from "../types"
 
 function assertSupabaseConfigured(): void {
   if (SUPABASE_CONFIG_ERROR) throw new Error(SUPABASE_CONFIG_ERROR)
 }
+
+export async function logoutSession(token: string): Promise<void> {
+  if (!token || token.startsWith("local-")) return
+
+  const res = await fetchWithTimeout(`${SUPABASE_URL}/auth/v1/logout`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "apikey": SUPABASE_ANON_KEY,
+      "Authorization": `Bearer ${token}`,
+    },
+  })
+
+  if (res.status === 401) return
+  if (res.status !== 204 && !res.ok) {
+    const raw = await res.text().catch(() => "")
+    throw new Error(raw || "Não foi possível encerrar a sessão no servidor.")
+  }
+}
+
+/** Verifica se e-mail+senha autenticam (sem montar sessão completa). */
+export async function verifyPatientCredentials(email: string, password: string): Promise<boolean> {
+  try {
+    const res = await fetchWithTimeout(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "apikey": SUPABASE_ANON_KEY },
+      body: JSON.stringify({ email: email.trim().toLowerCase(), password: password.trim() }),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+/** Motivo legível quando grant_type=password falha. */
+export async function explainPasswordLoginFailure(
+  email: string,
+  password: string,
+): Promise<string> {
+  try {
+    const res = await fetchWithTimeout(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "apikey": SUPABASE_ANON_KEY },
+      body: JSON.stringify({ email: email.trim().toLowerCase(), password: password.trim() }),
+    })
+    if (res.ok) return ""
+    const err = await res.json().catch(() => ({})) as Record<string, string>
+    const message = err?.error_description ?? err?.message ?? err?.msg ?? ""
+    const code = (err?.error ?? err?.code ?? "").toString().toLowerCase()
+    if (/email not confirmed|confirm/i.test(message) || code === "email_not_confirmed") {
+      return "A conta existe, mas o e-mail ainda não foi confirmado. Verifique a caixa de entrada ou peça nova senha em «Esqueci minha senha»."
+    }
+    if (/invalid login|invalid.*credential|invalid.*password|invalid_grant/i.test(`${message} ${code}`)) {
+      return "E-mail ou senha não conferem com o cadastro no servidor. Peça à secretária para salvar de novo o acesso ao portal no cadastro do paciente ou use «Esqueci minha senha»."
+    }
+    return message || "Login recusado pelo servidor de autenticação."
+  } catch {
+    return "Não foi possível testar o login agora. Verifique sua conexão e tente de novo."
+  }
+}
+
+async function fetchUserRoleNames(token: string, userId: string): Promise<string[]> {
+  if (!userId) return []
+  try {
+    const res = await fetchWithTimeout(
+      `${SUPABASE_URL}/rest/v1/user_roles?user_id=eq.${encodeURIComponent(userId)}&select=role`,
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "apikey": SUPABASE_ANON_KEY,
+          "Authorization": `Bearer ${token}`,
+        },
+      },
+    )
+    if (!res.ok) return []
+    const rows = await res.json().catch(() => []) as Array<{ role?: string }>
+    return Array.isArray(rows) ? rows.map((r) => r.role).filter((r): r is string => Boolean(r)) : []
+  } catch {
+    return []
+  }
+}
+
+/** Revalida papel após login salvo em localStorage (corrige sessão com role errado). */
+export async function reconcileUserRole(token: string, user: User): Promise<User> {
+  if (!token || token.startsWith("local-")) return user
+
+  const [info, userRoleRows, profileFallback] = await Promise.all([
+    fetchUserInfo(token),
+    fetchUserRoleNames(token, user.id),
+    fetchProfileFallback(token, user.id, user.email),
+  ])
+  const profile = info?.profile ?? profileFallback
+
+  const linkedPatient = user.role === "patient"
+    ? await fetchPatientLink(token, user.id, user.email, user.patientCpf, user.patientId)
+    : null
+
+  const role = resolveLoginRole({
+    roles: info?.roles ?? [],
+    profileRole: profile?.role,
+    userRoleRows,
+    permissions: info?.permissions,
+    linkedPatient,
+    hasCrm: Boolean(profile?.crm ?? user.crm),
+  })
+
+  const isPatientLogin = role === "patient"
+  return {
+    ...user,
+    role,
+    name: profile?.full_name ?? user.name,
+    crm: profile?.crm ?? user.crm,
+    specialty: profile?.specialty ?? user.specialty,
+    patientId: isPatientLogin ? (user.patientId ?? profile?.patient_id) : undefined,
+    patientCpf: isPatientLogin ? user.patientCpf : undefined,
+    phone: profile?.phone ?? user.phone,
+  }
+}
+
+export { resolveLoginRole } from "./loginRole"
 
 export interface LoginPayload  { email: string; password: string }
 export interface PatientSignupPayload {
@@ -546,38 +669,18 @@ function normalizeRole(value?: string | null): string {
     .trim()
 }
 
-// Mapeamento tolerante de roles da API → frontend
-function mapRole(roles: unknown[], profileRole?: string | null): UserRole {
-  const normalized = [...roles, profileRole]
-    .flatMap((role) => {
-      if (!role) return []
-      if (typeof role === "string") return [normalizeRole(role)]
-      if (typeof role === "object" && "role" in role) {
-        return [normalizeRole((role as { role?: string }).role)]
-      }
-      return []
-    })
-
-  if (normalized.some((r) => ["admin", "administrador"].includes(r))) return "admin"
-  if (normalized.some((r) => ["gestor", "manager"].includes(r))) return "manager"
-  if (normalized.some((r) => ["medico", "doctor"].includes(r))) return "doctor"
-  if (normalized.some((r) => ["paciente", "patient"].includes(r))) return "patient"
-  if (normalized.some((r) => ["secretaria", "secretary"].includes(r))) return "secretary"
-  if (normalized.some((r) => ["financeiro", "financial"].includes(r))) return "financial"
-  return "secretary"
+function mapGender(value?: string | null): User["gender"] {
+  const normalized = normalizeRole(value)
+  if (normalized.startsWith("masc") || ["male", "masculino", "m", "homem"].includes(normalized)) return "Male"
+  if (normalized.startsWith("fem") || ["female", "feminino", "f", "mulher"].includes(normalized)) return "Female"
+  if (normalized.startsWith("out") || ["other", "outro", "nao_binario", "nao-binario", "nonbinary", "non-binary"].includes(normalized)) return "Other"
+  return undefined
 }
 
 interface SupabaseAuthResponse {
   access_token: string; token_type: string
   expires_in: number; refresh_token: string
   user: { id: string; email: string }
-}
-
-interface UserInfoResponse {
-  user:    { id: string; email: string }
-  profile?: { id?: string; full_name?: string; email?: string; phone?: string; role?: string; crm?: string; specialty?: string; cpf?: string; patient_id?: string }
-  patient?: PatientLinkResponse
-  roles?:   unknown[]
 }
 
 interface ProfileResponse {
@@ -590,6 +693,8 @@ interface ProfileResponse {
   specialty?: string
   cpf?: string
   patient_id?: string
+  gender?: string
+  sex?: string
 }
 
 interface PatientLinkResponse {
@@ -609,6 +714,18 @@ interface DoctorLinkResponse {
   crm_uf?: string
   crm_state?: string
   specialty?: string
+}
+
+interface StaffOperationalLinkResponse {
+  id?: string
+  user_id?: string
+  full_name?: string
+  email?: string
+  phone?: string
+  phone_mobile?: string
+  cpf?: string
+  gender?: string
+  sex?: string
 }
 
 async function fetchProfileFallback(token: string, userId: string, email: string): Promise<ProfileResponse | null> {
@@ -681,11 +798,28 @@ async function fetchDoctorLink(
 
 async function withPatientLink(user: User, token: string): Promise<User> {
   if (user.role !== "patient") return user
-  const patient = await fetchPatientLink(token, user.id, user.email, user.patientCpf, user.patientId)
+
+  const linkedId = await resolvePatientIdFromApi(token)
+  const candidateId = linkedId ?? user.patientId
+
+  if (candidateId && user.id) {
+    const confirmed = await syncPatientAuthLink(candidateId, user.id, user.email).catch(() => null)
+    if (confirmed) {
+      user = { ...user, patientId: confirmed }
+    }
+  }
+
+  const patient = await fetchPatientLink(
+    token,
+    user.id,
+    user.email,
+    user.patientCpf,
+    user.patientId ?? linkedId ?? undefined,
+  )
   if (!patient) {
     return {
       ...user,
-      patientId: user.patientId ?? user.id,
+      patientId: user.patientId ?? linkedId ?? undefined,
     }
   }
   return {
@@ -711,8 +845,61 @@ async function withDoctorLink(user: User, token: string): Promise<User> {
   }
 }
 
+async function fetchStaffOperationalLink(
+  token: string,
+  table: "secretaries" | "managers",
+  userId: string,
+  email: string,
+): Promise<StaffOperationalLinkResponse | null> {
+  const filters = [
+    userId ? `user_id.eq.${encodeURIComponent(userId)}` : "",
+    userId ? `id.eq.${encodeURIComponent(userId)}` : "",
+    email ? `email.eq.${encodeURIComponent(email)}` : "",
+  ].filter(Boolean)
+  if (filters.length === 0) return null
+
+  const filterQuery = `or=(${filters.join(",")})&limit=1`
+  const headers = {
+    "Content-Type":  "application/json",
+    "apikey":        SUPABASE_ANON_KEY,
+    "Authorization": `Bearer ${token}`,
+  }
+
+  let res = await fetchWithTimeout(
+    `${SUPABASE_URL}/rest/v1/${table}?${filterQuery}&select=user_id,full_name,email,phone,cpf,gender,sex`,
+    { headers },
+  )
+  if (!res.ok) {
+    res = await fetchWithTimeout(
+      `${SUPABASE_URL}/rest/v1/${table}?${filterQuery}&select=user_id,full_name,email,phone,cpf`,
+      { headers },
+    )
+  }
+  if (!res.ok) return null
+  const data = await res.json().catch(() => [])
+  return Array.isArray(data) ? data[0] ?? null : null
+}
+
+async function withStaffLink(user: User, token: string): Promise<User> {
+  if (user.role !== "secretary" && user.role !== "manager") return user
+
+  const table = user.role === "secretary" ? "secretaries" : "managers"
+  const row = await fetchStaffOperationalLink(token, table, user.id, user.email)
+  if (!row) return user
+
+  const phone = row.phone?.trim() || row.phone_mobile?.trim()
+  return {
+    ...user,
+    name: row.full_name?.trim() || user.name,
+    phone: phone || user.phone,
+    gender: mapGender(row.gender ?? row.sex) ?? user.gender,
+  }
+}
+
 async function withRoleLinks(user: User, token: string): Promise<User> {
-  return withDoctorLink(await withPatientLink(user, token), token)
+  const linked = await withPatientLink(user, token)
+  const withDoctor = await withDoctorLink(linked, token)
+  return withStaffLink(withDoctor, token)
 }
 
 export async function login(payload: LoginPayload): Promise<LoginResponse> {
@@ -748,66 +935,58 @@ export async function login(payload: LoginPayload): Promise<LoginResponse> {
       )
     }
     if (/invalid login|invalid.*credential|invalid.*password|invalid_grant/i.test(`${message} ${code}`)) {
-      throw new Error("E-mail ou senha inválidos.")
+      const detail = await explainPasswordLoginFailure(normalizedEmail, normalizedPassword)
+      throw new Error(detail || "E-mail ou senha inválidos.")
     }
     throw new Error(message || "E-mail ou senha inválidos.")
   }
 
   const authData: SupabaseAuthResponse = await authRes.json()
+  const info = await fetchUserInfo(authData.access_token)
 
-  // Passo 2 — buscar perfil e roles
-  const infoRes = await fetchWithTimeout(`${SUPABASE_URL}/functions/v1/user-info`, {
-    method: "POST",
-    headers: {
-      "Content-Type":  "application/json",
-      "apikey":        SUPABASE_ANON_KEY,
-      "Authorization": `Bearer ${authData.access_token}`,
-    },
-  })
-
-  if (!infoRes.ok) {
-    const profile = await fetchProfileFallback(authData.access_token, authData.user.id, authData.user.email)
-    const patient = await fetchPatientLink(
-      authData.access_token,
-      authData.user.id,
-      authData.user.email,
-      profile?.cpf,
-      profile?.patient_id,
-    )
-    const user: User = {
-      id: authData.user.id,
-      name: profile?.full_name ?? authData.user.email,
-      role: patient ? "patient" : mapRole([], profile?.role),
-      email: profile?.email ?? authData.user.email,
-      crm: profile?.crm,
-      specialty: profile?.specialty,
-      patientCpf: patient?.cpf ? onlyDigits(patient.cpf) : profile?.cpf ? onlyDigits(profile.cpf) : undefined,
-      phone: patient?.phone_mobile ?? profile?.phone,
-      patientId: patient?.id ?? profile?.patient_id,
-      dob: patient?.birth_date,
-    }
-    return {
-      user: await withRoleLinks(user, authData.access_token),
-      token: authData.access_token,
-      clinicId: "default",
-      clinicName: "MediConnect",
-      refreshToken: authData.refresh_token ?? null,
-      expiresAt: expiresAtFromSeconds(authData.expires_in),
-    }
+  let profile = info?.profile ?? null
+  if (!profile) {
+    profile = await fetchProfileFallback(authData.access_token, authData.user.id, authData.user.email)
   }
 
-  const info: UserInfoResponse = await infoRes.json()
+  const resolvedUserId = (info?.user?.id ?? authData.user.id).trim()
+  const resolvedEmail = (info?.user?.email ?? authData.user.email).trim().toLowerCase()
+
+  const [userRoleRows, patient] = await Promise.all([
+    fetchUserRoleNames(authData.access_token, resolvedUserId),
+    fetchPatientLink(
+      authData.access_token,
+      resolvedUserId,
+      resolvedEmail,
+      profile?.cpf,
+      profile?.patient_id,
+    ),
+  ])
+
+  const role = resolveLoginRole({
+    roles: info?.roles ?? [],
+    profileRole: profile?.role,
+    userRoleRows,
+    permissions: info?.permissions,
+    linkedPatient: patient,
+    hasCrm: Boolean(profile?.crm),
+  })
+  const isPatientLogin = role === "patient"
+
   const user: User = {
-    id:        authData.user.id,
-    name:      info.profile?.full_name ?? authData.user.email,
-    role:      info.patient ? "patient" : mapRole(info.roles ?? [], info.profile?.role),
-    email:     info.profile?.email ?? info.patient?.email ?? authData.user.email,
-    crm:       info.profile?.crm,
-    specialty: info.profile?.specialty,
-    patientCpf: info.patient?.cpf ? onlyDigits(info.patient.cpf) : info.profile?.cpf ? onlyDigits(info.profile.cpf) : undefined,
-    patientId:  info.patient?.id ?? info.profile?.patient_id,
-    phone:     info.patient?.phone_mobile ?? info.profile?.phone,
-    dob:       info.patient?.birth_date,
+    id: resolvedUserId,
+    name: profile?.full_name ?? resolvedEmail,
+    role,
+    email: profile?.email ?? (isPatientLogin ? patient?.email : undefined) ?? resolvedEmail,
+    crm: profile?.crm,
+    specialty: profile?.specialty,
+    gender: mapGender(profile?.gender ?? profile?.sex),
+    patientCpf: isPatientLogin
+      ? (patient?.cpf ? onlyDigits(patient.cpf) : profile?.cpf ? onlyDigits(profile.cpf) : undefined)
+      : undefined,
+    patientId: isPatientLogin ? (patient?.id ?? profile?.patient_id) : undefined,
+    phone: (isPatientLogin ? patient?.phone_mobile : undefined) ?? profile?.phone,
+    dob: isPatientLogin ? patient?.birth_date : undefined,
   }
 
   return {
