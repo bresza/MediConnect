@@ -27,7 +27,9 @@
 /* ── Mobile topbar ────────────────────────────────────────────── */
 .mobileTopbar {
   display: flex; align-items: center; gap: 12px;
-  padding: 0 16px; height: 56px;
+  padding: env(safe-area-inset-top, 0px) max(16px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px));
+  height: calc(56px + env(safe-area-inset-top, 0px));
+  min-height: 56px;
   border-bottom: 1px solid var(--border);
   background-color: var(--card);
   position: sticky; top: 0; z-index: 20;
@@ -54,13 +56,16 @@
 
 /* ── Content area ─────────────────────────────────────────────── */
 .content {
-  padding: 16px;
+  padding: var(--page-gutter);
   flex: 1;
   min-width: 0;
   width: 100%;
-  max-width: 100%;
-  margin: 0 auto;
+  max-width: var(--content-max);
+  margin-inline: auto;
 }
-@media (min-width: 640px)  { .content { padding: 20px; } }
-@media (min-width: 768px)  { .content { padding: 24px; } }
-@media (min-width: 1024px) { .content { padding: 28px 32px; } }
+
+@media (min-width: 1920px) {
+  .content {
+    padding: clamp(28px, 2.5vw, 56px) clamp(32px, 3vw, 64px);
+  }
+}

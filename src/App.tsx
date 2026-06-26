@@ -1,4 +1,5 @@
 import { useState, useLayoutEffect, useEffect } from "react"
+import { setApiContext } from "./services/api"
 import { AuthProvider } from "./contexts/AuthContext"
 import { useAuth }      from "./contexts/authStore"
 import { AppRouter } from "./AppRouter"
@@ -49,6 +50,12 @@ function AppInner() {
   }, [user, isLoginPath, pathname, goLogin, goHome])
 
   function handleLogin(res: LoginResponse) {
+    setApiContext({
+      token:        res.token,
+      userId:       res.user.id,
+      refreshToken: res.refreshToken,
+      expiresAt:    res.expiresAt,
+    })
     login({
       user:         res.user,
       token:        res.token,

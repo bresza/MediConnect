@@ -4,6 +4,7 @@ export type UserRole = "doctor" | "manager" | "financial" | "secretary" | "admin
 export interface User {
   id: string; name: string; role: UserRole; email: string; crm?: string; specialty?: string
   doctorId?: string; patientId?: string; patientCpf?: string; phone?: string; dob?: string
+  gender?: Gender
 }
 
 // ─── STAFF ────────────────────────────────────────────────────────
@@ -14,6 +15,7 @@ export interface StaffMember {
   id: string; name: string; role: StaffRole; email: string; phone: string
   phone2?: string; rg?: string; address?: Address; tempPassword?: string
   status: StaffStatus; cpf?: string; crm?: string; specialty?: string; department?: string
+  gender?: Gender
   createdAt: string; updatedAt?: string
 }
 
@@ -53,6 +55,7 @@ export interface Patient {
   communicationFrequency?: CommunicationFrequency; optIn?: boolean
   behaviorScore?: number; status: PatientStatus; photoUrl?: string
   lastVisit?: string; nextVisit?: string; createdAt?: string; updatedAt?: string; updatedBy?: string
+  createdBy?: string
 }
 
 // ─── APPOINTMENT ──────────────────────────────────────────────────

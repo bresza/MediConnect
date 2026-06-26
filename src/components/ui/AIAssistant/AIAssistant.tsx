@@ -4,15 +4,18 @@ import {
   AI_STARTERS_BY_ROLE,
   AIError, buildSystemPrompt, chatComplete, getAIMode, getAIModel, isAIConfigured,
 } from "../../../services/ai"
+import { runAIAgentTurn } from "../../../services/aiAgent"
+import type { AppAIActions } from "../../../services/aiActions"
 import { useSpeechRecognition } from "../../../hooks/useSpeechRecognition"
+import { renderAssistantMessage } from "../../../utils/renderAssistantMessage"
 import type { User, UserRole } from "../../../types"
 import styles from "./AIAssistant.module.css"
 
 interface AIAssistantProps {
   currentUser: User
   clinicName?: string | null
-  /** Resumo dos dados da API (sessao) para contextualizar respostas. */
   apiContextSnapshot?: string
+  appActions?: AppAIActions
 }
 
 const ROLE_LABEL: Record<UserRole, string> = {
@@ -24,7 +27,6 @@ const ROLE_LABEL: Record<UserRole, string> = {
   patient:   "Modo paciente",
 }
 
-// Icone (Sparkles)
 const SparkIcon = ({ size = 22 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z" />
@@ -60,36 +62,29 @@ interface UiMessage extends ChatMessage {
   error?: boolean
 }
 
+interface PendingAction {
+  action: string
+  params: Record<string, unknown>
+  summary: string
+}
+
 function newId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
 
-const HISTORY_VERSION = "v4-groq"
+const ASSISTANT_MAX_TOKENS = 1500
+const HISTORY_VERSION = 1
 
 function historyKey(userId: string): string {
   return `mediconnect:ai-history:${HISTORY_VERSION}:${userId}`
 }
 
-function legacyHistoryKey(userId: string): string {
-  return `mediconnect:ai-history:${userId}`
-}
-
-/** Erros persistidos de versoes antigas (proxy ai-chat / mensagens desatualizadas). */
-function isStaleAssistantError(content: string): boolean {
-  return /ai-chat|Edge Function|no-verify-jwt|VITE_OPENAI_API_KEY no \.env/i.test(content)
-}
-
 function loadHistory(userId: string): UiMessage[] {
   try {
-    const raw =
-      localStorage.getItem(historyKey(userId))
-      ?? localStorage.getItem(legacyHistoryKey(userId))
+    const raw = localStorage.getItem(historyKey(userId))
     if (!raw) return []
     const parsed = JSON.parse(raw) as UiMessage[]
-    if (!Array.isArray(parsed)) return []
-    return parsed
-      .filter((m) => !(m.error && m.role === "assistant" && isStaleAssistantError(m.content)))
-      .slice(-40)
+    return Array.isArray(parsed) ? parsed.slice(-40) : []
   } catch {
     return []
   }
@@ -98,24 +93,23 @@ function loadHistory(userId: string): UiMessage[] {
 function saveHistory(userId: string, messages: UiMessage[]) {
   try {
     localStorage.setItem(historyKey(userId), JSON.stringify(messages.slice(-40)))
-  } catch {
-    // Storage indisponivel: ignora.
-  }
+  } catch { /* ignore */ }
 }
 
-export function AIAssistant({ currentUser, clinicName, apiContextSnapshot }: AIAssistantProps) {
-  const [isOpen,    setIsOpen]    = useState(false)
-  const [input,     setInput]     = useState("")
-  const [messages,  setMessages]  = useState<UiMessage[]>(() => loadHistory(currentUser.id))
+export function AIAssistant({ currentUser, clinicName, apiContextSnapshot, appActions }: AIAssistantProps) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [input, setInput] = useState("")
+  const [messages, setMessages] = useState<UiMessage[]>(() => loadHistory(currentUser.id))
   const [isLoading, setIsLoading] = useState(false)
   const [voiceError, setVoiceError] = useState<string | null>(null)
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null)
   const abortRef = useRef<AbortController | null>(null)
-  const listRef  = useRef<HTMLDivElement | null>(null)
-  const handleSendRef = useRef<(text: string) => Promise<void>>(async () => {})
+  const listRef = useRef<HTMLDivElement | null>(null)
+  const handleSendRef = useRef<(text: string, confirmed?: PendingAction) => Promise<void>>(async () => {})
 
   const role = currentUser.role
   const configured = isAIConfigured()
-  const mode       = getAIMode()
+  const mode = getAIMode()
 
   const systemPrompt = useMemo(
     () =>
@@ -130,43 +124,51 @@ export function AIAssistant({ currentUser, clinicName, apiContextSnapshot }: AIA
 
   const starters = AI_STARTERS_BY_ROLE[role] ?? AI_STARTERS_BY_ROLE.secretary
 
-  // Recarrega historico ao trocar de usuario ou provider (remove erros legados do proxy).
   useEffect(() => { setMessages(loadHistory(currentUser.id)) }, [currentUser.id, mode])
-
-  // Persistencia local do historico ao mudar.
   useEffect(() => { saveHistory(currentUser.id, messages) }, [messages, currentUser.id])
-
-  // Scroll automatico para o fim quando entra mensagem nova.
   useEffect(() => {
     const list = listRef.current
-    if (!list) return
-    list.scrollTop = list.scrollHeight
-  }, [messages, isOpen])
-
-  // Cancela request pendente ao fechar a aba ou desmontar.
+    if (list) list.scrollTop = list.scrollHeight
+  }, [messages, isOpen, pendingAction])
   useEffect(() => () => abortRef.current?.abort(), [])
 
-  const handleSend = useCallback(async (rawText: string) => {
+  const handleSend = useCallback(async (rawText: string, confirmed?: PendingAction) => {
     const text = rawText.trim()
-    if (!text || isLoading) return
-    if (!configured) return
+    if (!text && !confirmed) return
+    if (!configured || isLoading) return
 
-    const userMsg: UiMessage = { id: newId(), role: "user", content: text }
-    const nextMessages = [...messages, userMsg]
-    setMessages(nextMessages)
+    const userMsg: UiMessage | null = text
+      ? { id: newId(), role: "user", content: text }
+      : null
+    const nextMessages = userMsg ? [...messages, userMsg] : messages
+    if (userMsg) setMessages(nextMessages)
     setInput("")
     setIsLoading(true)
+    setPendingAction(null)
 
     const controller = new AbortController()
     abortRef.current = controller
 
-    const payload: ChatMessage[] = [
-      { role: "system", content: systemPrompt },
-      ...nextMessages.map(({ role: r, content }) => ({ role: r, content })),
-    ]
+    const conversation: ChatMessage[] = nextMessages.map(({ role: r, content }) => ({ role: r, content }))
 
     try {
-      const reply = await chatComplete(payload, { signal: controller.signal })
+      let reply: string
+
+      if (appActions) {
+        const result = await runAIAgentTurn(systemPrompt, conversation, appActions, {
+          signal: controller.signal,
+          confirmedAction: confirmed,
+          maxTokens: ASSISTANT_MAX_TOKENS,
+        })
+        reply = result.reply
+        if (result.pendingConfirmation) {
+          setPendingAction(result.pendingConfirmation)
+        }
+      } else {
+        const payload: ChatMessage[] = [{ role: "system", content: systemPrompt }, ...conversation]
+        reply = await chatComplete(payload, { signal: controller.signal, maxTokens: ASSISTANT_MAX_TOKENS })
+      }
+
       setMessages((prev) => [...prev, { id: newId(), role: "assistant", content: reply }])
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return
@@ -178,20 +180,20 @@ export function AIAssistant({ currentUser, clinicName, apiContextSnapshot }: AIA
       setIsLoading(false)
       abortRef.current = null
     }
-  }, [messages, isLoading, configured, systemPrompt])
+  }, [messages, isLoading, configured, systemPrompt, appActions])
 
   handleSendRef.current = handleSend
 
   const { supported: voiceSupported, listening: voiceListening, toggle: toggleVoice, abort: abortVoice } = useSpeechRecognition({
     lang: "pt-BR",
     autoSendOnEnd: true,
-    onInterimTranscript: (text) => {
+    onInterimTranscript: (t) => {
       setVoiceError(null)
-      setInput(text)
+      setInput(t)
     },
-    onFinalTranscript: (text) => {
+    onFinalTranscript: (t) => {
       setInput("")
-      void handleSendRef.current(text)
+      void handleSendRef.current(t)
     },
     onError: (message) => setVoiceError(message),
   })
@@ -203,31 +205,21 @@ export function AIAssistant({ currentUser, clinicName, apiContextSnapshot }: AIA
   function handleClear() {
     abortRef.current?.abort()
     setMessages([])
-    try { localStorage.removeItem(historyKey(currentUser.id)) } catch { /* silencia */ }
+    setPendingAction(null)
+    try { localStorage.removeItem(historyKey(currentUser.id)) } catch { /* ignore */ }
   }
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    void handleSend(input)
-  }
-
-  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault()
-      void handleSend(input)
-    }
+  async function handleConfirmAction() {
+    if (!pendingAction) return
+    const p = pendingAction
+    setPendingAction(null)
+    await handleSend("", p)
   }
 
   return (
     <>
       {!isOpen && (
-        <button
-          className={styles.fab}
-          onClick={() => setIsOpen(true)}
-          aria-label="Abrir assistente"
-          title="Assistente MediConnect"
-          type="button"
-        >
+        <button className={styles.fab} onClick={() => setIsOpen(true)} aria-label="Abrir MediConnect Assistente" type="button">
           <span className={styles.fabPulse} aria-hidden />
           <SparkIcon />
         </button>
@@ -243,6 +235,7 @@ export function AIAssistant({ currentUser, clinicName, apiContextSnapshot }: AIA
                 <p className={styles.headerTitle}>Assistente MediConnect</p>
                 <p className={styles.headerSubtitle}>
                   {ROLE_LABEL[role] ?? "Assistente"} · {getAIModel()}
+                  {appActions ? " · agente" : ""}
                 </p>
               </div>
               <div className={styles.headerActions}>
@@ -259,15 +252,30 @@ export function AIAssistant({ currentUser, clinicName, apiContextSnapshot }: AIA
 
             {!configured && (
               <div className={styles.warning}>
-                Assistente nao configurado. Defina <code>VITE_GROQ_API_KEY</code> (recomendado) ou <code>VITE_GEMINI_ENABLED=true</code> com <code>GEMINI_API_KEY</code> no servidor, ou configure a Edge Function <code>ai-chat</code> no Supabase.
+                Configure <code>VITE_GROQ_API_KEY</code>, <code>VITE_GEMINI_ENABLED=true</code> ou a Edge Function <code>ai-chat</code> para usar o assistente.
+              </div>
+            )}
+
+            {pendingAction && (
+              <div className={styles.confirmCard}>
+                <p className={styles.confirmTitle}>Confirmar ação</p>
+                <p className={styles.confirmText}>{pendingAction.summary}</p>
+                <div className={styles.confirmActions}>
+                  <button type="button" className={styles.confirmCancel} onClick={() => setPendingAction(null)}>
+                    Cancelar
+                  </button>
+                  <button type="button" className={styles.confirmOk} onClick={() => void handleConfirmAction()} disabled={isLoading}>
+                    Confirmar
+                  </button>
+                </div>
               </div>
             )}
 
             <div className={styles.messages} ref={listRef}>
               {messages.length === 0 ? (
                 <div className={styles.empty}>
-                  <strong>Como posso ajudar?</strong>
-                  <span>Faça uma pergunta ou comece com uma das sugestões abaixo.</span>
+                  <strong>O que deseja fazer?</strong>
+                  <span>Fale ou digite — após confirmar, envio SMS e resumo automáticos quando aplicável.</span>
                   <div className={styles.suggestions}>
                     {starters.map((s) => (
                       <button
@@ -289,14 +297,11 @@ export function AIAssistant({ currentUser, clinicName, apiContextSnapshot }: AIA
                       key={m.id}
                       className={[
                         styles.bubble,
-                        m.role === "user"
-                          ? styles.bubbleUser
-                          : m.error
-                            ? `${styles.bubbleAssistant} ${styles.bubbleError}`
-                            : styles.bubbleAssistant,
+                        m.role === "user" ? styles.bubbleUser
+                          : m.error ? `${styles.bubbleAssistant} ${styles.bubbleError}` : styles.bubbleAssistant,
                       ].join(" ")}
                     >
-                      {m.content}
+                      {renderAssistantMessage(m.content)}
                     </div>
                   ))}
                   {isLoading && (
@@ -312,23 +317,24 @@ export function AIAssistant({ currentUser, clinicName, apiContextSnapshot }: AIA
               )}
             </div>
 
-            <form className={styles.composer} onSubmit={handleSubmit}>
+            <form className={styles.composer} onSubmit={(e) => { e.preventDefault(); void handleSend(input) }}>
               <div className={styles.composerField}>
                 <textarea
                   className={styles.textarea}
                   placeholder={configured
-                    ? (voiceListening ? "Ouvindo... fale agora" : "Pergunte algo ou use o microfone")
-                    : "Configure VITE_OPENAI_API_KEY ou a Edge Function ai-chat"}
+                    ? (voiceListening ? "Ouvindo… fale o comando" : "Ex.: agende consulta para Maria amanhã às 14h")
+                    : "Configure a chave de IA no .env"}
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void handleSend(input) }
+                  }}
                   rows={1}
                   disabled={!configured || isLoading || voiceListening}
                 />
                 {voiceListening && (
                   <span className={styles.listeningBadge} aria-live="polite">
-                    <span className={styles.listeningDot} />
-                    Gravando voz
+                    <span className={styles.listeningDot} /> Gravando voz
                   </span>
                 )}
                 {voiceError && !voiceListening && (
@@ -339,23 +345,12 @@ export function AIAssistant({ currentUser, clinicName, apiContextSnapshot }: AIA
                 type="button"
                 className={`${styles.micBtn} ${voiceListening ? styles.micBtnActive : ""}`}
                 disabled={!configured || isLoading || !voiceSupported}
-                onClick={() => {
-                  setVoiceError(null)
-                  toggleVoice()
-                }}
-                aria-label={voiceListening ? "Parar gravacao e enviar" : "Enviar mensagem por voz"}
-                title={voiceSupported
-                  ? (voiceListening ? "Parar e enviar" : "Falar mensagem (pt-BR)")
-                  : "Reconhecimento de voz nao suportado neste navegador"}
+                onClick={() => { setVoiceError(null); toggleVoice() }}
+                aria-label="Comando por voz"
               >
                 <MicIcon />
               </button>
-              <button
-                type="submit"
-                className={styles.sendBtn}
-                disabled={!configured || isLoading || !input.trim() || voiceListening}
-                aria-label="Enviar"
-              >
+              <button type="submit" className={styles.sendBtn} disabled={!configured || isLoading || !input.trim() || voiceListening}>
                 <SendIcon />
               </button>
             </form>

@@ -12,6 +12,7 @@ import styles from "./Patients.module.css"
 
 interface PatientsProps {
   patients: Patient[]
+  isLoading?: boolean
   onNavigate: (page: PageId) => void
   onEditPatient: (p: Patient) => void
   onViewProfile?: (p: Patient) => void
@@ -27,6 +28,13 @@ const SearchIcon = () => (
     <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" strokeLinecap="round" />
   </svg>
 )
+
+function normalizeSearch(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+}
 const PlusIcon = () => (
   <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round">
     <path d="M12 5v14M5 12h14" />
@@ -50,7 +58,7 @@ const KeyIcon = () => (
   </svg>
 )
 
-export function Patients({ patients, onNavigate, onEditPatient, onViewProfile, onDeletePatient, onResetPassword, canCreatePatient = true, toast, onRefresh }: PatientsProps) {
+export function Patients({ patients, isLoading = false, onNavigate, onEditPatient, onViewProfile, onDeletePatient, onResetPassword, canCreatePatient = true, toast, onRefresh }: PatientsProps) {
   const [search, setSearch]             = useState("")
   const [filterStatus, setFilterStatus] = useState<"All" | "Active" | "Inactive">("All")
   const [confirmId, setConfirmId]       = useState<string | null>(null)
@@ -100,11 +108,19 @@ export function Patients({ patients, onNavigate, onEditPatient, onViewProfile, o
     if (filterStatus !== "All" && p.status !== filterStatus) return false
     const q = search.trim()
     if (!q) return true
-    const qLower = q.toLowerCase()
+    const qNorm = normalizeSearch(q)
     const qDigits = onlyDigits(q)
-    if (p.name.toLowerCase().includes(qLower)) return true
-    if (p.email?.toLowerCase().includes(qLower)) return true
+    const nameNorm = normalizeSearch(p.name)
+    const emailNorm = p.email ? normalizeSearch(p.email) : ""
+
+    if (nameNorm.includes(qNorm)) return true
+    if (emailNorm.includes(qNorm)) return true
     if (qDigits && onlyDigits(p.cpf).includes(qDigits)) return true
+
+    const tokens = qNorm.split(/\s+/).filter(Boolean)
+    if (tokens.length > 1 && tokens.every((t) => nameNorm.includes(t) || emailNorm.includes(t))) {
+      return true
+    }
     return false
   })
   const confirmTarget = orderedPatients.find((p) => p.id === confirmId)
@@ -130,7 +146,9 @@ export function Patients({ patients, onNavigate, onEditPatient, onViewProfile, o
       <header className={styles.header}>
         <div>
           <h1 className={styles.title}>Pacientes</h1>
-          <p className={styles.subtitle}>{orderedPatients.length} pacientes cadastrados</p>
+          <p className={styles.subtitle}>
+            {isLoading ? "Carregando..." : `${orderedPatients.length} pacientes cadastrados`}
+          </p>
         </div>
         <div className={styles.headerActions}>
           {onRefresh && (
@@ -151,7 +169,7 @@ export function Patients({ patients, onNavigate, onEditPatient, onViewProfile, o
       <div className={styles.filters}>
         <div className={styles.searchWrapper}>
           <span className={styles.searchIcon}><SearchIcon /></span>
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por nome ou CPF..." className={styles.searchInput} />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por nome, e-mail ou CPF..." className={styles.searchInput} />
         </div>
         {(["All", "Active", "Inactive"] as const).map((s) => (
           <button key={s} onClick={() => setFilterStatus(s)} className={`${styles.filterBtn} ${filterStatus === s ? styles.filterBtnActive : ""}`}>
@@ -161,7 +179,11 @@ export function Patients({ patients, onNavigate, onEditPatient, onViewProfile, o
       </div>
 
       <section className={styles.tablePanel}>
-        {filtered.length === 0 ? (
+        {isLoading ? (
+          <div className={styles.empty}>
+            <p>Carregando pacientes...</p>
+          </div>
+        ) : filtered.length === 0 ? (
           <div className={styles.empty}>
             <svg width="40" height="40" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24" strokeLinecap="round">
               <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8z" />
@@ -253,7 +275,7 @@ export function Patients({ patients, onNavigate, onEditPatient, onViewProfile, o
               A senha passa a valer imediatamente.
             </p>
             <p style={{ fontSize:12, color:"var(--muted-foreground)", padding:"10px 12px", borderRadius:8, background:"var(--muted)", border:"1px solid var(--border)" }}>
-              Atenção: a redefinição recria o cadastro do paciente. Consultas e laudos vinculados ao ID anterior não são transferidos automaticamente. A lista será atualizada após concluir.
+              A senha é atualizada no servidor e o vínculo com o portal é refeito. O cadastro clínico e o histórico do paciente são mantidos.
             </p>
             <Input
               label="Nova senha"

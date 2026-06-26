@@ -1,5 +1,10 @@
 import { useState } from "react"
-import { createPatientAccount, login as authLogin, requestPasswordReset } from "../../services/auth"
+import {
+  createPatientAccount,
+  explainPasswordLoginFailure,
+  login as authLogin,
+  requestPasswordReset,
+} from "../../services/auth"
 import type { LoginResponse } from "../../services/auth"
 import { formatCpfBR, formatPhoneBR, hasAtLeastTwoNames, isValidCpf, isValidEmail } from "../../utils"
 import styles from "./Login.module.css"
@@ -129,7 +134,14 @@ export function Login({ onLogin, darkMode, onToggleDark, onBackToLanding }: Logi
 
       onLogin(await authLogin({ email, password }))
     }
-    catch (err) { setError(err instanceof Error ? err.message : "E-mail ou senha inválidos.") }
+    catch (err) {
+      let msg = err instanceof Error ? err.message : "E-mail ou senha inválidos."
+      if (mode === "login") {
+        const detail = await explainPasswordLoginFailure(email, password)
+        if (detail) msg = detail
+      }
+      setError(msg)
+    }
     finally { setIsLoading(false) }
   }
 

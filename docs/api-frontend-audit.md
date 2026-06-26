@@ -1,12 +1,15 @@
 # Auditoria Front-end x API - MediConnect
 
-Data: 2026-05-20
+**Contrato oficial:** [Apidog — RiseUP](https://do5wegrct3.apidog.io/)  
+**Base URL:** `https://yuanqfswhberkoevtmfr.supabase.co`
+
+Data: 2026-06-18
 
 ## Status
 
-| Area | Endpoint/API | Status no front | Observacao |
+| Area | Endpoint/API (Apidog) | Status no front | Observacao |
 | --- | --- | --- | --- |
-| Autenticacao | `/auth/v1/token`, `/functions/v1/user-info` | Integrado | Login usa Supabase Auth e busca perfil/roles. |
+| Autenticacao | `POST /auth/v1/token`, `POST /user-info` | Integrado | Login + `userInfo.ts` resolve `patient.id`. |
 | Usuarios | `/functions/v1/create-user-with-password` | Integrado | Gestor, secretaria e admin (CPF + department obrigatorios; erros RFC 7807). |
 | Usuarios | `/functions/v1/create-doctor` | Integrado | Medico pela tela Equipe (fluxo atomico auth+profiles+roles+doctors). |
 | Usuarios | `/rest/v1/secretaries`, `/rest/v1/managers` | Integrado | Listagem e PATCH na edicao de equipe. |
@@ -18,7 +21,8 @@ Data: 2026-05-20
 | Agendamentos | `/functions/v1/get-available-slots` | Integrado | Modal de agendamento consulta slots reais por medico/data. |
 | Disponibilidade | `/rest/v1/doctor_availability` | Parcial | API existe, mas ainda falta tela administrativa para CRUD de disponibilidade. |
 | Excecoes de agenda | `/rest/v1/doctor_exceptions` | Pendente | API existe, mas ainda falta UI para feriados, bloqueios e plantões. |
-| Reports/Laudos | `/rest/v1/reports` | Integrado | Laudos usam tabela documentada e status aceito pela API. |
+| Reports/Laudos | `GET /rest/v1/reports?patient_id=&status=completed` | Integrado | Staff lista tudo; portal usa filtro documentado. |
+| Portal paciente — laudos | `user-info` + `GET /rest/v1/reports` | **Bloqueado por RLS** | Front chama certo; back precisa liberar leitura do paciente autenticado. |
 | Prontuarios | Sem endpoint dedicado na API atual | Workaround controlado | Persistidos em `reports` com marcador `Prontuario Medico`. Deve migrar quando a API entregar endpoint proprio. |
 | Receitas | Sem endpoint dedicado na API atual | Workaround controlado | Persistidas em `reports` com marcador `Receita Medica`. Deve migrar quando houver endpoint proprio. |
 | Financeiro | Sem endpoint dedicado na API atual | Workaround controlado | Persistido em `reports` com marcador `Registro Financeiro`. Deve migrar quando a API financeira existir. |

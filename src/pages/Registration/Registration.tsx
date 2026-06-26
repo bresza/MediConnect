@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { Topbar }   from "../../components/layout/Topbar/Topbar"
 import { Card }     from "../../components/ui/Card/Card"
 import { Button }   from "../../components/ui/Button/Button"
@@ -11,6 +11,16 @@ import {
   hasAtLeastTwoNames, isValidCpf, isValidEmail, onlyDigits,
 } from "../../utils"
 import type { PageId, Patient } from "../../types"
+import { useSpeechRecognition } from "../../hooks/useSpeechRecognition"
+import { isAIConfigured } from "../../services/ai"
+import {
+  getPatientVoiceSteps,
+  normalizePatientVoiceField,
+  parsePatientVoiceLocal,
+  parsePatientVoiceWithAI,
+  type PatientVoiceFieldKey,
+  type PatientVoiceParseResult,
+} from "../../services/patientVoiceFill"
 import styles from "./Registration.module.css"
 
 interface RegistrationProps {
@@ -19,7 +29,6 @@ interface RegistrationProps {
   onAddPatient:    (p: Omit<Patient, "id">) => Promise<Patient>
   onAddPatientWithPassword?: (p: Omit<Patient, "id">, password: string) => Promise<Patient>
   onCreatePatientAccess?: (p: Patient, password: string) => Promise<Patient>
-  onResetPatientAccess?: (p: Patient, password: string) => Promise<Patient>
   onUpdatePatient: (p: Patient) => Promise<void>
   onNavigate:      (page: PageId) => void
   isSecretary?:    boolean   // secretária vê apenas steps 1-4 (sem dados clínicos)
@@ -322,7 +331,6 @@ export function Registration({
   onAddPatient,
   onAddPatientWithPassword,
   onCreatePatientAccess,
-  onResetPatientAccess,
   onUpdatePatient,
   onNavigate,
   isSecretary = false,
@@ -340,6 +348,22 @@ export function Registration({
   const [resetState, setResetState] = useState<"idle" | "sending" | "sent" | "error">("idle")
   const [lastSetPassword, setLastSetPassword] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [voiceGuided, setVoiceGuided] = useState(false)
+  const [voiceStepIndex, setVoiceStepIndex] = useState(0)
+  const [voicePreview, setVoicePreview] = useState("")
+  const [isVoiceApplying, setIsVoiceApplying] = useState(false)
+  const voiceLinesRef = useRef<{ field: PatientVoiceFieldKey; spoken: string }[]>([])
+  const voiceStepIndexRef = useRef(0)
+  const startVoiceRef = useRef<() => void>(() => {})
+  const abortVoiceRef = useRef<() => void>(() => {})
+
+  const voiceSteps = useMemo(
+    () => getPatientVoiceSteps(!isSecretary && !isEditing),
+    [isSecretary, isEditing],
+  )
+  voiceStepIndexRef.current = voiceStepIndex
+  const currentVoiceStep = voiceGuided ? voiceSteps[voiceStepIndex] : null
+  const aiAvailable = useMemo(() => isAIConfigured(), [])
 
   // Reinicializa quando editingPatient muda
   useEffect(() => {
@@ -354,20 +378,185 @@ export function Registration({
     setStepError(null)
   }
 
-  // CEP auto-fill
-  async function handleCepBlur() {
-    const cep = form.zipCode.replace(/\D/g, "")
-    if (cep.length !== 8) return
+  async function fetchAddressFromCep(cepDigits: string) {
+    if (cepDigits.length !== 8) return
     try {
-      const res  = await fetch(`https://viacep.com.br/ws/${cep}/json/`)
+      const res = await fetch(`https://viacep.com.br/ws/${cepDigits}/json/`)
       const data = await res.json()
       if (!data.erro) {
-        set("street",       data.logradouro ?? "")
+        set("street", data.logradouro ?? "")
         set("neighborhood", data.bairro ?? "")
-        set("city",         data.localidade ?? "")
-        set("state",        data.uf ?? "")
+        set("city", data.localidade ?? "")
+        set("state", data.uf ?? "")
       }
     } catch { /* silencia */ }
+  }
+
+  const applyParsedToForm = useCallback(async (parsed: PatientVoiceParseResult) => {
+    if (parsed.name) set("name", parsed.name)
+    if (parsed.gender) set("gender", parsed.gender)
+    if (parsed.dob) set("dob", parsed.dob)
+    if (parsed.cpf) set("cpf", formatCpfBR(parsed.cpf))
+    if (parsed.healthInsurance) set("healthInsurance", parsed.healthInsurance)
+    if (parsed.zipCode) {
+      const cep = onlyDigits(parsed.zipCode)
+      set("zipCode", formatCepBR(cep))
+      await fetchAddressFromCep(cep)
+    }
+    if (parsed.addressNumber) set("addressNumber", parsed.addressNumber)
+    if (parsed.phone) set("phone", formatPhoneBR(parsed.phone))
+    if (parsed.email) set("email", parsed.email)
+    if (parsed.emergencyName) set("emergencyName", parsed.emergencyName)
+    if (parsed.emergencyRelation) set("emergencyRelation", parsed.emergencyRelation)
+    if (parsed.emergencyPhone) set("emergencyPhone", formatPhoneBR(parsed.emergencyPhone))
+    if (parsed.bloodType) set("bloodType", parsed.bloodType)
+    if (parsed.allergies) set("allergies", parsed.allergies)
+  }, [])
+
+  const applyVoiceFieldValue = useCallback(async (field: PatientVoiceFieldKey, spoken: string): Promise<boolean> => {
+    const normalized = normalizePatientVoiceField(field, spoken)
+    if (!normalized) return false
+    if (field === "cpf") set("cpf", formatCpfBR(normalized))
+    else if (field === "phone") set("phone", formatPhoneBR(normalized))
+    else if (field === "emergencyPhone") set("emergencyPhone", formatPhoneBR(normalized))
+    else if (field === "zipCode") {
+      const cep = onlyDigits(normalized)
+      set("zipCode", formatCepBR(cep))
+      await fetchAddressFromCep(cep)
+    } else {
+      set(field, normalized)
+    }
+    return true
+  }, [])
+
+  const finishVoiceGuided = useCallback(async () => {
+    setIsVoiceApplying(true)
+    setVoicePreview("")
+    const local = parsePatientVoiceLocal(voiceLinesRef.current)
+    try {
+      const parsed = aiAvailable
+        ? await parsePatientVoiceWithAI({
+            lines: voiceLinesRef.current,
+            includeClinical: !isSecretary,
+            localFallback: local,
+          })
+        : local
+      await applyParsedToForm(parsed)
+    } catch {
+      await applyParsedToForm(local)
+    } finally {
+      setIsVoiceApplying(false)
+      setVoiceGuided(false)
+      voiceStepIndexRef.current = 0
+      setVoiceStepIndex(0)
+      voiceLinesRef.current = []
+      abortVoiceRef.current()
+    }
+  }, [aiAvailable, applyParsedToForm, isSecretary])
+
+  const handleVoiceField = useCallback((transcript: string) => {
+    void (async () => {
+      const stepIndex = voiceStepIndexRef.current
+      const voiceStep = voiceSteps[stepIndex]
+      if (!voiceStep) return
+
+      const spoken = transcript.trim()
+      if (!spoken) {
+        startVoiceRef.current()
+        return
+      }
+
+      voiceLinesRef.current.push({ field: voiceStep.key, spoken })
+      const applied = await applyVoiceFieldValue(voiceStep.key, spoken)
+      if (!applied) {
+        voiceLinesRef.current.pop()
+        setSaveError(
+          voiceStep.key === "gender"
+            ? "Não entendi o sexo. Diga masculino, feminino ou outro."
+            : "Não entendi. Tente falar novamente.",
+        )
+        startVoiceRef.current()
+        return
+      }
+
+      setVoicePreview("")
+      setSaveError(null)
+      const nextIndex = stepIndex + 1
+      if (nextIndex >= voiceSteps.length) {
+        void finishVoiceGuided()
+        return
+      }
+      const nextStep = voiceSteps[nextIndex]
+      voiceStepIndexRef.current = nextIndex
+      setVoiceStepIndex(nextIndex)
+      setStep(nextStep.step)
+      window.setTimeout(() => startVoiceRef.current(), 350)
+    })()
+  }, [voiceSteps, applyVoiceFieldValue, finishVoiceGuided])
+
+  const {
+    supported: voiceSupported,
+    listening: voiceListening,
+    start: startVoice,
+    stop: stopVoice,
+    abort: abortVoice,
+  } = useSpeechRecognition({
+    continuous: false,
+    autoSendOnEnd: true,
+    onFinalTranscript: handleVoiceField,
+    onInterimTranscript: setVoicePreview,
+    onError: () => setSaveError("Não foi possível capturar a voz. Verifique o microfone."),
+  })
+
+  startVoiceRef.current = startVoice
+  abortVoiceRef.current = abortVoice
+
+  function startVoiceGuided() {
+    voiceLinesRef.current = []
+    voiceStepIndexRef.current = 0
+    setVoiceStepIndex(0)
+    setVoicePreview("")
+    setVoiceGuided(true)
+    setStep(voiceSteps[0]?.step ?? 1)
+    startVoice()
+  }
+
+  function cancelVoiceGuided() {
+    abortVoice()
+    setVoiceGuided(false)
+    voiceStepIndexRef.current = 0
+    setVoiceStepIndex(0)
+    setVoicePreview("")
+    voiceLinesRef.current = []
+  }
+
+  function skipVoiceField() {
+    stopVoice()
+    setVoicePreview("")
+    const nextIndex = voiceStepIndexRef.current + 1
+    if (nextIndex >= voiceSteps.length) {
+      void finishVoiceGuided()
+      return
+    }
+    const nextStep = voiceSteps[nextIndex]
+    voiceStepIndexRef.current = nextIndex
+    setVoiceStepIndex(nextIndex)
+    setStep(nextStep.step)
+    window.setTimeout(() => startVoiceRef.current(), 200)
+  }
+
+  function isVoiceFieldActive(key: PatientVoiceFieldKey): boolean {
+    return voiceGuided && currentVoiceStep?.key === key
+  }
+
+  useEffect(() => {
+    if (isEditing) cancelVoiceGuided()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEditing])
+
+  // CEP auto-fill
+  async function handleCepBlur() {
+    await fetchAddressFromCep(form.zipCode.replace(/\D/g, ""))
   }
 
   function validationForStep(targetStep = step): Partial<Record<keyof FormState, string>> {
@@ -513,12 +702,12 @@ export function Registration({
   }
 
   async function handleResetPassword() {
-    if (!editingPatient || !onResetPatientAccess) return
+    if (!editingPatient || !onCreatePatientAccess) return
     if (!validateResetPassword()) return
     const newPwd = form.portalPassword
     setResetState("sending")
     try {
-      await onResetPatientAccess(editingPatient, newPwd)
+      await onCreatePatientAccess(editingPatient, newPwd)
       setLastSetPassword(newPwd)
       setResetState("sent")
       set("portalPassword", "")
@@ -635,6 +824,54 @@ export function Registration({
           })}
         </div>
 
+        {!isEditing && voiceSupported && (
+          <div className={styles.voicePanel}>
+            {!voiceGuided ? (
+              <>
+                <p className={styles.voicePanelText}>
+                  Fale os dados campo a campo. A IA interpreta e preenche a ficha do paciente.
+                </p>
+                <Button type="button" variant="outline" onClick={startVoiceGuided} disabled={isVoiceApplying}>
+                  Preencher por voz
+                </Button>
+              </>
+            ) : (
+              <>
+                <div className={styles.voicePanelHeader}>
+                  <span className={styles.voiceStepBadge}>
+                    {Math.min(voiceStepIndex + 1, voiceSteps.length)}/{voiceSteps.length}
+                  </span>
+                  <p className={styles.voicePrompt}>
+                    {isVoiceApplying ? "Interpretando com IA..." : currentVoiceStep?.prompt}
+                  </p>
+                </div>
+                {voicePreview && <p className={styles.voicePreview}>Ouvindo: {voicePreview}</p>}
+                <div className={styles.voicePanelActions}>
+                  <button
+                    type="button"
+                    className={`${styles.voiceMicBtn} ${voiceListening ? styles.voiceMicBtnActive : ""}`}
+                    onClick={voiceListening ? stopVoice : startVoice}
+                    disabled={isVoiceApplying}
+                  >
+                    {voiceListening ? "Parar" : "Falar"}
+                  </button>
+                  <Button type="button" variant="ghost" size="sm" onClick={skipVoiceField} disabled={isVoiceApplying}>
+                    Pular campo
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={cancelVoiceGuided} disabled={isVoiceApplying}>
+                    Cancelar
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+        {!isEditing && !voiceSupported && (
+          <p className={styles.voiceUnsupported}>
+            Preenchimento por voz requer Chrome ou Edge com microfone liberado.
+          </p>
+        )}
+
         {/* ── STEP 1 — Identificação ──────────────────────────────── */}
         {step === 1 && (
           <>
@@ -656,7 +893,7 @@ export function Registration({
                   const file = e.target.files?.[0]
                   if (!file) return
                   if (file.size > 5 * 1024 * 1024) {
-                    setSaveError("A foto deve ter no maximo 5 MB.")
+                    setSaveError("A foto deve ter no máximo 5 MB.")
                     e.target.value = ""
                     return
                   }
@@ -673,7 +910,7 @@ export function Registration({
               <div className={`${styles.grid2} ${styles.marginTop}`}>
                 <Input label="Nome completo" required placeholder="Como no documento oficial"
                   value={form.name} onChange={(e) => set("name", e.target.value)}
-                  error={errors.name} className={styles.colSpan2} />
+                  error={errors.name} className={`${styles.colSpan2} ${isVoiceFieldActive("name") ? styles.voiceFieldActive : ""}`} />
                 <Input label="Nome social" placeholder="Se diferente do nome civil"
                   value={form.socialName} onChange={(e) => set("socialName", e.target.value)} />
                 <div>
@@ -684,9 +921,11 @@ export function Registration({
               <div className={`${styles.grid3} ${styles.marginTop}`}>
                 <Select label="Sexo biológico (opcional)" options={GENDERS}
                   value={form.gender} onChange={(e) => set("gender", e.target.value)}
-                  error={errors.gender} />
+                  error={errors.gender}
+                  className={isVoiceFieldActive("gender") ? styles.voiceFieldActive : undefined} />
                 <DatePicker label="Data de nascimento" required max={TODAY}
-                  value={form.dob} onChange={(e) => set("dob", e.target.value)} error={errors.dob} />
+                  value={form.dob} onChange={(e) => set("dob", e.target.value)} error={errors.dob}
+                  className={isVoiceFieldActive("dob") ? styles.voiceFieldActive : undefined} />
                 <Select label="Estado civil" options={MARITAL}
                   value={form.maritalStatus} onChange={(e) => set("maritalStatus", e.target.value)} />
               </div>
@@ -716,7 +955,8 @@ export function Registration({
             <Section title="Documentos de identificação">
               <div className={`${styles.grid3} ${styles.marginTop}`}>
                 <Input label="CPF" required placeholder="000.000.000-00" inputMode="numeric" maxLength={14}
-                  value={form.cpf} onChange={(e) => set("cpf", formatCpfBR(e.target.value))} error={errors.cpf} />
+                  value={form.cpf} onChange={(e) => set("cpf", formatCpfBR(e.target.value))} error={errors.cpf}
+                  className={isVoiceFieldActive("cpf") ? styles.voiceFieldActive : undefined} />
                 <Input label="RG" placeholder="0000000"
                   value={form.rg} onChange={(e) => set("rg", e.target.value)} />
                 <Input label="Órgão emissor RG" placeholder="SSP"
@@ -737,7 +977,8 @@ export function Registration({
             <Section title="Convênio / Plano de saúde">
               <div className={`${styles.grid3} ${styles.marginTop}`}>
                 <Select label="Convênio" options={HEALTH_INS}
-                  value={form.healthInsurance} onChange={(e) => set("healthInsurance", e.target.value)} />
+                  value={form.healthInsurance} onChange={(e) => set("healthInsurance", e.target.value)}
+                  className={isVoiceFieldActive("healthInsurance") ? styles.voiceFieldActive : undefined} />
                 <Input label="Número da carteirinha" placeholder="Número do plano"
                   value={form.healthInsuranceNumber} onChange={(e) => set("healthInsuranceNumber", e.target.value)} />
                 <Input label="Plano/Modalidade" placeholder="Ex: Enfermaria, Apartamento"
@@ -759,12 +1000,14 @@ export function Registration({
               <Input label="CEP" placeholder="00000-000" inputMode="numeric" maxLength={9}
                 value={form.zipCode}
                 onChange={(e) => set("zipCode", formatCepBR(e.target.value))}
-                onBlur={handleCepBlur} />
+                onBlur={handleCepBlur}
+                className={isVoiceFieldActive("zipCode") ? styles.voiceFieldActive : undefined} />
               <Input label="Logradouro / Rua" placeholder="Nome da rua"
                 value={form.street} onChange={(e) => set("street", e.target.value)}
                 className={styles.colSpan2} />
               <Input label="Número" placeholder="Nº"
-                value={form.addressNumber} onChange={(e) => set("addressNumber", e.target.value)} />
+                value={form.addressNumber} onChange={(e) => set("addressNumber", e.target.value)}
+                className={isVoiceFieldActive("addressNumber") ? styles.voiceFieldActive : undefined} />
               <Input label="Complemento" placeholder="Apto, Bloco..."
                 value={form.complement} onChange={(e) => set("complement", e.target.value)} />
               <Input label="Bairro"
@@ -786,13 +1029,15 @@ export function Registration({
             <Section title="Contatos">
               <div className={`${styles.grid3} ${styles.marginTop}`}>
                 <Input label="Celular" required placeholder="(00) 00000-0000" inputMode="tel" maxLength={15}
-                  value={form.phone} onChange={(e) => set("phone", formatPhoneBR(e.target.value))} error={errors.phone} />
+                  value={form.phone} onChange={(e) => set("phone", formatPhoneBR(e.target.value))} error={errors.phone}
+                  className={isVoiceFieldActive("phone") ? styles.voiceFieldActive : undefined} />
                 <Input label="Telefone fixo" placeholder="(00) 0000-0000" inputMode="tel" maxLength={15}
                   value={form.landline} onChange={(e) => set("landline", formatPhoneBR(e.target.value))} />
                 <Input label="Telefone alternativo" placeholder="(00) 00000-0000" inputMode="tel" maxLength={15}
                   value={form.alternativePhone} onChange={(e) => set("alternativePhone", formatPhoneBR(e.target.value))} />
                 <Input label="E-mail" type="email" required placeholder="exemplo@email.com"
-                  value={form.email} onChange={(e) => set("email", e.target.value)} error={errors.email} />
+                  value={form.email} onChange={(e) => set("email", e.target.value)} error={errors.email}
+                  className={isVoiceFieldActive("email") ? styles.voiceFieldActive : undefined} />
                 <Select label="Canal de comunicação preferido" options={CHANNELS}
                   value={form.preferredChannel} onChange={(e) => set("preferredChannel", e.target.value)} />
                 <Select label="Frequência de comunicação" options={FREQUENCIES}
@@ -806,11 +1051,14 @@ export function Registration({
             <Section title="Contato de emergência">
               <div className={`${styles.grid3} ${styles.marginTop}`}>
                 <Input label="Nome do contato" placeholder="Nome completo" error={errors.emergencyName}
-                  value={form.emergencyName} onChange={(e) => set("emergencyName", e.target.value)} />
+                  value={form.emergencyName} onChange={(e) => set("emergencyName", e.target.value)}
+                  className={isVoiceFieldActive("emergencyName") ? styles.voiceFieldActive : undefined} />
                 <Select label="Grau de parentesco" options={RELATIONS}
-                  value={form.emergencyRelation} onChange={(e) => set("emergencyRelation", e.target.value)} />
+                  value={form.emergencyRelation} onChange={(e) => set("emergencyRelation", e.target.value)}
+                  className={isVoiceFieldActive("emergencyRelation") ? styles.voiceFieldActive : undefined} />
                 <Input label="Telefone do contato" placeholder="(00) 00000-0000" inputMode="tel" maxLength={15}
-                  value={form.emergencyPhone} onChange={(e) => set("emergencyPhone", formatPhoneBR(e.target.value))} />
+                  value={form.emergencyPhone} onChange={(e) => set("emergencyPhone", formatPhoneBR(e.target.value))}
+                  className={isVoiceFieldActive("emergencyPhone") ? styles.voiceFieldActive : undefined} />
               </div>
             </Section>
 
@@ -827,7 +1075,7 @@ export function Registration({
                       A nova senha passa a valer imediatamente — anote e informe ao paciente.
                     </p>
                     <p className={styles.portalAccessText} style={{ color:"var(--muted-foreground)" }}>
-                      Atenção: a redefinição recria o cadastro do paciente. Consultas e laudos vinculados ao ID anterior não são transferidos automaticamente.
+                      O cadastro clínico e o histórico (consultas, laudos) são preservados. O sistema apenas atualiza a senha e revincula o acesso ao portal.
                     </p>
                     {resetState === "sent" ? (
                       <div style={{ padding:"12px 14px",borderRadius:8,background:"rgb(124 144 130 / 0.12)",border:"1px solid var(--primary)" }}>
@@ -865,7 +1113,7 @@ export function Registration({
                           <Button
                             variant="outline"
                             onClick={handleResetPassword}
-                            disabled={resetState === "sending" || !onResetPatientAccess}
+                            disabled={resetState === "sending" || !onCreatePatientAccess}
                           >
                             {resetState === "sending" ? "Redefinindo..." : "Redefinir senha de acesso"}
                           </Button>
@@ -938,7 +1186,8 @@ export function Registration({
             <Section title="Informações clínicas">
               <div className={`${styles.grid3} ${styles.marginTop}`}>
                 <Select label="Tipo sanguíneo" options={BLOOD_TYPES}
-                  value={form.bloodType} onChange={(e) => set("bloodType", e.target.value)} />
+                  value={form.bloodType} onChange={(e) => set("bloodType", e.target.value)}
+                  className={isVoiceFieldActive("bloodType") ? styles.voiceFieldActive : undefined} />
                 <Select label="Tabagismo" options={SMOKING}
                   value={form.smokingStatus} onChange={(e) => set("smokingStatus", e.target.value)} />
                 <Select label="Consumo de álcool" options={ALCOHOL}
@@ -950,8 +1199,10 @@ export function Registration({
 
             <Section title="Histórico de saúde">
               <div style={{ display:"flex",flexDirection:"column",gap:16,marginTop:12 }}>
-                <Textarea label="Alergias conhecidas" field="allergies"
-                  placeholder="Ex: Penicilina, dipirona, látex, amendoim..." />
+                <div className={isVoiceFieldActive("allergies") ? styles.voiceFieldActive : undefined}>
+                  <Textarea label="Alergias conhecidas" field="allergies"
+                    placeholder="Ex: Penicilina, dipirona, látex, amendoim..." />
+                </div>
                 <Textarea label="Doenças crônicas / Diagnósticos prévios" field="chronicDiseases"
                   placeholder="Ex: Diabetes tipo 2, hipertensão, asma..." />
                 <Textarea label="Medicamentos em uso contínuo" field="currentMeds"

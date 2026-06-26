@@ -1,3 +1,5 @@
+@import "./styles/responsive.css";
+
 /* ── CSS Variables (Design Tokens) ───────────────────────────── */
 :root {
   --background:         #f4f5f7;
@@ -34,6 +36,22 @@
   --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.05);
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.04);
   --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.10), 0 8px 10px -6px rgb(0 0 0 / 0.05);
+
+  /* Responsive layout tokens */
+  --content-max: min(100%, 1680px);
+  --page-gutter: clamp(12px, 2.5vw, 48px);
+  --space-xs: clamp(4px, 0.5vw, 8px);
+  --space-sm: clamp(8px, 1vw, 12px);
+  --space-md: clamp(12px, 1.5vw, 20px);
+  --space-lg: clamp(16px, 2vw, 32px);
+  --space-xl: clamp(24px, 3vw, 48px);
+  --text-xs: clamp(0.6875rem, 0.65rem + 0.15vw, 0.75rem);
+  --text-sm: clamp(0.8125rem, 0.78rem + 0.2vw, 0.875rem);
+  --text-base: clamp(0.9375rem, 0.9rem + 0.25vw, 1rem);
+  --text-lg: clamp(1.0625rem, 1rem + 0.35vw, 1.25rem);
+  --text-xl: clamp(1.25rem, 1.1rem + 0.6vw, 1.75rem);
+  --text-2xl: clamp(1.5rem, 1.25rem + 1vw, 2.25rem);
+  --touch-min: 44px;
 }
 
 .dark {
@@ -68,7 +86,11 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 /* ── Base ─────────────────────────────────────────────────────── */
-html { font-size: 16px; }
+html {
+  font-size: clamp(15px, 0.25vw + 14px, 18px);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
 
 body {
   font-family: var(--font-sans);
@@ -78,6 +100,9 @@ body {
   -moz-osx-font-smoothing: grayscale;
   line-height: 1.5;
   min-height: 100vh;
+  min-height: 100dvh;
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
 }
 
 button, input, select, textarea {

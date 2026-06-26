@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { getPatientDaySlots, type DaySlot } from "../../services/appointments"
 import { PatientDaySlotsGrid } from "../../components/ui/PatientDaySlots/PatientDaySlotsGrid"
-import { enrollPatientInWaitlistFromPortal } from "../../services/waitlistAutomation"
+import { humanizeError } from "../../services/problemDetails"
 import { findWaitingEntry, getWaitlist } from "../../services/waitlist"
+import { enrollPatientInWaitlistFromPortal } from "../../services/waitlistAutomation"
 import {
   getBookableDoctors,
   getDoctorAvailability,
@@ -157,7 +158,7 @@ export function PatientFindDoctorView({
       .catch((err) => {
         if (!alive) return
         setDoctors([])
-        setDoctorsError(err instanceof Error ? err.message : "Erro ao carregar médicos.")
+        setDoctorsError(humanizeError(err, "Erro ao carregar médicos."))
       })
       .finally(() => {
         if (alive) setDoctorsLoading(false)
@@ -305,7 +306,7 @@ export function PatientFindDoctorView({
       )
       if (created) onWaitlistEnrolled?.()
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Não foi possível entrar na fila de espera.")
+      setFormError(humanizeError(err, "Não foi possível entrar na fila de espera."))
     } finally {
       setWaitlistSaving(false)
     }
@@ -343,7 +344,7 @@ export function PatientFindDoctorView({
     } catch (err) {
       if (slotRequestRef.current !== requestId) return
       setDaySlots([])
-      setSlotsError(err instanceof Error ? err.message : "Erro ao consultar horários.")
+      setSlotsError(humanizeError(err, "Erro ao consultar horários."))
     } finally {
       if (slotRequestRef.current === requestId) setSlotsLoading(false)
     }
@@ -406,7 +407,7 @@ export function PatientFindDoctorView({
       closeBooking()
       onSuccess?.()
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Não foi possível concluir o agendamento.")
+      setFormError(humanizeError(err, "Não foi possível concluir o agendamento."))
       setShowWaitlistOffer(true)
     } finally {
       setSaving(false)

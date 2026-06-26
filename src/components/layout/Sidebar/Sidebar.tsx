@@ -1,6 +1,6 @@
 import type { PageId, User } from "../../../types"
 import type { PortalSection } from "../../../pages/PatientPortal/patientPortalSections"
-import { ROLE_PAGES, ROLE_LABELS, ROLE_COLORS } from "../../../utils/permissions"
+import { ROLE_PAGES, ROLE_COLORS, getRoleLabel } from "../../../utils/permissions"
 import { getInitials } from "../../../utils"
 import { PatientPortalSidebarNav } from "./PatientPortalSidebarNav"
 import styles from "./Sidebar.module.css"
@@ -82,6 +82,7 @@ export function Sidebar({
     .filter((g) => g.items.length > 0)
 
   const roleColor = ROLE_COLORS[currentUser.role] ?? "#6366f1"
+  const roleLabel = getRoleLabel(currentUser.role, currentUser.gender)
 
   return (
     <aside className={`${styles.sidebar} ${isOpen ? styles.sidebarOpen : ""} ${isManagerDashboard ? styles.managerDashboardSidebar : ""}`}>
@@ -124,7 +125,7 @@ export function Sidebar({
         }} />
         <div style={{ minWidth: 0 }}>
           <p style={{ fontSize: 11, fontWeight: 700, color: roleColor, fontFamily: "var(--font-sans)", margin: 0 }}>
-            {ROLE_LABELS[currentUser.role]}
+            {roleLabel}
           </p>
         </div>
       </div>
@@ -193,7 +194,7 @@ export function Sidebar({
           </div>
           <div className={styles.userInfo}>
             <p className={styles.userName}>{currentUser.name}</p>
-            <p className={styles.userRole}>{ROLE_LABELS[currentUser.role]}</p>
+            <p className={styles.userRole}>{roleLabel}</p>
           </div>
           <button onClick={onLogout} className={styles.logoutBtn} title="Sair" aria-label="Sair">
             <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2"

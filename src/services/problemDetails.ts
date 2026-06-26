@@ -33,6 +33,25 @@ export function sanitizeDatabaseMessage(raw: string): string | null {
   const text = raw.trim()
   if (!text) return null
 
+  if (/row-level security|row level security|violates row-level security/i.test(text)) {
+    if (/appointments?/i.test(text)) {
+      return (
+        "Não foi possível agendar a consulta. Seu cadastro ainda não tem permissão para criar " +
+        "agendamentos. Peça à recepção para vincular seu acesso."
+      )
+    }
+    if (/patients?/i.test(text)) {
+      return (
+        "Não foi possível acessar o cadastro de paciente. Peça à recepção para vincular " +
+        "seu acesso ao cadastro."
+      )
+    }
+    if (/reports?/i.test(text)) {
+      return "Você não tem permissão para acessar estes laudos."
+    }
+    return "Você não tem permissão para realizar esta ação. Peça ajuda à recepção se o problema persistir."
+  }
+
   if (
     /uniq_appointments_active_slot/i.test(text) ||
     (/duplicate key value violates unique constraint/i.test(text) && /appointment/i.test(text))
@@ -51,11 +70,43 @@ export function sanitizeDatabaseMessage(raw: string): string | null {
   if (/^duplicate key|^violates .* constraint|^ERROR:\s+/i.test(text)) {
     return "Não foi possível salvar. Verifique os dados e tente novamente."
   }
+  if (/JWT expired|jwt expired|token is expired/i.test(text)) {
+    return "Sessão expirada. Faça login novamente."
+  }
+  if (/invalid input syntax|invalid.*format/i.test(text)) {
+    return "Dados em formato inválido. Verifique os campos e tente novamente."
+  }
+  if (/permission denied|insufficient privilege/i.test(text)) {
+    return "Você não tem permissão para realizar esta ação."
+  }
+  if (/could not connect|connection refused|network/i.test(text)) {
+    return "Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente."
+  }
   return null
 }
 
 function looksTechnical(raw: string): boolean {
-  return /^(ERROR:|duplicate key|violates .* constraint|23505|23503)/i.test(raw.trim())
+  const text = raw.trim()
+  if (!text) return false
+  if (sanitizeDatabaseMessage(text)) return true
+  return /^(ERROR:|duplicate key|violates .* constraint|row-level security|row level security|23505|23503|42501|PGRST)/i.test(text)
+}
+
+/** Converte mensagem de erro (API ou Error) para texto amigável em pt-BR. */
+export function humanizeErrorMessage(raw: string, fallback = "Ocorreu um erro. Tente novamente."): string {
+  const trimmed = raw.trim()
+  if (!trimmed) return fallback
+  const sanitized = sanitizeDatabaseMessage(trimmed)
+  if (sanitized) return sanitized
+  if (looksTechnical(trimmed)) return fallback
+  return trimmed
+}
+
+/** Extrai e traduz mensagem de qualquer erro lançado pela aplicação. */
+export function humanizeError(err: unknown, fallback?: string): string {
+  if (err instanceof Error) return humanizeErrorMessage(err.message, fallback)
+  if (typeof err === "string") return humanizeErrorMessage(err, fallback)
+  return fallback ?? "Ocorreu um erro. Tente novamente."
 }
 
 export function summarizeProblemErrors(errors: ProblemDetails["errors"]): string {
@@ -110,7 +161,10 @@ export function messageFromProblemDetails(status: number, p: ProblemDetails): st
     return raw || "Sessão expirada. Saia, entre novamente e tente de novo."
   }
   if (code === "INSUFFICIENT_PERMISSIONS" || status === 403) {
-    return raw || "Você não tem permissão para realizar esta ação."
+    const friendly = sanitizeDatabaseMessage(raw)
+    if (friendly) return friendly
+    if (raw && !looksTechnical(raw)) return validationSummary || raw
+    return "Você não tem permissão para realizar esta ação."
   }
   if (code === "RATE_LIMIT_EXCEEDED" || status === 429) {
     return raw || "Muitas tentativas. Aguarde alguns minutos e tente novamente."

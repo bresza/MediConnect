@@ -19,6 +19,7 @@ import {
   specialtyMatches,
   uniqueSpecialtyLabels,
 } from "../../../utils"
+import { humanizeError } from "../../../services/problemDetails"
 import type { Appointment, Patient } from "../../../types"
 import styles from "./PatientBookAppointmentModal.module.css"
 
@@ -292,7 +293,7 @@ export function PatientBookAppointmentModal({
       onSuccess?.()
       handleClose()
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Não foi possível concluir o agendamento.")
+      setFormError(humanizeError(err, "Não foi possível concluir o agendamento."))
     } finally {
       setSaving(false)
     }

@@ -43,8 +43,12 @@ function getSpeechRecognitionCtor(): SpeechRecognitionCtor | null {
 
 export interface UseSpeechRecognitionOptions {
   lang?: string
+  /** Mantém escuta ativa entre pausas naturais da fala (reinicia após onend). */
+  continuous?: boolean
   /** Envia automaticamente ao encerrar a captura (pausa ou clique no mic). */
   autoSendOnEnd?: boolean
+  /** Cada trecho finalizado enquanto grava (ideal para dictado contínuo). */
+  onFinalChunk?: (text: string) => void
   onFinalTranscript?: (text: string) => void
   onInterimTranscript?: (text: string) => void
   onError?: (message: string) => void
@@ -52,7 +56,9 @@ export interface UseSpeechRecognitionOptions {
 
 export function useSpeechRecognition({
   lang = "pt-BR",
+  continuous = false,
   autoSendOnEnd = true,
+  onFinalChunk,
   onFinalTranscript,
   onInterimTranscript,
   onError,
@@ -64,28 +70,40 @@ export function useSpeechRecognition({
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null)
   const finalPartsRef = useRef<string[]>([])
   const shouldSendRef = useRef(false)
+  const keepListeningRef = useRef(false)
+
+  const onFinalChunkRef = useRef(onFinalChunk)
+  const onFinalTranscriptRef = useRef(onFinalTranscript)
+  const onInterimTranscriptRef = useRef(onInterimTranscript)
+  const onErrorRef = useRef(onError)
+
+  useEffect(() => {
+    onFinalChunkRef.current = onFinalChunk
+    onFinalTranscriptRef.current = onFinalTranscript
+    onInterimTranscriptRef.current = onInterimTranscript
+    onErrorRef.current = onError
+  }, [onFinalChunk, onFinalTranscript, onInterimTranscript, onError])
 
   const stop = useCallback(() => {
+    keepListeningRef.current = false
     shouldSendRef.current = autoSendOnEnd
     recognitionRef.current?.stop()
   }, [autoSendOnEnd])
 
   const abort = useCallback(() => {
+    keepListeningRef.current = false
     shouldSendRef.current = false
     finalPartsRef.current = []
     recognitionRef.current?.abort()
     setListening(false)
   }, [])
 
-  const start = useCallback(() => {
-    if (!Ctor || listening) return
-
-    finalPartsRef.current = []
-    shouldSendRef.current = autoSendOnEnd
+  const startRecognition = useCallback(() => {
+    if (!Ctor) return
 
     const recognition = new Ctor()
     recognition.lang = lang
-    recognition.continuous = false
+    recognition.continuous = continuous
     recognition.interimResults = true
     recognition.maxAlternatives = 1
 
@@ -96,31 +114,48 @@ export function useSpeechRecognition({
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i]
         const text = result[0]?.transcript ?? ""
-        if (result.isFinal) finalPartsRef.current.push(text)
-        else interim += text
+        if (result.isFinal) {
+          const chunk = text.trim()
+          if (chunk) {
+            finalPartsRef.current.push(chunk)
+            onFinalChunkRef.current?.(chunk)
+          }
+        } else {
+          interim += text
+        }
       }
       const finals = finalPartsRef.current.join(" ").replace(/\s+/g, " ").trim()
       const preview = [finals, interim.trim()].filter(Boolean).join(" ").trim()
-      if (preview) onInterimTranscript?.(preview)
+      onInterimTranscriptRef.current?.(preview)
     }
 
     recognition.onerror = (event) => {
       if (event.error === "aborted") return
       const message = event.error === "not-allowed"
-        ? "Permissao do microfone negada. Libere o acesso nas configuracoes do navegador."
+        ? "Permissão do microfone negada. Libere o acesso nas configurações do navegador."
         : event.error === "no-speech"
           ? "Nenhuma fala detectada. Tente novamente."
-          : "Nao foi possivel capturar a voz."
-      onError?.(message)
+          : "Não foi possível capturar a voz."
+      onErrorRef.current?.(message)
+      keepListeningRef.current = false
       shouldSendRef.current = false
       setListening(false)
     }
 
     recognition.onend = () => {
+      if (keepListeningRef.current && continuous) {
+        try {
+          recognition.start()
+          return
+        } catch {
+          keepListeningRef.current = false
+        }
+      }
+
       setListening(false)
       const text = finalPartsRef.current.join(" ").replace(/\s+/g, " ").trim()
       finalPartsRef.current = []
-      if (shouldSendRef.current && text) onFinalTranscript?.(text)
+      if (shouldSendRef.current && text) onFinalTranscriptRef.current?.(text)
       shouldSendRef.current = false
     }
 
@@ -128,10 +163,19 @@ export function useSpeechRecognition({
     try {
       recognition.start()
     } catch {
-      onError?.("Nao foi possivel iniciar o microfone.")
+      onErrorRef.current?.("Não foi possível iniciar o microfone.")
+      keepListeningRef.current = false
       setListening(false)
     }
-  }, [Ctor, listening, lang, autoSendOnEnd, onFinalTranscript, onInterimTranscript, onError])
+  }, [Ctor, lang, continuous])
+
+  const start = useCallback(() => {
+    if (!Ctor || listening) return
+    finalPartsRef.current = []
+    shouldSendRef.current = autoSendOnEnd
+    keepListeningRef.current = true
+    startRecognition()
+  }, [Ctor, listening, autoSendOnEnd, startRecognition])
 
   const toggle = useCallback(() => {
     if (listening) stop()
@@ -139,6 +183,7 @@ export function useSpeechRecognition({
   }, [listening, start, stop])
 
   useEffect(() => () => {
+    keepListeningRef.current = false
     shouldSendRef.current = false
     recognitionRef.current?.abort()
   }, [])

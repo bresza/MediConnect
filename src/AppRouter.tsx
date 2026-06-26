@@ -27,6 +27,9 @@ import { pageFromPath, pathForPage } from "./utils/appRoutes"
 import { enrichPatientsWithVisits } from "./utils"
 import { isRemovedPatientPlaceholder, withoutRemovedPatientPlaceholders } from "./utils/removedPatient"
 import { buildAIApiContextFromAppState } from "./services/aiContext"
+import { createAppAIActions } from "./services/aiActions"
+import { PatientPortalVerifyError } from "./services/patients"
+import { resolveRememberedPatientId } from "./services/patientLinks"
 import { useAuth }          from "./contexts/authStore"
 import { usePatients }      from "./hooks/usePatients"
 import { useAppointments }  from "./hooks/useAppointments"
@@ -44,7 +47,7 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
   const { user, logout, clinicName } = useAuth()
 
   const {
-    patients, addPatient, addPatientWithPassword, createPatientAccess, resetPatientAccess, updatePatient, deletePatient,
+    patients, addPatient, addPatientWithPassword, createPatientAccess, updatePatient, deletePatient,
     error: patientsError, reload: reloadPatients,
   } = usePatients()
   const {
@@ -84,6 +87,7 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
       reloadMedicalData(),
       reloadFinancial(),
       reloadStaff(),
+      isPatient ? patientAIData.reload() : Promise.resolve(),
     ])
   }
 
@@ -140,16 +144,26 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
     doctorName?.toLowerCase().trim() === currentUser.name.toLowerCase().trim()
 
   // ── Filtros de dados por perfil ──────────────────────────────────
+  const rememberedPatientId = isPatient
+    ? resolveRememberedPatientId({
+      authUserId: currentUser.id,
+      name: currentUser.name,
+      email: currentUser.email,
+      cpf: currentUser.patientCpf,
+    })
+    : undefined
+  const resolvedPatientId = currentUser.patientId ?? rememberedPatientId
+
   const linkedPatient = isPatient
     ? patients.find((p) =>
-      (currentUser.patientId && p.id === currentUser.patientId) ||
+      (resolvedPatientId && p.id === resolvedPatientId) ||
       p.userId === currentUser.id ||
       (!!currentUser.patientCpf && onlyDigits(p.cpf) === currentUser.patientCpf) ||
       (!!currentUser.email && p.email?.toLowerCase().trim() === currentUser.email.toLowerCase().trim())) ?? null
     : null
   const fallbackPatient: Patient | null = isPatient && !linkedPatient
     ? {
-      id: currentUser.patientId ?? currentUser.id,
+      id: resolvedPatientId ?? currentUser.id,
       name: currentUser.name,
       cpf: currentUser.patientCpf ?? "",
       email: currentUser.email,
@@ -159,7 +173,7 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
     }
     : null
   const portalPatient = linkedPatient ?? fallbackPatient
-  const linkedPatientId = portalPatient?.id ?? currentUser.patientId ?? ""
+  const linkedPatientId = portalPatient?.id ?? resolvedPatientId ?? currentUser.patientId ?? ""
 
   // Médico vê apenas seus próprios agendamentos e pacientes vinculados
   const doctorAppts      = isDoctor
@@ -173,13 +187,13 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
     ? (portalPatient ? [portalPatient] : [])
     : isDoctor ? patients.filter((p) => doctorPatientIds!.has(p.id)) : patients
   const visibleAppointments  = isPatient
-    ? appointments.filter((a) => a.patientId === linkedPatientId)
+    ? patientAIData.appointments
     : doctorAppts
   const visiblePatients      = withoutRemovedPatientPlaceholders(
     enrichPatientsWithVisits(visiblePatientsRaw, visibleAppointments),
   )
   const visiblePrescriptions = isPatient
-    ? prescriptions.filter((p) => p.patientId === linkedPatientId)
+    ? patientAIData.prescriptions
     : isDoctor ? prescriptions.filter((p) => doctorPatientIds!.has(p.patientId)) : prescriptions
 
   const aiPatients = isPatient
@@ -200,7 +214,7 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
       : undefined,
   })
 
-  const dataErrors = [
+  const dataErrors = isPatient ? [] : [
     patientsError && `Pacientes: ${patientsError}`,
     appointmentsError && `Agenda: ${appointmentsError}`,
     medicalDataError && `Laudos/receitas: ${medicalDataError}`,
@@ -217,24 +231,25 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
 
   async function handlePatientBookAppointment(appointment: Omit<Appointment, "id">) {
     await createPatientAppointment(appointment, patientIdentity)
-    await reloadAppointments()
+    await patientAIData.reload()
     toast("Consulta agendada com sucesso.", "success")
   }
 
   async function handlePatientCancelAppointment(appointment: Appointment, reason: string) {
     await cancelPatientAppointment(appointment, patientIdentity, reason)
-    await reloadAppointments()
+    await patientAIData.reload()
     toast("Consulta cancelada com sucesso.", "success")
   }
 
   async function handlePatientUpdateAppointment(appointment: Appointment) {
     try {
-      const previous = appointments.find((item) => item.id === appointment.id)
+      const source = isPatient ? patientAIData.appointments : appointments
+      const previous = source.find((item) => item.id === appointment.id)
       if (!previous) {
         throw new Error("Consulta não encontrada para remarcação.")
       }
       await updatePatientAppointment(previous, appointment, patientIdentity)
-      await reloadAppointments()
+      await patientAIData.reload()
       toast("Consulta atualizada com sucesso.", "success")
     } catch (err) {
       toast(err instanceof Error ? err.message : "Não foi possível atualizar a consulta.", "error")
@@ -291,24 +306,44 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
     return created
   }
   async function handleAddPatientWithPassword(p: Omit<Patient, "id">, password: string) {
-    const created = await addPatientWithPassword(p, password)
-    toast(`Paciente ${created.name} cadastrado com acesso ao portal.`, "success")
-    return created
+    try {
+      const created = await addPatientWithPassword(p, password)
+      toast(`Paciente ${created.name} cadastrado com acesso ao portal.`, "success")
+      return created
+    } catch (err) {
+      await reloadPatients()
+      if (err instanceof PatientPortalVerifyError) {
+        toast(err.message, "error")
+        throw err
+      }
+      throw err
+    }
   }
   async function handleCreatePatientAccess(p: Patient, password: string) {
-    const saved = await createPatientAccess(p, password)
-    toast(`Acesso ao portal criado para ${saved.name}.`, "success")
-    return saved
+    try {
+      const saved = await createPatientAccess(p, password)
+      toast(`Acesso ao portal criado para ${saved.name}.`, "success")
+      return saved
+    } catch (err) {
+      if (err instanceof PatientPortalVerifyError) {
+        toast(err.message, "error")
+        return err.patient
+      }
+      throw err
+    }
   }
-  async function handleResetPatientAccess(p: Patient, password: string) {
-    const saved = await resetPatientAccess(p, password)
-    toast(`Senha do portal redefinida para ${saved.name}.`, "success")
-    return saved
-  }
-  // Define/redefine a senha do portal a partir da lista de pacientes.
-  // Se o paciente já tem conta (userId), recria com a nova senha; senão cria o acesso.
   async function handleSetPatientPassword(p: Patient, password: string) {
-    return p.userId ? resetPatientAccess(p, password) : createPatientAccess(p, password)
+    try {
+      const saved = await createPatientAccess(p, password)
+      toast(`Senha do portal redefinida para ${saved.name}.`, "success")
+      return saved
+    } catch (err) {
+      if (err instanceof PatientPortalVerifyError) {
+        toast(err.message, "error")
+        return err.patient
+      }
+      throw err
+    }
   }
   async function handleUpdatePatient(p: Patient) {
     if (isRemovedPatientPlaceholder(p)) {
@@ -327,6 +362,32 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
     await deletePatient(id)
     if (target) toast(`Paciente ${target.name} removido.`, "info")
   }
+
+  async function handleAIUpdateAppointment(next: Appointment) {
+    const previous = appointments.find((a) => a.id === next.id)
+    if (!previous) throw new Error("Consulta não encontrada.")
+    await handleStaffUpdateAppointment(previous, next)
+  }
+
+  const appAIActions = createAppAIActions({
+    role:             currentUser.role,
+    currentUser,
+    activePage,
+    clinicName:       clinicName ?? undefined,
+    patients:         visiblePatients,
+    appointments:     visibleAppointments,
+    staff:            isPatient ? [] : staff,
+    prescriptions:    visiblePrescriptions,
+    portalPatient,
+    navigate:         handleNavigate,
+    setPortalSection: setPatientPortalSection,
+    reloadAll,
+    addAppointment,
+    updateAppointment: handleAIUpdateAppointment,
+    bookPatientAppointment: isPatient ? handlePatientBookAppointment : undefined,
+    cancelPatientAppointment: isPatient ? handlePatientCancelAppointment : undefined,
+    addMedicalRecord,
+  })
 
   // ── Renderização por página ──────────────────────────────────────
   function renderPage() {
@@ -437,7 +498,6 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
             onAddPatient={handleAddPatient}
             onAddPatientWithPassword={handleAddPatientWithPassword}
             onCreatePatientAccess={handleCreatePatientAccess}
-            onResetPatientAccess={handleResetPatientAccess}
             onUpdatePatient={handleUpdatePatient}
             onNavigate={handleNavigate}
             // Secretária não vê campos clínicos (step 5)
@@ -566,6 +626,7 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
         currentUser={currentUser}
         clinicName={clinicName}
         apiContextSnapshot={aiApiContextSnapshot}
+        appActions={appAIActions}
       />
     </div>
   )

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Topbar } from "../../components/layout/Topbar/Topbar"
 import { Card } from "../../components/ui/Card/Card"
 import { Button } from "../../components/ui/Button/Button"
@@ -16,16 +16,28 @@ import {
   hasAtLeastTwoNames, isValidCpf, isValidEmail,
   sortByName, toTitleCase,
 } from "../../utils"
-import type { StaffMember, StaffRole, StaffStatus } from "../../types"
+import type { Gender, StaffMember, StaffRole, StaffStatus } from "../../types"
 import type { UseToastReturn } from "../../hooks/useToast"
 import type { UseStaffReturn } from "../../hooks/useStaff"
+import { getRoleLabel } from "../../utils/permissions"
 import { formatRecordStatus, RECORD_STATUS_OPTIONS } from "../../utils/statusLabels"
+import { useSpeechRecognition } from "../../hooks/useSpeechRecognition"
+import { isAIConfigured } from "../../services/ai"
+import {
+  getStaffVoiceSteps,
+  normalizeStaffVoiceField,
+  parseStaffVoiceLocal,
+  parseStaffVoiceWithAI,
+  type StaffVoiceFieldKey,
+  type StaffVoiceParseResult,
+} from "../../services/staffVoiceFill"
 import styles from "./Team.module.css"
 
 type TabId = StaffRole
 
 interface TeamProps {
   staff:    UseStaffReturn["staff"]
+  isLoading?: boolean
   onAdd:    UseStaffReturn["addStaff"]
   onUpdate: UseStaffReturn["updateStaff"]
   onDelete: UseStaffReturn["deleteStaff"]
@@ -37,6 +49,7 @@ interface StaffForm {
   name:            string
   email:           string
   phone:           string
+  gender:          "" | Gender
   status:          StaffStatus
   cpf:             string   // todos os perfis
   crmNum:          string   // médico
@@ -48,16 +61,23 @@ interface StaffForm {
 }
 
 const EMPTY_FORM: StaffForm = {
-  name: "", email: "", phone: "", status: "Active",
+  name: "", email: "", phone: "", gender: "", status: "Active",
   cpf: "", crmNum: "", crmUf: "", specialty: "", department: "",
   password: "", confirmPassword: "",
 }
+
+const GENDER_OPTIONS = [
+  { value: "Male", label: "Masculino" },
+  { value: "Female", label: "Feminino" },
+  { value: "Other", label: "Outro / não informar" },
+]
 
 function memberToForm(m: StaffMember): StaffForm {
   return {
     name: m.name,
     email: m.email,
     phone: formatPhoneBR(m.phone ?? ""),
+    gender: m.gender ?? "",
     status: m.status,
     cpf: formatCpfBR(m.cpf ?? ""),
     crmNum: crmDigits(m.crm),
@@ -143,7 +163,7 @@ function PasswordInput({ label, value, show, onToggle, onChange, error, placehol
 }
 
 // ─── Main component ───────────────────────────────────────────────
-export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: TeamProps) {
+export function Team({ staff, isLoading = false, onAdd, onUpdate, onDelete, toast, onRefresh }: TeamProps) {
   const [activeTab,     setActiveTab]     = useState<TabId>("doctor")
   const [search,        setSearch]        = useState("")
   const [modalOpen,     setModalOpen]     = useState(false)
@@ -154,7 +174,174 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: Tea
   const [isSaving,      setIsSaving]      = useState(false)
   const [showPass,      setShowPass]      = useState(false)
   const [showConfirm,   setShowConfirm]   = useState(false)
+  const [voiceGuided,   setVoiceGuided]   = useState(false)
+  const [voiceStepIndex, setVoiceStepIndex] = useState(0)
+  const [voicePreview,  setVoicePreview]  = useState("")
+  const [isVoiceApplying, setIsVoiceApplying] = useState(false)
+  const voiceLinesRef = useRef<{ field: StaffVoiceFieldKey; spoken: string }[]>([])
+  const voiceStepIndexRef = useRef(0)
   const saveLockRef = useRef(false)
+
+  const handleChange = useCallback((field: keyof StaffForm, value: string) => {
+    setForm((prev) => ({ ...prev, [field]: value }))
+    setErrors((prev) => ({ ...prev, [field]: undefined }))
+  }, [])
+
+  const voiceSteps = useMemo(() => getStaffVoiceSteps(activeTab), [activeTab])
+  voiceStepIndexRef.current = voiceStepIndex
+  const currentVoiceStep = voiceGuided ? voiceSteps[voiceStepIndex] : null
+  const aiAvailable = useMemo(() => isAIConfigured(), [])
+
+  const applyParsedToForm = useCallback((parsed: StaffVoiceParseResult) => {
+    if (parsed.name) handleChange("name", parsed.name)
+    if (parsed.email) handleChange("email", parsed.email)
+    if (parsed.phone) handleChange("phone", formatPhoneBR(parsed.phone))
+    if (parsed.gender) handleChange("gender", parsed.gender)
+    if (parsed.cpf) handleChange("cpf", formatCpfBR(parsed.cpf))
+    if (parsed.crmNum) handleChange("crmNum", onlyDigits(parsed.crmNum).slice(0, 7))
+    if (parsed.crmUf) handleChange("crmUf", parsed.crmUf.toUpperCase())
+    if (parsed.specialty) handleChange("specialty", parsed.specialty)
+    if (parsed.department) handleChange("department", parsed.department)
+    if (parsed.password) {
+      handleChange("password", parsed.password)
+      handleChange("confirmPassword", parsed.password)
+    }
+  }, [handleChange])
+
+  const startVoiceRef = useRef<() => void>(() => {})
+  const abortVoiceRef = useRef<() => void>(() => {})
+
+  const finishVoiceGuided = useCallback(async () => {
+    setIsVoiceApplying(true)
+    setVoicePreview("")
+    const role = activeTab
+    const local = parseStaffVoiceLocal(voiceLinesRef.current, role)
+    try {
+      const parsed = aiAvailable
+        ? await parseStaffVoiceWithAI({ lines: voiceLinesRef.current, role, localFallback: local })
+        : local
+      applyParsedToForm(parsed)
+      toast("Campos preenchidos por voz. Revise antes de salvar.", "success")
+    } catch {
+      applyParsedToForm(local)
+      toast("Campos preenchidos localmente. Revise antes de salvar.", "info")
+    } finally {
+      setIsVoiceApplying(false)
+      setVoiceGuided(false)
+      voiceStepIndexRef.current = 0
+      setVoiceStepIndex(0)
+      voiceLinesRef.current = []
+      abortVoiceRef.current()
+    }
+  }, [activeTab, aiAvailable, applyParsedToForm, toast])
+
+  const handleVoiceField = useCallback((transcript: string) => {
+    const stepIndex = voiceStepIndexRef.current
+    const step = voiceSteps[stepIndex]
+    if (!step) return
+
+    const spoken = transcript.trim()
+    if (!spoken) {
+      toast("Não entendi. Tente falar novamente.", "error")
+      startVoiceRef.current()
+      return
+    }
+
+    voiceLinesRef.current.push({ field: step.key, spoken })
+    const normalized = normalizeStaffVoiceField(step.key, spoken)
+
+    let applied = false
+    if (step.key === "gender") {
+      if (normalized) {
+        handleChange("gender", normalized as Gender)
+        applied = true
+      }
+    } else if (typeof normalized === "string" && normalized) {
+      if (step.key === "phone") handleChange("phone", formatPhoneBR(normalized))
+      else if (step.key === "cpf") handleChange("cpf", formatCpfBR(normalized))
+      else if (step.key === "password") {
+        handleChange("password", normalized)
+        handleChange("confirmPassword", normalized)
+      } else {
+        handleChange(step.key, normalized)
+      }
+      applied = true
+    }
+
+    if (!applied) {
+      voiceLinesRef.current.pop()
+      toast("Não entendi. Diga masculino, feminino ou outro.", "error")
+      startVoiceRef.current()
+      return
+    }
+
+    setVoicePreview("")
+    const nextIndex = stepIndex + 1
+    if (nextIndex >= voiceSteps.length) {
+      void finishVoiceGuided()
+      return
+    }
+    voiceStepIndexRef.current = nextIndex
+    setVoiceStepIndex(nextIndex)
+    window.setTimeout(() => startVoiceRef.current(), 350)
+  }, [voiceSteps, handleChange, finishVoiceGuided, toast])
+
+  const {
+    supported: voiceSupported,
+    listening: voiceListening,
+    start: startVoice,
+    stop: stopVoice,
+    abort: abortVoice,
+  } = useSpeechRecognition({
+    continuous: false,
+    autoSendOnEnd: true,
+    onFinalTranscript: handleVoiceField,
+    onInterimTranscript: setVoicePreview,
+    onError: (message) => toast(message, "error"),
+  })
+
+  startVoiceRef.current = startVoice
+  abortVoiceRef.current = abortVoice
+
+  function startVoiceGuided() {
+    voiceLinesRef.current = []
+    voiceStepIndexRef.current = 0
+    setVoiceStepIndex(0)
+    setVoicePreview("")
+    setVoiceGuided(true)
+    startVoice()
+  }
+
+  function cancelVoiceGuided() {
+    abortVoice()
+    setVoiceGuided(false)
+    voiceStepIndexRef.current = 0
+    setVoiceStepIndex(0)
+    setVoicePreview("")
+    voiceLinesRef.current = []
+  }
+
+  function skipVoiceField() {
+    stopVoice()
+    setVoicePreview("")
+    const nextIndex = voiceStepIndexRef.current + 1
+    if (nextIndex >= voiceSteps.length) {
+      void finishVoiceGuided()
+      return
+    }
+    voiceStepIndexRef.current = nextIndex
+    setVoiceStepIndex(nextIndex)
+    window.setTimeout(() => startVoiceRef.current(), 200)
+  }
+
+  function isVoiceFieldActive(key: StaffVoiceFieldKey): boolean {
+    return voiceGuided && currentVoiceStep?.key === key
+  }
+
+  useEffect(() => {
+    if (!modalOpen) cancelVoiceGuided()
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- reset ao fechar modal
+  }, [modalOpen])
 
   // Normaliza nomes (Title Case) e ordena alfabeticamente.
   const orderedStaff = useMemo(() => {
@@ -179,11 +366,6 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: Tea
   })
   const confirmTarget = orderedStaff.find((m) => m.id === confirmId)
 
-  const handleChange = useCallback((field: keyof StaffForm, value: string) => {
-    setForm((prev) => ({ ...prev, [field]: value }))
-    setErrors((prev) => ({ ...prev, [field]: undefined }))
-  }, [])
-
   function openCreate() {
     setEditingMember(null); setForm(EMPTY_FORM); setErrors({})
     setShowPass(false); setShowConfirm(false); setModalOpen(true)
@@ -194,7 +376,8 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: Tea
     setShowPass(false); setShowConfirm(false); setModalOpen(true)
   }
 
-  function validate(): boolean {
+  function validate(): { ok: boolean; firstError?: string } {
+    const role = editingMember?.role ?? activeTab
     const e: Partial<Record<keyof StaffForm, string>> = {}
     if (!form.name.trim())  e.name  = "Nome obrigatório"
     else if (!hasAtLeastTwoNames(form.name)) e.name = "Informe pelo menos dois nomes"
@@ -202,16 +385,17 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: Tea
     else if (!isValidEmail(form.email)) e.email = "E-mail inválido"
     if (!form.phone.trim()) e.phone = "Telefone obrigatório"
     else if (onlyDigits(form.phone).length !== 11) e.phone = "Telefone deve estar no formato (00)-00000-0000"
+    if (!form.gender) e.gender = "Sexo obrigatório"
     const cpfDigits = onlyDigits(form.cpf)
     if (!editingMember) {
       if (!cpfDigits) e.cpf = "CPF obrigatório"
       else if (cpfDigits.length !== 11) e.cpf = "CPF deve ter 11 dígitos"
       else if (!isValidCpf(cpfDigits)) e.cpf = "CPF inválido"
     }
-    if ((activeTab === "secretary" || activeTab === "manager") && !form.department.trim()) {
+    if (!editingMember && (role === "secretary" || role === "manager") && !form.department.trim()) {
       e.department = "Departamento obrigatório"
     }
-    if (activeTab === "doctor") {
+    if (role === "doctor") {
       const crmDigitsOnly = onlyDigits(form.crmNum)
       if (!crmDigitsOnly)             e.crmNum = "CRM obrigatório"
       else if (crmDigitsOnly.length < 4) e.crmNum = "CRM deve ter pelo menos 4 dígitos"
@@ -225,36 +409,45 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: Tea
       else if (form.password !== form.confirmPassword) e.confirmPassword = "Senhas não coincidem"
     }
     setErrors(e)
-    return Object.keys(e).length === 0
+    const firstError = Object.values(e)[0]
+    return { ok: Object.keys(e).length === 0, firstError }
   }
 
   async function handleSave() {
     if (saveLockRef.current) return
-    if (!validate() || isSaving) return
+    if (isSaving) return
+    const validation = validate()
+    if (!validation.ok) {
+      toast(validation.firstError ?? "Revise os campos destacados antes de salvar.", "error")
+      return
+    }
     saveLockRef.current = true
     setIsSaving(true)
     try {
+      const role = editingMember?.role ?? activeTab
       const cpfDigits   = onlyDigits(form.cpf)
       const phoneDigits = onlyDigits(form.phone)
       const crmNumDigits = onlyDigits(form.crmNum)
+      const department = form.department.trim() || editingMember?.department?.trim() || undefined
 
       const base = {
         name:       form.name.trim(),
         email:      form.email.trim(),
         phone:      phoneDigits,
+        gender:     form.gender || undefined,
         status:     form.status,
-        role:       activeTab,
-        cpf:        cpfDigits,
-        crm:        activeTab === "doctor" ? formatCrm(crmNumDigits, form.crmUf) : undefined,
-        specialty:  activeTab === "doctor" ? form.specialty : undefined,
-        department: activeTab !== "doctor" ? form.department.trim() : undefined,
+        role,
+        cpf:        cpfDigits || editingMember?.cpf?.replace(/\D/g, "") || undefined,
+        crm:        role === "doctor" ? formatCrm(crmNumDigits, form.crmUf) : undefined,
+        specialty:  role === "doctor" ? form.specialty : undefined,
+        department: role !== "doctor" ? department : undefined,
       }
 
       if (editingMember) {
         await onUpdate({ ...editingMember, ...base })
         toast(`${form.name} atualizado com sucesso.`, "success")
       } else {
-        const doctorExtra = activeTab === "doctor"
+        const doctorExtra = role === "doctor"
           ? { cpf: cpfDigits, crmNum: crmNumDigits, crmUf: form.crmUf, specialty: form.specialty }
           : undefined
         await onAdd(base, form.password, doctorExtra)
@@ -277,6 +470,7 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: Tea
   }
 
   const currentTab = TABS.find((t) => t.id === activeTab)!
+  const currentRoleLabel = getRoleLabel(activeTab, form.gender || undefined)
 
   return (
     <div>
@@ -316,7 +510,11 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: Tea
 
       {/* Table */}
       <Card>
-        {filtered.length === 0 ? (
+        {isLoading ? (
+          <div className={styles.empty}>
+            <p>Carregando equipe...</p>
+          </div>
+        ) : filtered.length === 0 ? (
           <div className={styles.empty}>
             <svg width="40" height="40" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
               <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />
@@ -343,6 +541,7 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: Tea
                         <div>
                           <p className={styles.memberName}>{member.name}</p>
                           <p className={styles.memberEmail}>{member.email}</p>
+                          <p className={styles.memberEmail}>{getRoleLabel(member.role, member.gender)}</p>
                         </div>
                       </div>
                     </td>
@@ -380,7 +579,7 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: Tea
 
       {/* Modal */}
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)}
-        title={editingMember ? "Editar profissional" : `Cadastrar ${currentTab.singular}`}
+        title={editingMember ? "Editar profissional" : `Cadastrar ${currentRoleLabel.toLowerCase()}`}
         subtitle={editingMember ? `Editando: ${editingMember.name}` : "Preencha os dados e defina a senha de acesso"}
         size="md"
         footer={
@@ -392,17 +591,76 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: Tea
           </>
         }
       >
+        {!editingMember && voiceSupported && (
+          <div className={styles.voicePanel}>
+            {!voiceGuided ? (
+              <>
+                <p className={styles.voicePanelText}>
+                  Fale os dados campo a campo. A IA interpreta e preenche o formulário.
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={startVoiceGuided}
+                  disabled={isVoiceApplying}
+                >
+                  Preencher por voz
+                </Button>
+              </>
+            ) : (
+              <>
+                <div className={styles.voicePanelHeader}>
+                  <span className={styles.voiceStepBadge}>
+                    {Math.min(voiceStepIndex + 1, voiceSteps.length)}/{voiceSteps.length}
+                  </span>
+                  <p className={styles.voicePrompt}>
+                    {isVoiceApplying ? "Interpretando com IA..." : currentVoiceStep?.prompt}
+                  </p>
+                </div>
+                {voicePreview && (
+                  <p className={styles.voicePreview}>Ouvindo: {voicePreview}</p>
+                )}
+                <div className={styles.voicePanelActions}>
+                  <button
+                    type="button"
+                    className={`${styles.voiceMicBtn} ${voiceListening ? styles.voiceMicBtnActive : ""}`}
+                    onClick={voiceListening ? stopVoice : startVoice}
+                    disabled={isVoiceApplying}
+                  >
+                    {voiceListening ? "Parar" : "Falar"}
+                  </button>
+                  <Button type="button" variant="ghost" size="sm" onClick={skipVoiceField} disabled={isVoiceApplying}>
+                    Pular campo
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={cancelVoiceGuided} disabled={isVoiceApplying}>
+                    Cancelar
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+        {!editingMember && !voiceSupported && (
+          <p className={styles.voiceUnsupported}>
+            Preenchimento por voz requer Chrome ou Edge com microfone liberado.
+          </p>
+        )}
+
         <div className={styles.formGrid}>
 
           {/* Dados pessoais */}
           <Section title="Dados pessoais">
             <div className={styles.grid2}>
               <Input label="Nome completo" value={form.name} onChange={(e) => handleChange("name", e.target.value)}
-                error={errors.name} required className={styles.colSpan2} />
+                error={errors.name} required className={`${styles.colSpan2} ${isVoiceFieldActive("name") ? styles.voiceFieldActive : ""}`} />
               <Input label="E-mail" type="email" value={form.email} onChange={(e) => handleChange("email", e.target.value)}
-                error={errors.email} required />
+                error={errors.email} required className={isVoiceFieldActive("email") ? styles.voiceFieldActive : undefined} />
               <Input label="Telefone" value={form.phone} onChange={(e) => handleChange("phone", formatPhoneBR(e.target.value))}
-                error={errors.phone} required placeholder="(00) 00000-0000" inputMode="tel" maxLength={15} />
+                error={errors.phone} required placeholder="(00) 00000-0000" inputMode="tel" maxLength={15}
+                className={isVoiceFieldActive("phone") ? styles.voiceFieldActive : undefined} />
+              <Select label="Sexo" value={form.gender} onChange={(e) => handleChange("gender", e.target.value)}
+                options={GENDER_OPTIONS} required error={errors.gender}
+                className={isVoiceFieldActive("gender") ? styles.voiceFieldActive : undefined} />
               <Select label="Status" value={form.status} onChange={(e) => handleChange("status", e.target.value)} options={[...RECORD_STATUS_OPTIONS]} />
             </div>
           </Section>
@@ -412,13 +670,17 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: Tea
             <Section title="Dados profissionais">
               <div className={styles.grid2}>
                 <Input label="CPF" value={form.cpf} onChange={(e) => handleChange("cpf", formatCpfBR(e.target.value))}
-                  error={errors.cpf} required placeholder="000.000.000-00" inputMode="numeric" maxLength={14} className={styles.colSpan2} />
+                  error={errors.cpf} required placeholder="000.000.000-00" inputMode="numeric" maxLength={14}
+                  className={`${styles.colSpan2} ${isVoiceFieldActive("cpf") ? styles.voiceFieldActive : ""}`} />
                 <Input label="Número CRM" value={form.crmNum} onChange={(e) => handleChange("crmNum", onlyDigits(e.target.value).slice(0, 7))}
-                  error={errors.crmNum} required placeholder="Ex: 123456" inputMode="numeric" maxLength={7} />
+                  error={errors.crmNum} required placeholder="Ex: 123456" inputMode="numeric" maxLength={7}
+                  className={isVoiceFieldActive("crmNum") ? styles.voiceFieldActive : undefined} />
                 <Select label="UF do CRM" value={form.crmUf} onChange={(e) => handleChange("crmUf", e.target.value)}
-                  options={UF_LIST} required error={errors.crmUf} />
+                  options={UF_LIST} required error={errors.crmUf}
+                  className={isVoiceFieldActive("crmUf") ? styles.voiceFieldActive : undefined} />
                 <Select label="Especialidade" value={form.specialty} onChange={(e) => handleChange("specialty", e.target.value)}
-                  options={SPECIALTIES} required className={styles.colSpan2} error={errors.specialty} />
+                  options={SPECIALTIES} required className={`${styles.colSpan2} ${isVoiceFieldActive("specialty") ? styles.voiceFieldActive : ""}`}
+                  error={errors.specialty} />
               </div>
             </Section>
           )}
@@ -428,9 +690,13 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: Tea
             <Section title="Dados profissionais">
               <div className={styles.grid2}>
                 <Input label="CPF" required value={form.cpf} onChange={(e) => handleChange("cpf", formatCpfBR(e.target.value))}
-                  error={errors.cpf} placeholder="000.000.000-00" inputMode="numeric" maxLength={14} />
+                  error={errors.cpf} placeholder="000.000.000-00" inputMode="numeric" maxLength={14}
+                  className={isVoiceFieldActive("cpf") ? styles.voiceFieldActive : undefined} />
                 <Input label="Departamento" value={form.department} onChange={(e) => handleChange("department", e.target.value)}
-                  placeholder={activeTab === "secretary" ? "Ex: Recepção" : "Ex: Gestão Geral"} />
+                  error={errors.department}
+                  required={!editingMember}
+                  placeholder={activeTab === "secretary" ? "Ex: Recepção" : "Ex: Gestão Geral"}
+                  className={isVoiceFieldActive("department") ? styles.voiceFieldActive : undefined} />
               </div>
             </Section>
           )}
@@ -442,9 +708,11 @@ export function Team({ staff, onAdd, onUpdate, onDelete, toast, onRefresh }: Tea
                 Defina a senha que o profissional usará para acessar o sistema.
               </p>
               <div className={styles.grid2}>
-                <PasswordInput label="Senha" value={form.password} show={showPass}
-                  onToggle={() => setShowPass((v) => !v)} onChange={(v) => handleChange("password", v)}
-                  error={errors.password} />
+                <div className={isVoiceFieldActive("password") ? styles.voiceFieldActive : undefined}>
+                  <PasswordInput label="Senha" value={form.password} show={showPass}
+                    onToggle={() => setShowPass((v) => !v)} onChange={(v) => handleChange("password", v)}
+                    error={errors.password} />
+                </div>
                 <PasswordInput label="Confirmar senha" value={form.confirmPassword} show={showConfirm}
                   onToggle={() => setShowConfirm((v) => !v)} onChange={(v) => handleChange("confirmPassword", v)}
                   error={errors.confirmPassword} placeholder="Repita a senha" />

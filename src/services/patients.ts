@@ -1,7 +1,15 @@
 import { ApiError, apiRequest, getApiUserId } from "./api"
+import { requestPasswordReset, verifyPatientCredentials } from "./auth"
+import {
+  fetchUserInfo,
+  isUuid,
+  patientFromUserInfo,
+  resolvePatientIdFromApi,
+} from "./userInfo"
 import { isRemovedPatientPlaceholder, REMOVED_PATIENT_CPF, REMOVED_PATIENT_EMAIL, REMOVED_PATIENT_NAME } from "../utils/removedPatient"
 import { isDataUrl, isRemotePhotoUrl, resolvePatientPhotoUrl, attachPatientPhotos, attachPatientPhoto, deletePatientPhotoFromStorage } from "./patientPhoto"
-import { rememberPatientLink } from "./patientLinks"
+import { rememberPatientLink, getAllRememberedPatientIds, resolveRememberedPatientId } from "./patientLinks"
+import { getStaffCreatedPatientIds, getStaffCreatedPatientSnapshots } from "./staffCreatedPatients"
 import type {
   Patient, Gender, PatientStatus, MaritalStatus,
   Ethnicity, CommunicationChannel, CommunicationFrequency,
@@ -55,6 +63,7 @@ interface ApiPatient {
 
 interface CreateUserWithPasswordResponse {
   success?: boolean
+  id?: string
   user?: {
     id: string
     email: string
@@ -74,6 +83,9 @@ interface ApiProfile {
   email?: string
   full_name?: string
   patient_id?: string
+  phone?: string
+  cpf?: string
+  birth_date?: string
 }
 
 export interface PatientIdentity {
@@ -82,6 +94,17 @@ export interface PatientIdentity {
   name?: string
   email?: string
   cpf?: string
+}
+
+/** Cadastro clínico ok, mas o teste de login com a senha informada falhou. */
+export class PatientPortalVerifyError extends Error {
+  readonly patient: Patient
+
+  constructor(message: string, patient: Patient) {
+    super(message)
+    this.name = "PatientPortalVerifyError"
+    this.patient = patient
+  }
 }
 
 function normalizeGenderFromApi(raw?: string | null): Gender | undefined {
@@ -136,6 +159,7 @@ function apiToPatient(api: ApiPatient): Patient {
     guardianCpf:            api.guardian_cpf,
     spouseName:             api.spouse_name,
     legacyCode:             api.legacy_code,
+    createdBy:              api.created_by,
   }
 }
 
@@ -201,6 +225,7 @@ function patientToFullApi(p: Omit<Patient, "id"> | Patient): Record<string, unkn
     spouse_name:             p.spouseName,
     legacy_code:             p.legacyCode,
     user_id:                 "userId" in p ? p.userId : undefined,
+    created_by:              "createdBy" in p && p.createdBy ? p.createdBy : undefined,
   })
 }
 
@@ -263,6 +288,15 @@ async function patchPatientWithFallback(id: string, patient: Patient): Promise<v
         return
       } catch (err) {
         lastErr = err
+        if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+          try {
+            await updatePatientViaEdgeFunction(id, body)
+            return
+          } catch (edgeErr) {
+            lastErr = edgeErr
+            if (!(edgeErr instanceof ApiError && edgeErr.status === 404)) throw edgeErr
+          }
+        }
         if (!isSchemaMismatch(err)) throw err
         const missing = extractMissingColumn(err)
         if (missing && missing in body) {
@@ -276,6 +310,29 @@ async function patchPatientWithFallback(id: string, patient: Patient): Promise<v
     }
   }
   throw lastErr instanceof Error ? lastErr : new Error("Não foi possível atualizar o paciente.")
+}
+
+async function updatePatientViaEdgeFunction(
+  patientId: string,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  const body = compactPayload({ patient_id: patientId, id: patientId, ...payload })
+  const paths = ["/functions/v1/update-patient", "/update-patient"] as const
+
+  let lastErr: unknown
+  for (const path of paths) {
+    try {
+      await apiRequest(path, { method: "POST", body, logErrors: false })
+      return
+    } catch (err) {
+      lastErr = err
+      if (err instanceof ApiError && err.status === 404) continue
+      throw err
+    }
+  }
+  throw lastErr instanceof Error
+    ? lastErr
+    : new Error("Endpoint update-patient não encontrado no Supabase.")
 }
 
 function patientToDirectApi(p: Omit<Patient, "id"> | Patient): Record<string, unknown> {
@@ -305,6 +362,13 @@ function extractCreatedPatient(data: unknown): ApiPatient | null {
   }
 
   return obj.patient ?? obj.data ?? (obj.id && obj.full_name ? obj as ApiPatient : null)
+}
+
+function stampPatientCreator(patient: Patient): Patient {
+  return {
+    ...patient,
+    createdBy: patient.createdBy ?? getApiUserId() ?? undefined,
+  }
 }
 
 async function findPatientByCpf(cpf: unknown): Promise<ApiPatient | null> {
@@ -354,7 +418,7 @@ async function createPatientDirect(
       },
     )
   } catch (err) {
-    if (!isSchemaMismatch(err)) throw err
+    if (!isSchemaMismatch(err)) throw formatPatientCreateError(err)
     created = await apiRequest<ApiPatient[] | ApiPatient | undefined>(
       "/rest/v1/patients",
       {
@@ -369,7 +433,14 @@ async function createPatientDirect(
   if (!raw) throw new Error("Paciente criado, mas a API não retornou o registro cadastrado.")
   const patient = apiToPatient(raw)
   rememberPatientLink({ patientId: patient.id, name: patient.name, email: patient.email, cpf: patient.cpf })
-  return updatePatient({ ...patient, ...data, id: patient.id })
+  const creatorId = patient.createdBy ?? getApiUserId() ?? undefined
+  const saved = await updatePatient({
+    ...patient,
+    ...data,
+    id: patient.id,
+    ...(creatorId ? { createdBy: creatorId } : {}),
+  })
+  return stampPatientCreator(saved)
 }
 
 async function createPatientUserWithPassword(
@@ -394,7 +465,50 @@ async function createPatientUser(payload: Record<string, unknown>): Promise<Crea
 }
 
 function createdUserId(response: CreateUserWithPasswordResponse): string {
-  return response.user?.id ?? response.user_id ?? ""
+  return response.user?.id ?? response.user_id ?? response.id ?? ""
+}
+
+/** E-mail da credencial Auth (perfil pode divergir da ficha). */
+async function authEmailForPortal(patient: Patient, formEmail: string): Promise<string> {
+  const userId = patient.userId?.trim()
+  if (!userId) return formEmail
+  const rows = await apiRequest<Array<{ email?: string }>>(
+    `/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=email&limit=1`,
+    { logErrors: false },
+  ).catch(() => [])
+  return rows?.[0]?.email?.trim().toLowerCase() || formEmail
+}
+
+async function finalizePatientPortalAccess(
+  patient: Patient,
+  userId: string,
+  email: string,
+): Promise<void> {
+  await ensurePatientRole(userId)
+  await ensurePatientProfile(userId, patient)
+  await linkPatientToUser(patient.id, userId, email)
+  await syncProfilePatientLink(userId, patient.id)
+  rememberPatientLink({
+    authUserId: userId,
+    patientId: patient.id,
+    name: patient.name,
+    email,
+    cpf: patient.cpf,
+  })
+}
+
+async function resolvePortalAuthUserId(
+  email: string,
+  patient: Patient,
+  response: CreateUserWithPasswordResponse | null,
+): Promise<string> {
+  const fromApi = response ? createdUserId(response) : ""
+  if (fromApi) return fromApi
+  if (patient.userId?.trim()) return patient.userId.trim()
+  const profile = await findProfileByEmail(email)
+  if (profile?.id) return profile.id
+  const row = await findPatientById(patient.id)
+  return row?.user_id?.trim() ?? ""
 }
 
 async function ensurePatientRole(userId: string): Promise<void> {
@@ -425,6 +539,7 @@ async function ensurePatientProfile(
     full_name: data.name.trim(),
     email: data.email?.trim(),
     phone: onlyDigits(data.phone),
+    patient_id: "id" in data && data.id ? data.id : undefined,
   })
 
   const minimalPayload = compactPayload({
@@ -432,6 +547,7 @@ async function ensurePatientProfile(
     full_name: data.name.trim(),
     email: data.email?.trim(),
     phone: onlyDigits(data.phone),
+    patient_id: "id" in data && data.id ? data.id : undefined,
   })
 
   try {
@@ -457,6 +573,16 @@ async function ensurePatientProfile(
   }
 }
 
+async function syncProfilePatientLink(userId: string, patientId: string): Promise<void> {
+  if (!userId || !patientId) return
+  await apiRequest(`/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`, {
+    method: "PATCH",
+    headers: { Prefer: "return=minimal" },
+    body: { patient_id: patientId },
+    logErrors: false,
+  }).catch(() => undefined)
+}
+
 async function findProfileByEmail(email?: string): Promise<ApiProfile | null> {
   if (!email) return null
   const normalized = email.trim().toLowerCase()
@@ -471,18 +597,83 @@ async function findProfileByEmail(email?: string): Promise<ApiProfile | null> {
   return null
 }
 
-async function resolveOrphanUserId(email: string, patient: Patient): Promise<string> {
-  if (patient.userId) return patient.userId
-  const profile = await findProfileByEmail(email)
-  if (profile?.id) return profile.id
-  const row = await findPatientByEmail(email)
-  if (row?.user_id) return row.user_id
-  return ""
-}
 
 function isAlreadyRegisteredError(err: unknown): boolean {
-  return err instanceof Error &&
-    /already been registered|already registered|email.*registered|email.*exists|usu[aá]rio.*existe|e-?mail.*cadastrado/i.test(err.message)
+  if (err instanceof ApiError) {
+    if (err.status === 409) return true
+    if (err.status === 400) {
+      return /already been registered|already registered|usu[aá]rio.*j[aá].*registrad|e-?mail.*j[aá].*cadastrad|e-?mail.*em uso|duplicate.*email/i.test(
+        err.message,
+      )
+    }
+    return false
+  }
+  if (!(err instanceof Error)) return false
+  return /already been registered|already registered|usu[aá]rio.*j[aá].*registrad|e-?mail.*j[aá].*cadastrad|e-?mail.*em uso/i.test(
+    err.message,
+  )
+}
+
+function errorMessageText(err: unknown): string {
+  if (err instanceof ApiError) return err.message
+  if (err instanceof Error) return err.message
+  return String(err)
+}
+
+function isDuplicateCpfError(err: unknown): boolean {
+  const msg = errorMessageText(err)
+  return /cpf.*j[aá].*cadastrad|j[aá].*cadastrad.*cpf|duplicate.*cpf|unique.*cpf/i.test(msg)
+}
+
+function formatPatientCreateError(err: unknown): Error {
+  if (isDuplicateCpfError(err)) {
+    return new Error(
+      "Este CPF já está cadastrado. Se um cadastro anterior falhou, remova o paciente na lista e tente novamente.",
+    )
+  }
+  if (isAlreadyRegisteredError(err)) {
+    return new Error(
+      "Este e-mail já tem conta no sistema. Use «Esqueci minha senha» na tela de entrada ou remova o cadastro incompleto na lista.",
+    )
+  }
+  const raw = errorMessageText(err)
+  try {
+    const parsed = JSON.parse(raw) as { error?: string }
+    if (parsed?.error) return new Error(parsed.error)
+  } catch {
+    /* não é JSON */
+  }
+  return err instanceof Error ? err : new Error("Não foi possível cadastrar o paciente.")
+}
+
+/** Remove ficha clínica incompleta sem exigir permissão de apagar conta Auth (secretária). */
+async function rollbackIncompletePatient(patientId: string): Promise<void> {
+  if (!patientId) return
+  try {
+    await apiRequest(`/rest/v1/patients?id=eq.${encodeURIComponent(patientId)}`, {
+      method: "PATCH",
+      headers: { Prefer: "return=minimal" },
+      body: { user_id: null },
+      logErrors: false,
+    })
+  } catch {
+    /* ignora */
+  }
+  await deletePatientDependencies(patientId).catch(() => undefined)
+  await deletePatientRecord(patientId, false).catch(() => undefined)
+}
+
+async function rollbackOrphanFromEdgeFailure(
+  cpf: string | undefined,
+  email: string | undefined,
+): Promise<void> {
+  if (!cpf) return
+  const row = await findPatientByCpf(cpf).catch(() => null)
+  if (!row?.id || row.user_id) return
+  const rowEmail = row.email?.trim().toLowerCase()
+  const wantedEmail = email?.trim().toLowerCase()
+  if (wantedEmail && rowEmail && rowEmail !== wantedEmail) return
+  await rollbackIncompletePatient(row.id)
 }
 
 async function findPatientById(id?: string): Promise<ApiPatient | null> {
@@ -597,30 +788,164 @@ function scorePatientMatch(api: ApiPatient, identity: PatientIdentity): number {
   return 0
 }
 
-async function syncResolvedPatientProfile(userId: string | undefined, patient: ApiPatient): Promise<void> {
-  if (!userId) return
-
-  await apiRequest(`/rest/v1/patients?id=eq.${encodeURIComponent(patient.id)}`, {
+async function patchPatientUserId(filter: string, userId: string): Promise<void> {
+  await apiRequest(`/rest/v1/patients?${filter}`, {
     method: "PATCH",
     headers: { Prefer: "return=minimal" },
     body: { user_id: userId },
     logErrors: false,
-  }).catch(() => undefined)
+  })
 }
 
-async function linkPatientToUser(patientId: string, userId: string): Promise<void> {
+/**
+ * Garante `patients.user_id = auth.uid()` para o portal passar na RLS de agendamentos.
+ * Tenta RPC (SECURITY DEFINER), depois PATCH por id e por e-mail do JWT.
+ * Retorna o patient_id confirmado.
+ */
+export async function syncPatientAuthLink(
+  patientId: string,
+  userId: string,
+  email?: string,
+): Promise<string | null> {
+  if (!patientId || !userId) return null
+
+  const currentUid = getApiUserId()
+  if (currentUid && currentUid === userId) {
+    const rpcId = await apiRequest<string | null>(
+      "/rest/v1/rpc/link_my_patient_record",
+      { method: "POST", body: {}, logErrors: false },
+    ).catch(() => null)
+    if (isUuid(rpcId)) return rpcId
+  }
+
+  const filters = [`id=eq.${encodeURIComponent(patientId)}`]
+  const normalizedEmail = email?.trim().toLowerCase()
+  if (normalizedEmail) {
+    filters.push(`email=eq.${encodeURIComponent(normalizedEmail)}`)
+  }
+
+  for (const filter of filters) {
+    try {
+      await patchPatientUserId(filter, userId)
+      return patientId
+    } catch (err) {
+      if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+        try {
+          await updatePatientViaEdgeFunction(patientId, { user_id: userId })
+          return patientId
+        } catch (edgeErr) {
+          if (!(edgeErr instanceof ApiError && edgeErr.status === 404)) throw edgeErr
+        }
+      }
+    }
+  }
+
+  return null
+}
+
+async function syncResolvedPatientProfile(
+  userId: string | undefined,
+  patient: ApiPatient,
+  email?: string,
+): Promise<void> {
+  if (!userId) return
+  await syncPatientAuthLink(patient.id, userId, email ?? patient.email).catch(() => undefined)
+}
+
+async function linkPatientToUser(patientId: string, userId: string, email?: string): Promise<void> {
   if (!patientId || !userId) return
-  await apiRequest(`/rest/v1/patients?id=eq.${encodeURIComponent(patientId)}`, {
-    method: "PATCH",
-    headers: { Prefer: "return=minimal" },
-    body: { user_id: userId },
-    logErrors: false,
-  }).catch((err) => {
+  await syncPatientAuthLink(patientId, userId, email).catch((err) => {
     console.warn("[patients] vinculo user_id do paciente falhou:", err)
   })
 }
 
+/**
+ * @deprecated Use resolvePatientIdFromApi (POST /user-info). Mantido como alias.
+ */
+export async function ensurePatientAuthLink(token?: string | null): Promise<string | null> {
+  return resolvePatientIdFromApi(token)
+}
+
+async function resolveTrustedPatientId(identity: PatientIdentity): Promise<string | null> {
+  const fromApi = await resolvePatientIdFromApi().catch(() => null)
+  const remembered = resolveRememberedPatientId(identity)
+  const fromIdentity = identity.patientId
+  const identityLooksLikeAuthUser = Boolean(
+    fromIdentity && identity.userId && fromIdentity === identity.userId,
+  )
+
+  const candidates = [
+    fromApi,
+    remembered,
+    identityLooksLikeAuthUser ? null : fromIdentity,
+  ].filter(isUuid)
+
+  return candidates[0] ?? null
+}
+
+function fallbackPatientFromIdentity(identity: PatientIdentity, patientId: string): Patient {
+  return {
+    id: patientId,
+    userId: identity.userId,
+    name: identity.name ?? "",
+    cpf: identity.cpf ?? "",
+    email: identity.email ?? "",
+    phone: "",
+    dob: "",
+    status: "Active",
+  }
+}
+
+function finalizeResolvedPatient(patient: Patient): Promise<Patient> {
+  rememberPatientLink({
+    patientId: patient.id,
+    name: patient.name,
+    email: patient.email,
+    cpf: patient.cpf,
+  })
+  return attachPatientPhoto(patient)
+}
+
+async function loadPatientRecordById(patientId: string): Promise<Patient | null> {
+  return getPatientById(patientId)
+}
+
+async function loadPatientFromTrustedId(
+  identity: PatientIdentity,
+  patientId: string,
+): Promise<Patient | null> {
+  const fromRest = await loadPatientRecordById(patientId)
+  if (fromRest) {
+    if (identity.userId) {
+      await syncPatientAuthLink(fromRest.id, identity.userId, identity.email ?? fromRest.email)
+    }
+    return fromRest
+  }
+
+  const info = await fetchUserInfo().catch(() => null)
+  const officialId = info?.patient?.id ?? info?.profile?.patient_id
+  if (info && officialId === patientId) {
+    const built = patientFromUserInfo(info, patientId, identity)
+    if (identity.userId) {
+      await syncPatientAuthLink(patientId, identity.userId, identity.email ?? built.email)
+    }
+    return built
+  }
+
+  const fallback = fallbackPatientFromIdentity(identity, patientId)
+  if (identity.userId) {
+    await syncPatientAuthLink(patientId, identity.userId, identity.email ?? fallback.email)
+  }
+  return fallback
+}
+
 export async function getPatientByIdentity(identity: PatientIdentity): Promise<Patient | null> {
+  const trustedId = await resolveTrustedPatientId(identity)
+  if (trustedId) {
+    const trustedPatient = await loadPatientFromTrustedId(identity, trustedId)
+    if (trustedPatient) return finalizeResolvedPatient(trustedPatient)
+  }
+
   const filters = patientIdentityFilters(identity)
   if (filters.length === 0) return null
 
@@ -647,15 +972,57 @@ export async function getPatientByIdentity(identity: PatientIdentity): Promise<P
     .sort((a, b) => b.score - a.score)[0]?.row
 
   if (!best) return null
-  await syncResolvedPatientProfile(identity.userId, best)
-  return attachPatientPhoto(apiToPatient(best))
+
+  if (identity.userId) {
+    await syncResolvedPatientProfile(identity.userId, best, identity.email)
+  }
+
+  const patient = apiToPatient({
+    ...best,
+    user_id: identity.userId ?? best.user_id,
+  })
+  return finalizeResolvedPatient(patient)
 }
 
-export async function getPatients(): Promise<Patient[]> {
-  // Tenta com `order=full_name.asc`; se o projeto Supabase nao tiver a
-  // coluna `full_name` (alguns esquemas usam `name` ou outro layout), o
-  // PostgREST devolve 400. Nesse caso refazemos sem o `order` para
-  // evitar erro no console e ordenamos client-side por nome.
+function mapApiPatients(rows: ApiPatient[]): Patient[] {
+  return rows
+    .map((row) => {
+      const patient = apiToPatient(row)
+      rememberPatientLink({ patientId: patient.id, name: patient.name, email: patient.email, cpf: patient.cpf })
+      return patient
+    })
+    .filter((p) => !isRemovedPatientPlaceholder(p))
+}
+
+function mergePatientsById(primary: Patient[], extra: Patient[]): Patient[] {
+  const map = new Map(primary.map((p) => [p.id, p]))
+  for (const patient of extra) {
+    if (!map.has(patient.id)) map.set(patient.id, patient)
+  }
+  return [...map.values()]
+}
+
+async function fetchPatientsCreatedBy(userId: string): Promise<Patient[]> {
+  const rows = await apiRequest<ApiPatient[]>(
+    `/rest/v1/patients?created_by=eq.${encodeURIComponent(userId)}&select=*`,
+    { logErrors: false },
+  ).catch(() => []) ?? []
+  return mapApiPatients(rows)
+}
+
+async function fetchTrackedStaffPatients(userId: string): Promise<Patient[]> {
+  const ids = getStaffCreatedPatientIds(userId)
+  if (ids.length === 0) return []
+
+  const fetched = await Promise.all(
+    ids.map((id) => getPatientById(id).catch(() => null)),
+  )
+  const fromApi = fetched.filter((p): p is Patient => Boolean(p))
+  const snapshots = getStaffCreatedPatientSnapshots(userId)
+  return mergePatientsById(snapshots, fromApi)
+}
+
+async function fetchPatientsList(): Promise<Patient[]> {
   let data: ApiPatient[] | null = null
   try {
     data = await apiRequest<ApiPatient[]>(
@@ -669,14 +1036,181 @@ export async function getPatients(): Promise<Patient[]> {
       throw err
     }
   }
-  const patients = (data ?? [])
-    .map((row) => {
-      const patient = apiToPatient(row)
-      rememberPatientLink({ patientId: patient.id, name: patient.name, email: patient.email, cpf: patient.cpf })
-      return patient
+  return mapApiPatients(data ?? [])
+}
+
+async function fetchLinkedPatientFallback(existing: Patient[]): Promise<Patient[]> {
+  const existingIds = new Set(existing.map((p) => p.id))
+  const missingIds = getAllRememberedPatientIds()
+    .filter((id) => !existingIds.has(id))
+    .slice(0, 40)
+  if (missingIds.length === 0) return []
+
+  const fetched = await Promise.all(
+    missingIds.map((id) => getPatientById(id).catch(() => null)),
+  )
+  return fetched.filter((p): p is Patient => Boolean(p))
+}
+
+async function fetchProfilesByUserIds(userIds: string[]): Promise<ApiProfile[]> {
+  if (userIds.length === 0) return []
+  const batchSize = 25
+  const profiles: ApiProfile[] = []
+
+  for (let i = 0; i < userIds.length; i += batchSize) {
+    const batch = userIds.slice(i, i + batchSize)
+    const rows = await apiRequest<ApiProfile[]>(
+      `/rest/v1/profiles?id=in.(${batch.map(encodeURIComponent).join(",")})&select=id,full_name,email,phone,cpf,patient_id,birth_date`,
+      { logErrors: false },
+    ).catch(() => []) ?? []
+    profiles.push(...rows)
+  }
+
+  return profiles
+}
+
+async function fetchPatientRoleUserIds(): Promise<string[]> {
+  const queries = [
+    "/rest/v1/user_roles?role=eq.paciente&select=user_id",
+    "/rest/v1/user_roles?role=eq.patient&select=user_id",
+    "/rest/v1/user_roles?role=eq.Paciente&select=user_id",
+  ]
+  const ids = new Set<string>()
+  for (const path of queries) {
+    const rows = await apiRequest<Array<{ user_id: string }>>(path, { logErrors: false }).catch(() => []) ?? []
+    for (const row of rows) {
+      if (row.user_id) ids.add(row.user_id)
+    }
+  }
+  return [...ids]
+}
+
+function profileToPatientEntry(profile: ApiProfile, patientId: string): Patient {
+  return {
+    id: patientId,
+    userId: profile.id,
+    name: (profile.full_name ?? "").trim() || profile.email || "Paciente",
+    email: profile.email,
+    phone: profile.phone ?? "",
+    cpf: onlyDigits(profile.cpf) ?? "",
+    dob: profile.birth_date ?? "",
+    status: "Active",
+  }
+}
+
+function findPatientInList(list: Patient[], profile: ApiProfile): Patient | undefined {
+  const email = profile.email?.trim().toLowerCase()
+  if (email) {
+    const byEmail = list.find((p) => p.email?.trim().toLowerCase() === email)
+    if (byEmail) return byEmail
+  }
+  const byUser = list.find((p) => p.userId === profile.id)
+  if (byUser) return byUser
+  if (profile.patient_id) {
+    return list.find((p) => p.id === profile.patient_id)
+  }
+  return undefined
+}
+
+async function resolvePatientIdFromProfile(profile: ApiProfile): Promise<string | null> {
+  if (profile.patient_id) return profile.patient_id
+
+  const remembered = resolveRememberedPatientId({
+    email: profile.email,
+    name: profile.full_name,
+    cpf: profile.cpf,
+  })
+  if (remembered) return remembered
+
+  const byEmail = profile.email ? await findPatientByEmail(profile.email).catch(() => null) : null
+  if (byEmail?.id) return byEmail.id
+
+  const byUser = await findPatientByUserId(profile.id)
+  if (byUser?.id) return byUser.id
+
+  return null
+}
+
+/** Mescla/enriquece a lista com contas de portal (profiles + user_roles). */
+async function mergePatientsWithPortalProfiles(list: Patient[]): Promise<Patient[]> {
+  const roleUserIds = await fetchPatientRoleUserIds()
+  if (roleUserIds.length === 0) return list
+
+  const profiles = await fetchProfilesByUserIds(roleUserIds)
+  if (profiles.length === 0) return list
+
+  const merged = list.map((p) => ({ ...p }))
+  const knownIds = () => new Set(merged.map((p) => p.id))
+
+  for (const profile of profiles) {
+    const profileName = (profile.full_name ?? "").trim()
+    const existing = findPatientInList(merged, profile)
+
+    if (existing) {
+      const idx = merged.findIndex((p) => p.id === existing.id)
+      if (idx < 0) continue
+      const current = merged[idx]
+      const nextName = profileName || current.name
+      merged[idx] = {
+        ...current,
+        name: nextName,
+        userId: current.userId ?? profile.id,
+        email: current.email ?? profile.email,
+        phone: current.phone || profile.phone || "",
+        cpf: current.cpf || onlyDigits(profile.cpf) || "",
+        dob: current.dob || profile.birth_date || "",
+      }
+      if (profileName) {
+        rememberPatientLink({
+          patientId: current.id,
+          name: nextName,
+          email: current.email ?? profile.email,
+          cpf: current.cpf,
+        })
+      }
+      if (!profile.patient_id) void syncProfilePatientLink(profile.id, current.id)
+      continue
+    }
+
+    const resolvedId = await resolvePatientIdFromProfile(profile)
+    const patientId = resolvedId ?? profile.id
+    if (knownIds().has(patientId)) continue
+
+    const row = resolvedId ? await findPatientById(resolvedId).catch(() => null) : null
+    if (row) {
+      merged.push(apiToPatient(row))
+    } else {
+      merged.push(profileToPatientEntry(profile, patientId))
+    }
+
+    rememberPatientLink({
+      patientId,
+      name: profileName || profile.email || "Paciente",
+      email: profile.email,
+      cpf: profile.cpf,
     })
-    .filter((p) => !isRemovedPatientPlaceholder(p))
-  return attachPatientPhotos(patients)
+    if (resolvedId && !profile.patient_id) void syncProfilePatientLink(profile.id, resolvedId)
+  }
+
+  return merged.filter((p) => !isRemovedPatientPlaceholder(p))
+}
+
+export async function getPatients(): Promise<Patient[]> {
+  const primary = await fetchPatientsList()
+  const userId = getApiUserId()
+
+  let merged = primary
+  if (userId) {
+    const [createdByMe, tracked, linkedFallback] = await Promise.all([
+      fetchPatientsCreatedBy(userId).catch(() => [] as Patient[]),
+      fetchTrackedStaffPatients(userId),
+      fetchLinkedPatientFallback(primary).catch(() => [] as Patient[]),
+    ])
+    merged = mergePatientsById(primary, [...createdByMe, ...tracked, ...linkedFallback])
+  }
+
+  merged = await mergePatientsWithPortalProfiles(merged).catch(() => merged)
+  return attachPatientPhotos(merged)
 }
 
 export async function getPatientById(id: string): Promise<Patient | null> {
@@ -724,10 +1258,26 @@ export async function createPatient(
 
     const raw = extractCreatedPatient(created) ?? await findPatientByCpf(payload.cpf)
     if (!raw) throw new Error("Paciente criado, mas a API não retornou o registro cadastrado.")
-    return updatePatient({ ...apiToPatient(raw), ...data, id: raw.id })
+    const mapped = apiToPatient(raw)
+    const creatorId = mapped.createdBy ?? getApiUserId() ?? undefined
+    const saved = await updatePatient({
+      ...mapped,
+      ...data,
+      id: raw.id,
+      ...(creatorId ? { createdBy: creatorId } : {}),
+    })
+    return stampPatientCreator(saved)
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) {
       return createPatientDirect(data)
+    }
+    // create-patient pode gravar a ficha e falhar ao criar a conta Auth (500/400).
+    // Remove o registro órfão para não poluir a lista nem bloquear nova tentativa.
+    if (err instanceof ApiError && (err.status === 500 || err.status === 400 || err.status === 409)) {
+      await rollbackOrphanFromEdgeFailure(
+        typeof payload.cpf === "string" ? payload.cpf : onlyDigits(data.cpf),
+        typeof payload.email === "string" ? payload.email : data.email,
+      )
     }
     // O endpoint create-patient também tenta criar a conta de auth e falha
     // quando o e-mail já possui login (inclusive contas órfãs de cadastros
@@ -739,7 +1289,7 @@ export async function createPatient(
       }
       return createPatientDirect(data)
     }
-    throw err
+    throw formatPatientCreateError(err)
   }
 }
 
@@ -769,23 +1319,29 @@ export async function createPatientWithPassword(
 ): Promise<Patient> {
   if (!password.trim()) throw new Error("Senha obrigatória para criar acesso do paciente.")
   if (password.trim().length < 6) throw new Error("A senha deve ter pelo menos 6 caracteres.")
-  const created = await createPatient(data)
+  // Só a ficha clínica via REST — o endpoint create-patient também cria Auth e,
+  // se falhar no meio, deixa pacientes órfãos na lista (e-mail/CPF já existentes).
+  let created: Patient
+  try {
+    created = await createPatientDirect(data)
+  } catch (err) {
+    throw formatPatientCreateError(err)
+  }
   try {
     return await createPatientPortalAccess(created, password)
   } catch (err) {
-    // Falha ao criar o acesso: desfaz o paciente recém-criado para não deixar
-    // registros órfãos/duplicados, e propaga o erro claro.
-    await deletePatient(created.id).catch(() => undefined)
+    // Falha ao criar o acesso: remove a ficha recém-criada (sem delete-user / gestor).
+    await rollbackIncompletePatient(created.id)
     if (err instanceof OrphanAuthAccountError) {
       throw new Error(
         `${err.message} Você também pode salvar o paciente sem marcar "Criar acesso ao portal".`,
       )
     }
-    throw err
+    if (err instanceof PatientPortalVerifyError) throw err
+    throw formatPatientCreateError(err)
   }
 }
 
-const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
 async function findPatientByUserId(userId?: string): Promise<ApiPatient | null> {
   if (!userId) return null
@@ -796,23 +1352,62 @@ async function findPatientByUserId(userId?: string): Promise<ApiPatient | null> 
   return rows?.[0] ?? null
 }
 
-async function createPatientUserWithRetry(
-  payload: Record<string, unknown>,
-  attempts = 4,
-): Promise<string> {
-  let lastErr: unknown = null
-  for (let i = 0; i < attempts; i++) {
+
+async function emailsForPortalLoginCheck(
+  patient: Patient,
+  formEmail: string,
+  userId: string,
+): Promise<string[]> {
+  const out = new Set<string>()
+  if (formEmail) out.add(formEmail.trim().toLowerCase())
+  if (userId) {
+    const rows = await apiRequest<Array<{ email?: string }>>(
+      `/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=email&limit=1`,
+      { logErrors: false },
+    ).catch(() => [])
+    const profileEmail = rows?.[0]?.email?.trim().toLowerCase()
+    if (profileEmail) out.add(profileEmail)
+  }
+  const profile = await findProfileByEmail(formEmail)
+  if (profile?.email) out.add(profile.email.trim().toLowerCase())
+  const row = await findPatientById(patient.id)
+  if (row?.email) out.add(row.email.trim().toLowerCase())
+  return [...out]
+}
+
+async function sendPortalPasswordRecovery(emails: string[]): Promise<string> {
+  const primary = emails[0]?.trim()
+  if (primary) {
     try {
-      return createdUserId(await createPatientUser(payload))
-    } catch (err) {
-      lastErr = err
-      if (!isAlreadyRegisteredError(err)) throw err
-      await delay(1000)
+      await requestPasswordReset(primary)
+      return `Enviamos um link para ${primary} redefinir a senha (verifique spam).`
+    } catch {
+      /* evita várias chamadas (429) */
     }
   }
-  throw lastErr instanceof Error
-    ? lastErr
-    : new Error("Não foi possível criar o acesso do paciente.")
+  return "Use «Esqueci minha senha» na tela de entrada para redefinir o acesso."
+}
+
+async function assertPortalPasswordWorks(
+  patient: Patient,
+  formEmail: string,
+  userId: string,
+  password: string,
+  hadExistingAccount: boolean,
+): Promise<void> {
+  const emails = await emailsForPortalLoginCheck(patient, formEmail, userId)
+  for (let attempt = 0; attempt < 3; attempt++) {
+    for (const addr of emails) {
+      if (await verifyPatientCredentials(addr, password)) return
+    }
+    if (attempt < 2) await new Promise((r) => setTimeout(r, 500))
+  }
+
+  const recovery = await sendPortalPasswordRecovery(emails)
+  const message = hadExistingAccount
+    ? "Este e-mail já tem conta e a senha não pôde ser definida da secretária. " + recovery
+    : "Paciente salvo na clínica, mas o login com esta senha não foi confirmado. " + recovery
+  throw new PatientPortalVerifyError(message, patient)
 }
 
 export async function createPatientPortalAccess(
@@ -825,138 +1420,92 @@ export async function createPatientPortalAccess(
     throw new Error("CPF do paciente é obrigatório (11 dígitos) para criar o acesso ao portal.")
   }
 
-  const email = String(base.email ?? "").trim().toLowerCase()
-  const payload = {
-    email,
-    password:   password.trim(),
-    full_name:  String(base.full_name ?? patient.name).trim(),
-    cpf,
-    phone:      base.phone_mobile,
-    role:       "paciente",
-    patient_id: patient.id,
+  const normalizedPassword = password.trim()
+  if (!normalizedPassword) throw new Error("Senha obrigatória para criar acesso do paciente.")
+  if (normalizedPassword.length < 6) throw new Error("A senha deve ter pelo menos 6 caracteres.")
+
+  const formEmail = String(base.email ?? patient.email ?? "").trim().toLowerCase()
+  if (!formEmail) throw new Error("E-mail obrigatório para criar acesso do paciente.")
+  const authEmail = await authEmailForPortal(patient, formEmail)
+
+  const phoneMobile = onlyDigits(patient.phone) || String(base.phone_mobile ?? "")
+  if (!/^\d{10,11}$/.test(phoneMobile)) {
+    throw new Error("Celular é obrigatório (10 ou 11 dígitos) para criar o acesso do portal.")
   }
 
-  if (!payload.email) throw new Error("E-mail obrigatório para criar acesso do paciente.")
-  if (!payload.password) throw new Error("Senha obrigatória para criar acesso do paciente.")
-  if (payload.password.length < 6) throw new Error("A senha deve ter pelo menos 6 caracteres.")
+  const buildPayload = (emailForAuth: string): Record<string, unknown> => {
+    const body: Record<string, unknown> = {
+      ...base,
+      email: emailForAuth,
+      patient_id: patient.id,
+      password: normalizedPassword,
+      role: "paciente",
+      create_patient_record: false,
+      phone: phoneMobile,
+      phone_mobile: phoneMobile,
+    }
+    if (typeof window !== "undefined") {
+      body.redirect_url = window.location.origin
+    }
+    return body
+  }
 
-  let userId = ""
+  let response: CreateUserWithPasswordResponse | null = null
+  let hadExistingAccount = false
   try {
-    userId = createdUserId(await createPatientUser(payload))
+    response = await createPatientUser(buildPayload(formEmail))
   } catch (err) {
     if (!isAlreadyRegisteredError(err)) throw err
-
-    // O e-mail já tem conta de login. Como a unicidade de e-mail entre pacientes
-    // é validada antes, essa conta é necessariamente órfã (de um cadastro
-    // removido). Para definir a senha escolhida sem depender de e-mail,
-    // removemos a conta órfã e a recriamos já com a nova senha.
-    const orphanId = await resolveOrphanUserId(email, patient)
-    if (!orphanId) throw new OrphanAuthAccountError(email)
-
-    // Segurança: nunca remover uma conta vinculada a OUTRO paciente real.
-    const linked = await findPatientByUserId(orphanId)
-    if (linked && linked.id !== patient.id) {
-      throw new Error(
-        `O e-mail ${email} já pertence a outro paciente com acesso ao portal. Use outro e-mail.`,
-      )
+    hadExistingAccount = true
+    if (authEmail !== formEmail) {
+      try {
+        response = await createPatientUser(buildPayload(authEmail))
+        hadExistingAccount = false
+      } catch (retryErr) {
+        if (!isAlreadyRegisteredError(retryErr)) throw retryErr
+      }
     }
-
-    try {
-      await deletePatientAuthUser(orphanId)
-    } catch {
-      throw new OrphanAuthAccountError(email)
+    if (!response) {
+      try {
+        response = await createPatientUser({
+          patient_id: patient.id,
+          email: authEmail,
+          password: normalizedPassword,
+          role: "paciente",
+          create_patient_record: false,
+        })
+      } catch {
+        /* mantém hadExistingAccount */
+      }
     }
-    await delay(1000)
-    userId = await createPatientUserWithRetry(payload)
   }
 
-  if (!userId) throw new Error("Não foi possível criar o acesso do paciente.")
+  if (!response && hadExistingAccount) {
+    throw new Error(
+      "Este e-mail já tem conta no sistema. Use «Esqueci minha senha» na tela de entrada para redefinir o acesso.",
+    )
+  }
+  if (!response) {
+    throw new Error("Não foi possível criar o acesso do paciente. Verifique os dados e tente novamente.")
+  }
 
-  await ensurePatientRole(userId)
-  await ensurePatientProfile(userId, patient)
-  await linkPatientToUser(patient.id, userId)
+  const userId = createdUserId(response) || (await resolvePortalAuthUserId(formEmail, patient, response))
+  if (!userId) {
+    throw new Error(response.message || "Usuário paciente não foi criado pela API.")
+  }
+
+  await finalizePatientPortalAccess(patient, userId, formEmail)
+  await assertPortalPasswordWorks(patient, formEmail, userId, normalizedPassword, hadExistingAccount)
 
   return updatePatient({ ...patient, userId })
 }
 
-function patientToCreatableData(patient: Patient): Omit<Patient, "id"> {
-  // Remove campos que não devem ser reenviados na recriação (id/userId/datas
-  // de auditoria) preservando todos os dados demográficos do paciente.
-  const { id: _id, userId: _userId, ...rest } = patient
-  void _id; void _userId
-  return { ...rest }
-}
-
-/**
- * Define uma nova senha de portal para o paciente SEM depender de e-mail.
- *
- * O backend compartilhado não expõe endpoint admin de "set password" e o
- * `delete-user` remove o paciente junto com a conta de auth. Portanto, para
- * trocar a senha de uma conta já existente, recriamos o registro do paciente
- * (mesmos dados) e a conta de auth já com a nova senha. Isso mantém o paciente
- * visível na lista e com uma senha conhecida.
- *
- * Atenção: como o registro é recriado, ele recebe um novo identificador. Dados
- * históricos vinculados ao identificador antigo (consultas/laudos anteriores)
- * não são transferidos automaticamente.
- */
+/** Redefine senha e revincula o portal sem apagar o cadastro clínico (secretária pode usar). */
 export async function resetPatientPortalPassword(
   patient: Patient,
   newPassword: string,
 ): Promise<Patient> {
-  const pwd = newPassword.trim()
-  if (pwd.length < 6) throw new Error("A senha deve ter pelo menos 6 caracteres.")
-
-  const base = patientToApi(patient)
-  const email = String(base.email ?? "").trim().toLowerCase()
-  if (!email) throw new Error("E-mail obrigatório para redefinir o acesso do paciente.")
-  const cpf = onlyDigits(patient.cpf)
-  if (!cpf || cpf.length !== 11) {
-    throw new Error("CPF do paciente é obrigatório (11 dígitos) para redefinir o acesso.")
-  }
-
-  const existingUserId = await resolveOrphanUserId(email, patient)
-
-  // Snapshot dos dados do paciente ANTES de remover (o delete-user apaga o
-  // registro do paciente junto com a conta de auth).
-  const snapshot = patientToCreatableData(patient)
-
-  // Remove a conta de auth atual (e, no backend, o paciente vinculado).
-  if (existingUserId) {
-    try {
-      await deletePatientAuthUser(existingUserId)
-    } catch {
-      throw new Error(
-        "Não foi possível remover a conta atual do paciente para redefinir a senha. " +
-        "Verifique se você tem permissão de gestor/administrador e tente novamente.",
-      )
-    }
-    // Aguarda a remoção propagar antes de recriar com o mesmo e-mail/CPF.
-    await delay(1000)
-  }
-
-  // Recria o registro do paciente já com a conta de portal e a nova senha.
-  // Tenta algumas vezes enquanto o backend ainda reportar e-mail "registrado".
-  let lastErr: unknown = null
-  for (let attempt = 0; attempt < 4; attempt++) {
-    try {
-      return await createPatientWithPassword(snapshot, pwd)
-    } catch (err) {
-      lastErr = err
-      // E-mail ainda consta como registrado (remoção não propagou). Tenta de novo.
-      if (isAlreadyRegisteredError(err)) {
-        await delay(1200)
-        continue
-      }
-      throw err
-    }
-  }
-
-  throw new Error(
-    lastErr instanceof Error
-      ? `Não foi possível concluir a redefinição: ${lastErr.message}`
-      : "Não foi possível concluir a redefinição da senha. Tente novamente em instantes.",
-  )
+  return createPatientPortalAccess(patient, newPassword)
 }
 
 async function persistPatientPhoto(patient: Patient): Promise<Patient> {

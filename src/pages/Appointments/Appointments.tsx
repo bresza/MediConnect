@@ -950,6 +950,11 @@ export function Appointments({
             Visualização da sua agenda — agendamentos são feitos pela secretaria ou pelo paciente
           </span>
         )}
+        {isSecretary && canBook && activeTab === "calendar" && (
+          <span className={styles.managerHint}>
+            Clique em um horário livre no calendário ou use «Novo agendamento» para reservar a vaga
+          </span>
+        )}
       </div>
 
       {activeTab === "waitlist" ? (

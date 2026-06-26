@@ -1,0 +1,42 @@
+/* ── Cross-cutting responsive utilities ───────────────────────── */
+
+.tableScroll {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+/* Coarse pointers (phones, tablets): comfortable form controls */
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    min-height: var(--touch-min, 44px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Ultra-wide displays (TV, projector, 4K) */
+@media (min-width: 1920px) {
+  :root {
+    --content-max: min(100%, 1760px);
+  }
+}
+
+@media (min-width: 2560px) {
+  :root {
+    --content-max: min(100%, 1920px);
+  }
+}

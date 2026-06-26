@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { getReports } from "../../services/domain"
 import type { Report } from "../../types"
 import { Avatar } from "../../components/ui/Avatar/Avatar"
@@ -113,14 +113,8 @@ export function Dashboard({ patients, appointments, currentUser, onNavigate, onR
     .filter((a) => a.date === todayKey())
     .sort((a, b) => a.time.localeCompare(b.time))
 
-  const visiblePatientIds = isDoctor
-    ? new Set(visibleAppointments.map((a) => a.patientId))
-    : null
   const visiblePatients = sortByName(
-    (isDoctor
-      ? patients.filter((p) => visiblePatientIds!.has(p.id))
-      : patients
-    ).map((p) => ({ ...p, name: toTitleCase(p.name) })),
+    patients.map((p) => ({ ...p, name: toTitleCase(p.name) })),
     (p) => p.name,
   )
 
@@ -137,6 +131,37 @@ export function Dashboard({ patients, appointments, currentUser, onNavigate, onR
   const confirmed = visibleAppointments.filter((a) => a.status === "confirmed").length
   const total     = visibleAppointments.filter((a) => a.status !== "blocked").length
   const rate      = total > 0 ? Math.round((confirmed / total) * 100) : 0
+
+  const noShowAlerts = useMemo(() => {
+    const history = new Map<string, { name: string; misses: number; total: number }>()
+    for (const appointment of visibleAppointments) {
+      if (appointment.status === "blocked") continue
+      const key = appointment.patientId || appointment.patientName
+      const entry = history.get(key) ?? { name: appointment.patientName, misses: 0, total: 0 }
+      entry.total += 1
+      if (appointment.status === "absent" || appointment.status === "cancelled") entry.misses += 1
+      history.set(key, entry)
+    }
+
+    const riskyPatients = [...history.values()]
+      .filter((entry) => entry.total >= 2 && entry.misses / entry.total >= 0.4)
+      .sort((a, b) => (b.misses / b.total) - (a.misses / a.total))
+
+    const todayRisk = todayAppointments
+      .map((appointment) => {
+        const key = appointment.patientId || appointment.patientName
+        const entry = history.get(key)
+        if (!entry || entry.total < 2 || entry.misses / entry.total < 0.4) return null
+        return {
+          patientName: appointment.patientName,
+          time: appointment.time,
+          riskPct: Math.round((entry.misses / entry.total) * 100),
+        }
+      })
+      .filter((item): item is NonNullable<typeof item> => Boolean(item))
+
+    return { riskyPatients, todayRisk }
+  }, [visibleAppointments, todayAppointments])
 
   const statValues: Record<string, string | number> = {
     "Pacientes":          visiblePatients.length,
@@ -163,6 +188,27 @@ export function Dashboard({ patients, appointments, currentUser, onNavigate, onR
           <RefreshButton onRefresh={handleRefresh} variant="outline" size="md" />
         </div>
       </header>
+
+      {(noShowAlerts.todayRisk.length > 0 || noShowAlerts.riskyPatients.length > 0) && (
+        <section className={styles.alertBanner} role="status" aria-live="polite">
+          <div className={styles.alertIcon} aria-hidden="true">!</div>
+          <div className={styles.alertContent}>
+            <p className={styles.alertTitle}>Alerta preditivo de no-show</p>
+            {noShowAlerts.todayRisk.length > 0 ? (
+              <p className={styles.alertText}>
+                Pacientes com histórico de ausência/cancelamento na agenda de hoje:{" "}
+                {noShowAlerts.todayRisk
+                  .map((item) => `${item.patientName} (${item.time}, risco ${item.riskPct}%)`)
+                  .join(" · ")}
+              </p>
+            ) : (
+              <p className={styles.alertText}>
+                {noShowAlerts.riskyPatients.length} paciente(s) com padrão recorrente de ausência ou cancelamento.
+              </p>
+            )}
+          </div>
+        </section>
+      )}
 
       {/* Stats — mesmo layout horizontal do ManagerDashboard */}
       <div className={styles.statsGrid}>
