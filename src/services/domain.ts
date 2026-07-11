@@ -1224,31 +1224,36 @@ interface PatientLookup {
   cpf?: string
 }
 
-function sameLookupText(a?: string, b?: string): boolean {
-  return Boolean(a && b && a.trim().toLowerCase() === b.trim().toLowerCase())
-}
-
-function recordMatchesPatient(
-  item: { patientId: string; patientName: string },
-  identity: PatientLookup,
-): boolean {
-  return Boolean(
-    (identity.patientId && item.patientId === identity.patientId) ||
-    sameLookupText(item.patientName, identity.name),
-  )
+function patientIdFilter(identity: PatientLookup): string | null {
+  return identity.patientId ? `patient_id=eq.${encodeURIComponent(identity.patientId)}` : null
 }
 
 export async function getPatientReportsByIdentity(identity: PatientLookup): Promise<Report[]> {
-  const reports = await getReports()
-  return reports.filter((report) => recordMatchesPatient(report, identity))
+  const patientFilter = patientIdFilter(identity)
+  if (!patientFilter) return []
+  const reports = await apiRequest<ApiReport[]>(
+    `/rest/v1/reports?select=*&${patientFilter}&exam=neq.${encodeURIComponent(MEDICAL_RECORD_EXAM)}&exam=neq.${encodeURIComponent(PRESCRIPTION_EXAM)}&exam=neq.${encodeURIComponent(FINANCIAL_RECORD_EXAM)}&order=created_at.desc`,
+    { logErrors: false },
+  )
+  return (reports ?? []).map(apiToReport)
 }
 
 export async function getPatientMedicalRecordsByIdentity(identity: PatientLookup): Promise<MedicalRecord[]> {
-  const records = await getMedicalRecords()
-  return records.filter((record) => recordMatchesPatient(record, identity))
+  const patientFilter = patientIdFilter(identity)
+  if (!patientFilter) return []
+  const records = await apiRequest<ApiReport[]>(
+    `/rest/v1/reports?select=*&${patientFilter}&exam=eq.${encodeURIComponent(MEDICAL_RECORD_EXAM)}&order=created_at.desc`,
+    { logErrors: false },
+  )
+  return (records ?? []).map((record) => reportToMedicalRecord(record))
 }
 
 export async function getPatientPrescriptionsByIdentity(identity: PatientLookup): Promise<Prescription[]> {
-  const prescriptions = await getPrescriptions()
-  return prescriptions.filter((prescription) => recordMatchesPatient(prescription, identity))
+  const patientFilter = patientIdFilter(identity)
+  if (!patientFilter) return []
+  const prescriptions = await apiRequest<ApiReport[]>(
+    `/rest/v1/reports?select=*&${patientFilter}&exam=eq.${encodeURIComponent(PRESCRIPTION_EXAM)}&order=created_at.desc`,
+    { logErrors: false },
+  )
+  return (prescriptions ?? []).map((prescription) => reportToPrescription(prescription))
 }
