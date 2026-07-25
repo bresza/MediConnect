@@ -56,6 +56,8 @@ export function checkConflict(
     if (a.doctorName !== doctorName) return false
     if (a.date !== date)             return false
     if (a.id === excludeId)          return false
+    // Cancelados/faltas liberam o horário — casar com getAvailableSlotsFromAvailability.
+    if (a.status === "cancelled" || a.status === "absent") return false
 
     const aStart = timeToMinutes(a.time)
     const aEnd   = aStart + a.duration

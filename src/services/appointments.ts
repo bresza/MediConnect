@@ -326,18 +326,28 @@ export async function createAppointment(
 export async function updateAppointment(
   appointment: Appointment
 ): Promise<Appointment> {
-  await apiRequest(
-    `/rest/v1/appointments?id=eq.${appointment.id}`,
+  const updated = await apiRequest<ApiAppointment[]>(
+    `/rest/v1/appointments?id=eq.${encodeURIComponent(appointment.id)}&select=*`,
     {
       method: "PATCH",
       headers: {
-        Prefer: "return=minimal",
+        Prefer: "return=representation",
       },
       body: appointmentToApi(appointment),
     }
   )
 
-  return appointment
+  const raw = Array.isArray(updated) ? updated[0] : updated
+  if (!raw) {
+    throw new Error(
+      "Não foi possível atualizar o agendamento. Atualize a agenda e tente novamente.",
+    )
+  }
+
+  return {
+    ...apiToAppointment(raw, appointment.doctorName),
+    patientName: appointment.patientName || apiToAppointment(raw, appointment.doctorName).patientName,
+  }
 }
 
 export async function deleteAppointment(
@@ -450,7 +460,9 @@ async function getAvailableSlotsFromAvailability(
 
   const busyRanges = (appointments ?? [])
     .filter((appointment) => localDate(new Date(appointment.scheduled_at)) === date)
-    .filter((appointment) => appointment.status !== "cancelled")
+    .filter((appointment) =>
+      appointment.status !== "cancelled" && appointment.status !== "absent",
+    )
     .map((appointment) => {
       const start = timeToMinutes(localTime(new Date(appointment.scheduled_at)))
       return {
