@@ -664,6 +664,8 @@ export async function createPatientPortalAccess(
     phone:      base.phone_mobile,
     role:       "paciente",
     patient_id: patient.id,
+    // Paciente já existe: não criar outra ficha em `patients`.
+    create_patient_record: false,
   }
 
   if (!payload.email) throw new Error("E-mail obrigatório para criar acesso do paciente.")
@@ -846,15 +848,7 @@ async function deletePatientRecord(id: string, logErrors = true): Promise<void> 
   })
 }
 
-export async function deletePatient(id: string): Promise<void> {
-  const patient = await findPatientById(id).catch(() => null)
-  const userId = patient?.user_id ?? ""
-
-  if (userId) {
-    await deletePatientAuthUser(userId)
-    return
-  }
-
+async function deletePatientDatabaseRecords(id: string): Promise<void> {
   try {
     await deletePatientDependencies(id)
   } catch (err) {
@@ -878,4 +872,23 @@ export async function deletePatient(id: string): Promise<void> {
   }
 
   throw new Error("A API bloqueou a exclusão porque ainda existem vínculos com este paciente sem user_id.")
+}
+
+export async function deletePatient(id: string): Promise<void> {
+  const patient = await findPatientById(id).catch(() => null)
+  const userId = patient?.user_id ?? ""
+
+  // Sempre limpa agendamentos/relatórios e remove a ficha antes de apagar
+  // a conta Auth. O early-return antigo no ramo com `user_id` pulava essa
+  // migração e deixava PHI/agenda órfãos (ou perdia histórico se o cascade
+  // de auth rodasse primeiro).
+  await deletePatientDatabaseRecords(id)
+
+  if (userId) {
+    await deletePatientAuthUser(userId).catch((err) => {
+      console.warn("[patients] exclusao da conta Auth do paciente falhou apos limpeza da ficha:", err)
+    })
+  }
+
+  await deletePatientPhotoFromStorage(id).catch(() => undefined)
 }
