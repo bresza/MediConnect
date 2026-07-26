@@ -3,10 +3,11 @@ import { createAppointment } from "./appointments"
 import { sendMessage } from "./domain"
 import { getPatientById } from "./patients"
 import {
+  claimWaitlistEntry,
   enrollPatientInWaitlist,
   getWaitlist,
+  releaseWaitlistClaim,
   suggestForGap,
-  updateWaitlistEntry,
   WAITLIST_COLOR_LABEL,
   type EnrollPatientInput,
 } from "./waitlist"
@@ -160,10 +161,30 @@ export async function fillGapFromWaitlist(
         : "Vaga liberada por cancelamento.",
   ].join(" ")
 
+  // Claim-before-create: evita o mesmo paciente ser promovido duas vezes quando
+  // createAppointment sucede e o PATCH da fila falha/cai em localStorage, ou
+  // quando dois cancelamentos correm em paralelo.
+  let claimed: WaitlistEntry | null
+  try {
+    claimed = await claimWaitlistEntry(candidate, {
+      status: "scheduled",
+      notes: [candidate.notes, observations].filter(Boolean).join("\n"),
+    })
+  } catch (err) {
+    return {
+      filled: false,
+      message: err instanceof Error ? err.message : "Falha ao reservar paciente da fila.",
+    }
+  }
+
+  if (!claimed) {
+    return { filled: false, message: "Paciente da fila já foi encaixado por outro atendimento." }
+  }
+
   try {
     const appointment = await createAppointment({
-      patientId: candidate.patientId,
-      patientName: candidate.patientName,
+      patientId: claimed.patientId,
+      patientName: claimed.patientName,
       doctorId: freed.doctorId,
       doctorName: freed.doctorName,
       date: freed.date,
@@ -174,23 +195,18 @@ export async function fillGapFromWaitlist(
       observations,
     })
 
-    await updateWaitlistEntry({
-      ...candidate,
-      status: "scheduled",
-      notes: [candidate.notes, observations].filter(Boolean).join("\n"),
-    })
-
     const notified = await notifyPromotedPatient(
-      candidate.patientId,
-      candidate.patientName,
+      claimed.patientId,
+      claimed.patientName,
       freed.doctorName,
       freed.date,
       freed.time,
       trigger,
     )
 
-    return { filled: true, appointment, entry: candidate, notified }
+    return { filled: true, appointment, entry: claimed, notified }
   } catch (err) {
+    await releaseWaitlistClaim(claimed).catch(() => undefined)
     return {
       filled: false,
       message: err instanceof Error ? err.message : "Falha ao agendar encaixe.",

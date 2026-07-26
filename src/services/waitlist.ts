@@ -399,6 +399,78 @@ export async function updateWaitlistEntry(entry: WaitlistEntry): Promise<Waitlis
   return next
 }
 
+/**
+ * Reserva atomicamente um item ainda `waiting` (status=eq.waiting + representation).
+ * Retorna null se outro fluxo já tiver reivindicado a vaga.
+ * Em modo localStorage, só altera se o status atual ainda for `waiting`.
+ */
+export async function claimWaitlistEntry(
+  entry: WaitlistEntry,
+  patch: Pick<WaitlistEntry, "status"> & { notes?: string },
+): Promise<WaitlistEntry | null> {
+  const next: WaitlistEntry = {
+    ...entry,
+    status: patch.status,
+    notes: patch.notes ?? entry.notes,
+    dueBy: calcDueBy(entry.priorityColor, entry.enteredAt),
+  }
+
+  try {
+    const updated = await apiRequest<ApiWaitlistRow[]>(
+      `${TABLE_PATH}?id=eq.${encodeURIComponent(entry.id)}&status=eq.waiting`,
+      {
+        method:    "PATCH",
+        headers:   { Prefer: "return=representation" },
+        body:      toRow(next),
+        logErrors: false,
+      },
+    )
+    const row = Array.isArray(updated) ? updated[0] : (updated as unknown as ApiWaitlistRow)
+    if (row) return fromRow(row)
+    // Representation vazia: outro processo já promoveu, ou RLS impediu o PATCH.
+    // Não cair em localStorage — isso deixaria o remoto em `waiting` e duplicaria encaixes.
+    return null
+  } catch (err) {
+    if (!isRemoteUnavailable(err)) throw err
+  }
+
+  const local = loadLocal()
+  const current = local.find((it) => it.id === entry.id)
+  if (!current || current.status !== "waiting") return null
+  const claimed = { ...current, status: patch.status, notes: patch.notes ?? current.notes, dueBy: next.dueBy }
+  saveLocal(local.map((it) => it.id === entry.id ? claimed : it))
+  return claimed
+}
+
+/** Reverte uma reserva de fila quando o agendamento do encaixe falha. */
+export async function releaseWaitlistClaim(entry: WaitlistEntry): Promise<void> {
+  const next: WaitlistEntry = {
+    ...entry,
+    status: "waiting",
+    dueBy: calcDueBy(entry.priorityColor, entry.enteredAt),
+  }
+
+  try {
+    const updated = await apiRequest<ApiWaitlistRow[]>(
+      `${TABLE_PATH}?id=eq.${encodeURIComponent(entry.id)}&status=eq.scheduled`,
+      {
+        method:    "PATCH",
+        headers:   { Prefer: "return=representation" },
+        body:      toRow(next),
+        logErrors: false,
+      },
+    )
+    const row = Array.isArray(updated) ? updated[0] : (updated as unknown as ApiWaitlistRow)
+    if (row) return
+  } catch (err) {
+    if (!isRemoteUnavailable(err)) throw err
+  }
+
+  const local = loadLocal()
+  if (!local.some((it) => it.id === entry.id)) return
+  saveLocal(local.map((it) => it.id === entry.id ? { ...it, status: "waiting", dueBy: next.dueBy } : it))
+}
+
 export async function removeWaitlistEntry(id: string): Promise<void> {
   try {
     await apiRequest<null>(`${TABLE_PATH}?id=eq.${encodeURIComponent(id)}`, {

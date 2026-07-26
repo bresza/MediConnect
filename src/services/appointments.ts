@@ -357,12 +357,33 @@ const DEFAULT_SLOT_START_MIN = 8 * 60
 const DEFAULT_SLOT_END_MIN   = 18 * 60
 const DEFAULT_SLOT_DURATION  = 30
 
-function buildDefaultSlots(date: string): string[] {
+interface MinuteRange {
+  start: number
+  end: number
+}
+
+interface AvailabilitySlotComputation {
+  slots: string[]
+  /** True when the doctor has an active grade for this weekday/type. */
+  hasGradeForDay: boolean
+  busyRanges: MinuteRange[]
+  blockedRanges: MinuteRange[]
+}
+
+function buildDefaultSlots(
+  date: string,
+  busyRanges: MinuteRange[] = [],
+  blockedRanges: MinuteRange[] = [],
+): string[] {
   const today = localDate(new Date())
   const nowMinutes = timeToMinutes(localTime(new Date()))
   const out: string[] = []
   for (let m = DEFAULT_SLOT_START_MIN; m + DEFAULT_SLOT_DURATION <= DEFAULT_SLOT_END_MIN; m += DEFAULT_SLOT_DURATION) {
     if (date === today && m <= nowMinutes) continue
+    const slotEnd = m + DEFAULT_SLOT_DURATION
+    const blocked = blockedRanges.some((range) => rangesOverlap(m, slotEnd, range.start, range.end))
+    const occupied = busyRanges.some((range) => rangesOverlap(m, slotEnd, range.start, range.end))
+    if (blocked || occupied) continue
     out.push(minutesToTime(m))
   }
   return out
@@ -372,12 +393,18 @@ async function safeAvailabilitySlots(
   doctorId: string,
   date: string,
   appointmentType: string,
-): Promise<string[]> {
+): Promise<AvailabilitySlotComputation> {
+  const empty: AvailabilitySlotComputation = {
+    slots: [],
+    hasGradeForDay: false,
+    busyRanges: [],
+    blockedRanges: [],
+  }
   try {
     return await getAvailableSlotsFromAvailability(doctorId, date, appointmentType)
   } catch (err) {
     if (err instanceof ApiError && [400, 404, 422, 500, 501, 502, 503].includes(err.status)) {
-      return []
+      return empty
     }
     throw err
   }
@@ -407,12 +434,64 @@ export async function getAvailableSlots(
     if (!fallbackStatuses.includes(err.status)) throw err
   }
 
-  const localSlots = await safeAvailabilitySlots(doctorId, date, appointmentType)
-  if (localSlots.length > 0) return localSlots
+  const local = await safeAvailabilitySlots(doctorId, date, appointmentType)
+  if (local.slots.length > 0) return local.slots
 
   if (!allowDefaultFallback) return []
 
-  return buildDefaultSlots(date)
+  // Grade real para o dia/tipo e lista vazia = dia bloqueado, lotado ou sem
+  // encaixe. Inventar 08–18 ignoraria exceções/ocupação e geraria overbooking.
+  if (local.hasGradeForDay) return []
+
+  // Sem grade (ou falha ao ler a grade): ainda subtrai ocupação/exceções
+  // para não oferecer horários já tomados ou bloqueados.
+  let busyRanges = local.busyRanges
+  let blockedRanges = local.blockedRanges
+  if (busyRanges.length === 0 && blockedRanges.length === 0) {
+    const constraints = await loadBusyAndBlockedRanges(doctorId, date).catch(() => null)
+    if (constraints) {
+      busyRanges = constraints.busyRanges
+      blockedRanges = constraints.blockedRanges
+    }
+  }
+
+  return buildDefaultSlots(date, busyRanges, blockedRanges)
+}
+
+async function loadBusyAndBlockedRanges(
+  doctorId: string,
+  date: string,
+): Promise<{ busyRanges: MinuteRange[]; blockedRanges: MinuteRange[] }> {
+  const [exceptions, appointments] = await Promise.all([
+    apiRequest<ApiDoctorException[]>(
+      `/rest/v1/doctor_exceptions?doctor_id=eq.${encodeURIComponent(doctorId)}&date=eq.${encodeURIComponent(date)}&select=*`,
+      { logErrors: false },
+    ).catch(() => []),
+    apiRequest<ApiAppointment[]>(
+      `/rest/v1/appointments?doctor_id=eq.${encodeURIComponent(doctorId)}&select=id,doctor_id,patient_id,scheduled_at,duration_minutes,status`,
+      { logErrors: false },
+    ).catch(() => []),
+  ])
+
+  const busyRanges = (appointments ?? [])
+    .filter((appointment) => localDate(new Date(appointment.scheduled_at)) === date)
+    .filter((appointment) =>
+      appointment.status !== "cancelled" && appointment.status !== "absent",
+    )
+    .map((appointment) => {
+      const start = timeToMinutes(localTime(new Date(appointment.scheduled_at)))
+      return {
+        start,
+        end: start + (appointment.duration_minutes ?? 30),
+      }
+    })
+
+  const blockedRanges = (exceptions ?? []).map((exception) => ({
+    start: exception.start_time ? timeToMinutes(exception.start_time) : 0,
+    end: exception.end_time ? timeToMinutes(exception.end_time) : 24 * 60,
+  }))
+
+  return { busyRanges, blockedRanges }
 }
 
 export async function getDoctorAvailability(doctorId: string): Promise<DoctorAvailability[]> {
@@ -431,9 +510,11 @@ async function getAvailableSlotsFromAvailability(
   doctorId: string,
   date: string,
   appointmentType = "presencial",
-): Promise<string[]> {
+): Promise<AvailabilitySlotComputation> {
   const today = localDate(new Date())
-  if (date < today) return []
+  if (date < today) {
+    return { slots: [], hasGradeForDay: false, busyRanges: [], blockedRanges: [] }
+  }
 
   const day = new Date(`${date}T00:00:00`).getDay()
   const [availability, exceptions, appointments] = await Promise.all([
@@ -450,7 +531,9 @@ async function getAvailableSlotsFromAvailability(
 
   const busyRanges = (appointments ?? [])
     .filter((appointment) => localDate(new Date(appointment.scheduled_at)) === date)
-    .filter((appointment) => appointment.status !== "cancelled")
+    .filter((appointment) =>
+      appointment.status !== "cancelled" && appointment.status !== "absent",
+    )
     .map((appointment) => {
       const start = timeToMinutes(localTime(new Date(appointment.scheduled_at)))
       return {
@@ -467,28 +550,37 @@ async function getAvailableSlotsFromAvailability(
   const now = new Date()
   const nowMinutes = timeToMinutes(localTime(now))
 
-  return (availability ?? [])
+  const gradeRows = (availability ?? [])
     .filter((row) => row.active !== false)
     .filter((row) => normalizeWeekday(row.weekday) === day)
     .filter((row) => !row.appointment_type || row.appointment_type === appointmentType)
+
+  const slots = gradeRows
     .flatMap((row) => {
       const slotMinutes = row.slot_minutes ?? 30
       const start = timeToMinutes(row.start_time)
       const end = timeToMinutes(row.end_time)
-      const slots: string[] = []
+      const daySlots: string[] = []
 
       for (let cursor = start; cursor + slotMinutes <= end; cursor += slotMinutes) {
         const slotEnd = cursor + slotMinutes
         const inPast = date === today && cursor <= nowMinutes
         const blocked = blockedRanges.some((range) => rangesOverlap(cursor, slotEnd, range.start, range.end))
         const occupied = busyRanges.some((range) => rangesOverlap(cursor, slotEnd, range.start, range.end))
-        if (!inPast && !blocked && !occupied) slots.push(minutesToTime(cursor))
+        if (!inPast && !blocked && !occupied) daySlots.push(minutesToTime(cursor))
       }
 
-      return slots
+      return daySlots
     })
     .filter((time, index, all) => all.indexOf(time) === index)
     .sort()
+
+  return {
+    slots,
+    hasGradeForDay: gradeRows.length > 0,
+    busyRanges,
+    blockedRanges,
+  }
 }
 
 function slotToTime(slot: string | ApiAvailableSlot): string | null {
