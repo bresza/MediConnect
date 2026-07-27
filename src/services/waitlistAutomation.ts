@@ -103,7 +103,9 @@ export async function notifyWaitlistEnrollment(
 export async function enrollPatientInWaitlistFromPortal(
   input: EnrollPatientInput,
 ): Promise<{ entry: WaitlistEntry; created: boolean }> {
-  const result = await enrollPatientInWaitlist(input)
+  // Portal nunca pode cair em localStorage: a clínica não veria a inscrição
+  // e o paciente receberia confirmação/SMS falsos.
+  const result = await enrollPatientInWaitlist(input, { requireRemote: true })
   if (result.created) {
     await notifyWaitlistEnrollment(
       input.patient.id,
