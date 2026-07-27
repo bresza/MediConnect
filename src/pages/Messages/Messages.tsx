@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react"
 import { getMessages, sendMessage } from "../../services/domain"
-import { getPatients } from "../../services/patients"
 import type { Message, MessageTemplate, Patient } from "../../types"
 import { Topbar } from "../../components/layout/Topbar/Topbar"
 import { Card } from "../../components/ui/Card/Card"
@@ -22,10 +21,14 @@ const SMS_TEMPLATES: MessageTemplate[] = [
   { id: 5, name: "Boas-vindas ao paciente", channel: "SMS", content: "Olá {nome}, seja bem-vindo(a) à Clínica Mediconnect!" },
 ]
 
-export function Messages() {
+interface MessagesProps {
+  /** Pacientes já escopados pelo AppRouter (médico = só vinculados). */
+  patients: Patient[]
+}
+
+export function Messages({ patients }: MessagesProps) {
   const [showModal,   setShowModal]   = useState(false)
   const [messages,    setMessages]    = useState<Message[]>([])
-  const [patients,    setPatients]    = useState<Patient[]>([])
   const [patientId,   setPatientId]   = useState("")
   const [templateId,  setTemplateId]  = useState("")
   const [content,     setContent]     = useState("")
@@ -36,8 +39,15 @@ export function Messages() {
 
   useEffect(() => {
     getMessages().then(setMessages)
-    getPatients().then(setPatients)
   }, [])
+
+  // Se o paciente selecionado sair do escopo (ex.: troca de lista do médico),
+  // limpa a seleção para não permitir SMS fora do painel.
+  useEffect(() => {
+    if (patientId && !patients.some((p) => p.id === patientId)) {
+      setPatientId("")
+    }
+  }, [patients, patientId])
 
   function closeModal() {
     setShowModal(false)

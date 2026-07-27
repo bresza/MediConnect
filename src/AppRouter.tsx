@@ -358,7 +358,7 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
 
       // ── Mensagens ────────────────────────────────────────────────
       case "messages":
-        return <Messages />
+        return <Messages patients={visiblePatients} />
 
       // ── Financeiro — somente gestor e financeiro ─────────────────
       case "financial":

@@ -5,8 +5,10 @@
 // Estratégia híbrida:
 //   1) Tenta `${SUPABASE_URL}/rest/v1/appointment_waitlist` via apiRequest.
 //   2) Se a tabela retornar 404 / 401 / 403 / erro de rede, cai em
-//      localStorage (`mediconnect:waitlist`). Cada operação tenta
-//      Supabase primeiro; o front nunca quebra.
+//      localStorage (`mediconnect:waitlist`) — apenas para fluxos de staff.
+//   3) Inscrições do portal do paciente usam `requireRemote: true` e falham
+//      fechado: nunca confirmam fila só no browser do paciente.
+//   Cada operação de staff tenta Supabase primeiro; o front nunca quebra.
 //
 // Critérios de cor (inferência automática) seguem as orientações do
 // Ministério da Saúde para regulação ambulatorial:
@@ -316,15 +318,37 @@ function isRemoteUnavailable(err: unknown): boolean {
   return [0, 401, 403, 404].includes(err.status)
 }
 
+export interface WaitlistRemoteOptions {
+  /**
+   * Quando true, não cai em localStorage. Usado pelo portal do paciente para
+   * evitar inscrição "fantasma" que a clínica nunca vê.
+   */
+  requireRemote?: boolean
+}
+
+const PORTAL_WAITLIST_UNAVAILABLE =
+  "Não foi possível confirmar sua inscrição na fila de espera da clínica. " +
+  "Tente novamente em instantes ou fale com a recepção."
+
+function remoteRequiredError(err?: unknown): Error {
+  if (err instanceof Error && !(err instanceof ApiError && isRemoteUnavailable(err))) {
+    return err
+  }
+  return new Error(PORTAL_WAITLIST_UNAVAILABLE)
+}
+
 // ─── CRUD híbrido ────────────────────────────────────────────────
 
-export async function getWaitlist(): Promise<WaitlistEntry[]> {
+export async function getWaitlist(
+  options: WaitlistRemoteOptions = {},
+): Promise<WaitlistEntry[]> {
   try {
     const rows = await apiRequest<ApiWaitlistRow[]>(`${TABLE_PATH}?select=*&order=entered_at.asc`, {
       logErrors: false,
     })
     return Array.isArray(rows) ? rows.map(fromRow) : []
   } catch (err) {
+    if (options.requireRemote) throw remoteRequiredError(err)
     if (!isRemoteUnavailable(err)) throw err
     return loadLocal()
   }
@@ -334,6 +358,7 @@ export async function createWaitlistEntry(
   draft: Omit<WaitlistEntry, "id" | "enteredAt" | "dueBy" | "priorityColor" | "status"> & {
     inferred: InferPriorityResult
   },
+  options: WaitlistRemoteOptions = {},
 ): Promise<WaitlistEntry> {
   const enteredAt = new Date().toISOString()
   const entry: WaitlistEntry = {
@@ -365,7 +390,9 @@ export async function createWaitlistEntry(
     })
     const row = Array.isArray(created) ? created[0] : (created as unknown as ApiWaitlistRow)
     if (row) return fromRow(row)
+    if (options.requireRemote) throw remoteRequiredError()
   } catch (err) {
+    if (options.requireRemote) throw remoteRequiredError(err)
     if (!isRemoteUnavailable(err)) throw err
   }
 
@@ -468,8 +495,9 @@ export interface EnrollPatientInput {
 
 export async function enrollPatientInWaitlist(
   input: EnrollPatientInput,
+  options: WaitlistRemoteOptions = {},
 ): Promise<{ entry: WaitlistEntry; created: boolean }> {
-  const waitlist = await getWaitlist()
+  const waitlist = await getWaitlist(options)
   const existing = findWaitingEntry(waitlist, input.patient.id, {
     doctorId: input.doctorId,
     specialty: input.specialty,
@@ -497,7 +525,7 @@ export async function enrollPatientInWaitlist(
     addedBy: input.addedBy,
     addedByName: input.addedByName ?? "Portal do paciente",
     inferred,
-  })
+  }, options)
 
   return { entry, created: true }
 }
