@@ -703,9 +703,10 @@ async function persistPatientPhoto(patient: Patient): Promise<Patient> {
 }
 
 export async function updatePatient(patient: Patient): Promise<Patient> {
-  const linkedProfile = patient.userId ? null : await findProfileByEmail(patient.email)
-  const patientWithUser = linkedProfile?.id ? { ...patient, userId: linkedProfile.id } : patient
-  const patientWithPhoto = await persistPatientPhoto(patientWithUser)
+  // Do not auto-attach patients.user_id from profiles.email. Matching email alone
+  // can bind a staff/auth account to a patient row on ordinary edits; portal
+  // credentials must go through createPatientPortalAccess / linkPatientToUser.
+  const patientWithPhoto = await persistPatientPhoto(patient)
 
   try {
     await apiRequest(`/rest/v1/patients?id=eq.${patientWithPhoto.id}`, {
