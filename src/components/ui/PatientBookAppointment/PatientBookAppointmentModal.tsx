@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { getAvailableSlots } from "../../../services/appointments"
+import { getAvailableSlots, PATIENT_SLOT_OPTIONS } from "../../../services/appointments"
 import {
   getBookableDoctors,
   getDoctorAvailability,
@@ -30,7 +30,6 @@ interface PatientBookAppointmentModalProps {
 }
 
 const APPOINTMENT_TYPE = "presencial"
-const SLOT_OPTIONS = { allowDefaultFallback: false } as const
 const DEFAULT_SPECIALTY = "Clínica Geral"
 
 function doctorSpecialty(doctor: AvailabilityDoctor): string {
@@ -191,7 +190,7 @@ export function PatientBookAppointmentModal({
         nextDoctorId,
         nextDate,
         APPOINTMENT_TYPE,
-        SLOT_OPTIONS,
+        PATIENT_SLOT_OPTIONS,
       )
       if (slotRequestRef.current !== requestId) return
       setAvailableSlots(slots)

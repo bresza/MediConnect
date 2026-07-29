@@ -386,6 +386,19 @@ async function safeAvailabilitySlots(
 export interface GetAvailableSlotsOptions {
   /** Quando false, nao inventa horario comercial se nao houver grade cadastrada. */
   allowDefaultFallback?: boolean
+  /**
+   * Quando false, nao recalcula slots no client a partir de doctor_availability +
+   * appointments. Necessario para o portal do paciente: sob JWT de paciente o
+   * SELECT de appointments pode omitir consultas de terceiros (RLS), e o
+   * fallback local ofereceria horarios ja ocupados.
+   */
+  allowLocalAvailabilityFallback?: boolean
+}
+
+/** Opcoes seguras para agendamento/reagendamento no portal do paciente. */
+export const PATIENT_SLOT_OPTIONS: GetAvailableSlotsOptions = {
+  allowDefaultFallback: false,
+  allowLocalAvailabilityFallback: false,
 }
 
 export async function getAvailableSlots(
@@ -394,18 +407,27 @@ export async function getAvailableSlots(
   appointmentType = "presencial",
   options: GetAvailableSlotsOptions = {},
 ): Promise<string[]> {
-  const { allowDefaultFallback = true } = options
+  const {
+    allowDefaultFallback = true,
+    allowLocalAvailabilityFallback = true,
+  } = options
   if (!doctorId || !date) return []
   if (date < localDate(new Date())) return []
 
   try {
     const apiSlots = await getAvailableSlotsFromApi(doctorId, date, appointmentType)
     if (apiSlots.length > 0) return apiSlots
+    // Resposta vazia da edge function e autoritativa quando o fallback local
+    // esta desligado (portal): dia cheio/bloqueado nao deve reabrir via RLS parcial.
+    if (!allowLocalAvailabilityFallback) return []
   } catch (err) {
     if (!(err instanceof ApiError)) throw err
     const fallbackStatuses = [400, 404, 422, 500, 501, 502, 503]
     if (!fallbackStatuses.includes(err.status)) throw err
+    if (!allowLocalAvailabilityFallback) return []
   }
+
+  if (!allowLocalAvailabilityFallback) return []
 
   const localSlots = await safeAvailabilitySlots(doctorId, date, appointmentType)
   if (localSlots.length > 0) return localSlots

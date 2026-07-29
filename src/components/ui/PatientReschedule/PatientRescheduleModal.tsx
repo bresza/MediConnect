@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { getAvailableSlots } from "../../../services/appointments"
+import { getAvailableSlots, PATIENT_SLOT_OPTIONS } from "../../../services/appointments"
 import {
   getDoctorAvailability,
   isDateOnDoctorSchedule,
@@ -22,7 +22,6 @@ interface PatientRescheduleModalProps {
 }
 
 const APPOINTMENT_TYPE = "presencial"
-const SLOT_OPTIONS = { allowDefaultFallback: false } as const
 
 function todayStr(): string {
   const d = new Date()
@@ -111,7 +110,7 @@ export function PatientRescheduleModal({
     setSlotsError(null)
 
     try {
-      const slots = await getAvailableSlots(doctorId, nextDate, APPOINTMENT_TYPE, SLOT_OPTIONS)
+      const slots = await getAvailableSlots(doctorId, nextDate, APPOINTMENT_TYPE, PATIENT_SLOT_OPTIONS)
       if (slotRequestRef.current !== requestId) return
       setAvailableSlots(slots)
       if (slots.length === 0) setSlotsError("Nenhum horário livre nesta data na agenda do médico.")

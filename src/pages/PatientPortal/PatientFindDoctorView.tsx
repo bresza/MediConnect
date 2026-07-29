@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { getAvailableSlots } from "../../services/appointments"
+import { getAvailableSlots, PATIENT_SLOT_OPTIONS } from "../../services/appointments"
 import { enrollPatientInWaitlistFromPortal } from "../../services/waitlistAutomation"
 import { findWaitingEntry, getWaitlist } from "../../services/waitlist"
 import {
@@ -38,7 +38,6 @@ interface PatientFindDoctorViewProps {
 }
 
 const APPOINTMENT_TYPE = "presencial"
-const SLOT_OPTIONS = { allowDefaultFallback: false } as const
 const DEFAULT_SPECIALTY = "Clínica Geral"
 const ALL_SPECIALTIES = ""
 const DAY_STRIP_LENGTH = 14
@@ -320,7 +319,7 @@ export function PatientFindDoctorView({
     setSlotsError(null)
 
     try {
-      const slots = await getAvailableSlots(doctorId, nextDate, APPOINTMENT_TYPE, SLOT_OPTIONS)
+      const slots = await getAvailableSlots(doctorId, nextDate, APPOINTMENT_TYPE, PATIENT_SLOT_OPTIONS)
       if (slotRequestRef.current !== requestId) return
       setAvailableSlots(slots)
       if (slots.length === 0) {
