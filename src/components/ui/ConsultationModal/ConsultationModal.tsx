@@ -177,15 +177,17 @@ export function ConsultationModal({
   const [error, setError]       = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
+  const appointmentId = appointment?.id ?? null
+
   // O modal permanece montado entre atendimentos. Sem reset, queixa/diagnóstico/
   // receita/cobrança do paciente anterior vazam para o próximo prontuário.
   useEffect(() => {
-    if (!isOpen || !appointment) return
+    if (!isOpen || !appointmentId) return
     setTab("record")
     setForm(buildInitialForm(defaultPrice))
     setError(null)
     setSubmitting(false)
-  }, [isOpen, appointment?.id, defaultPrice])
+  }, [isOpen, appointmentId, defaultPrice])
 
   function setField<K extends keyof ConsultationForm>(key: K, value: ConsultationForm[K]) {
     setForm((prev) => ({ ...prev, [key]: value }))
