@@ -27,7 +27,7 @@
 // e mostra mensagem clara para o médico tentar novamente.
 // ─────────────────────────────────────────────────────────────────
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Modal } from "../Modal/Modal"
 import { Button } from "../Button/Button"
 import { Avatar } from "../Avatar/Avatar"
@@ -176,6 +176,18 @@ export function ConsultationModal({
   const [form, setForm]         = useState<ConsultationForm>(() => buildInitialForm(defaultPrice))
   const [error, setError]       = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+
+  const appointmentId = appointment?.id ?? null
+
+  // O modal permanece montado entre atendimentos. Sem reset, queixa/diagnóstico/
+  // receita/cobrança do paciente anterior vazam para o próximo prontuário.
+  useEffect(() => {
+    if (!isOpen || !appointmentId) return
+    setTab("record")
+    setForm(buildInitialForm(defaultPrice))
+    setError(null)
+    setSubmitting(false)
+  }, [isOpen, appointmentId, defaultPrice])
 
   function setField<K extends keyof ConsultationForm>(key: K, value: ConsultationForm[K]) {
     setForm((prev) => ({ ...prev, [key]: value }))

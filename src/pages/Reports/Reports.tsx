@@ -14,6 +14,7 @@ import { RefreshButton } from "../../components/ui/RefreshButton/RefreshButton"
 import { RichTextEditor } from "../../components/ui/RichTextEditor/RichTextEditor"
 import { chatComplete, isAIConfigured, AIError, type ChatMessage } from "../../services/ai"
 import { formatCrm, formatDate, sortByName, toTitleCase } from "../../utils"
+import { canDo } from "../../utils/permissions"
 import styles from "./Reports.module.css"
 
 interface ReportsProps { currentUser: User; patients?: Patient[] }
@@ -348,6 +349,8 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
   // fallback local sem tentar de novo o proxy.
   const aiProxyDownRef = useRef(false)
   const aiAvailable = useMemo(() => isAIConfigured(), [])
+  const canCreateReports = canDo(currentUser.role, "create_reports")
+  const canUpdateReports = canDo(currentUser.role, "update_reports")
 
   const visibleReports = sortByName(
     reports
@@ -481,11 +484,13 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
 
   // ── Abrir modal vazio ────────────────────────────────────────────
   function openNew() {
+    if (!canCreateReports) return
     setEditingReport(null); setForm(EMPTY_FORM); setError(null); setAiNotice(null); setModalOpen(true)
   }
 
   // ── Editar laudo ─────────────────────────────────────────────────
   function openEdit(r: Report) {
+    if (!canUpdateReports) return
     setEditingReport(r)
     setForm({
       patientId:     r.patientId,
@@ -503,6 +508,7 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
   }
 
   async function handleQuickStatusUpdate(r: Report, nextStatus: ReportStatus) {
+    if (!canUpdateReports) return
     setListError(null)
     setUpdatingId(r.id)
     try {
@@ -517,6 +523,10 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
   }
 
   async function handleSave(finalStatus?: ReportStatus) {
+    if (editingReport ? !canUpdateReports : !canCreateReports) {
+      setError("Você não tem permissão para alterar laudos clínicos.")
+      return
+    }
     if (!form.patientId && !form.patientName) { setError("Selecione o paciente."); return }
     if (!form.type)                           { setError("Informe o tipo de laudo."); return }
     setIsSaving(true); setError(null)
@@ -571,7 +581,7 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
         action={
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
             <RefreshButton onRefresh={load} />
-            <Button onClick={openNew}>+ Novo laudo</Button>
+            {canCreateReports && <Button onClick={openNew}>+ Novo laudo</Button>}
           </div>
         }
       />
@@ -644,16 +654,22 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
                       </td>
                       <td className={`${styles.td} ${isLast ? styles.tdLast : ""}`}>
                         <div className={styles.tdActions}>
-                          <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>Editar</Button>
-                          {r.status === "Draft" && (
-                            <Button size="sm" variant="ghost" disabled={updatingId === r.id} onClick={() => handleQuickStatusUpdate(r, "Finalized")}>
-                              {updatingId === r.id ? "Finalizando..." : "Finalizar"}
-                            </Button>
-                          )}
-                          {r.status === "Finalized" && (
-                            <Button size="sm" variant="ghost" disabled={updatingId === r.id} onClick={() => handleQuickStatusUpdate(r, "Sent")}>
-                              {updatingId === r.id ? "Enviando..." : "Enviar"}
-                            </Button>
+                          {canUpdateReports ? (
+                            <>
+                              <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>Editar</Button>
+                              {r.status === "Draft" && (
+                                <Button size="sm" variant="ghost" disabled={updatingId === r.id} onClick={() => handleQuickStatusUpdate(r, "Finalized")}>
+                                  {updatingId === r.id ? "Finalizando..." : "Finalizar"}
+                                </Button>
+                              )}
+                              {r.status === "Finalized" && (
+                                <Button size="sm" variant="ghost" disabled={updatingId === r.id} onClick={() => handleQuickStatusUpdate(r, "Sent")}>
+                                  {updatingId === r.id ? "Enviando..." : "Enviar"}
+                                </Button>
+                              )}
+                            </>
+                          ) : (
+                            <span style={{ fontSize: 12, color: "var(--muted-foreground)" }}>Somente leitura</span>
                           )}
                         </div>
                       </td>
