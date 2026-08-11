@@ -18,6 +18,7 @@ import { ConsultationModal } from "../../components/ui/ConsultationModal/Consult
 import { useWaitlist } from "../../hooks/useWaitlist"
 import { filterVisible, suggestForGap } from "../../services/waitlist"
 import { checkConflict, formatAppointmentType } from "../../utils"
+import { keepTimeForEdit, shouldCompleteWaitlistOnSave } from "../../utils/appointmentEdit"
 import { getAppointmentDoctors, getAvailableSlots, getDoctorAvailability } from "../../services/appointments"
 import type { DoctorAvailability } from "../../services/appointments"
 import type {
@@ -174,6 +175,8 @@ export function Appointments({
   const [activeTab, setActiveTab] = useState<AppointmentsTab>("calendar")
   const [suggested, setSuggested] = useState<WaitlistEntry | null>(null)
   const [consultationFor, setConsultationFor] = useState<Appointment | null>(null)
+  /** Entry being fulfilled via the appointment modal (manual Agendar / suggestion). */
+  const [schedulingWaitlistEntry, setSchedulingWaitlistEntry] = useState<WaitlistEntry | null>(null)
 
   const waitlist = useWaitlist()
   const canStartConsultation = isDoctor && !!onAddMedicalRecord && !!onAddFinancialRecord
@@ -421,7 +424,9 @@ export function Appointments({
     setAvailableSlots([])
     setSlotsError(null)
     setModalError(null)
-    if (doctorId && modal.date) void loadSlots(doctorId, modal.date, editingAppointment?.time)
+    if (doctorId && modal.date) {
+      void loadSlots(doctorId, modal.date, keepTimeForEdit(editingAppointment, doctorId, modal.date))
+    }
   }
 
   function setModalField(field: keyof ModalForm, value: string) {
@@ -432,13 +437,20 @@ export function Appointments({
       return
     }
 
-    setModal((current) => ({ ...current, [field]: value }))
+    setModal((current) => ({
+      ...current,
+      [field]: value,
+      // Drop stale time when the date changes; keepTime must not re-inject it.
+      ...(field === "date" ? { time: "" } : {}),
+    }))
     setModalError(null)
 
     if (field === "date") {
       setAvailableSlots([])
       setSlotsError(null)
-      if (modal.doctorId) void loadSlots(modal.doctorId, value, editingAppointment?.time)
+      if (modal.doctorId) {
+        void loadSlots(modal.doctorId, value, keepTimeForEdit(editingAppointment, modal.doctorId, value))
+      }
     }
   }
 
@@ -457,6 +469,7 @@ export function Appointments({
     const doctorId = appointment?.doctorId ?? fallbackDoctor?.id ?? ""
     const doctorName = appointment?.doctorName ?? fallbackDoctor?.name ?? (isDoctor ? currentUser.name : "")
 
+    setSchedulingWaitlistEntry(null)
     setEditingAppointment(appointment ?? null)
     setModal(appointment ? {
       date,
@@ -481,12 +494,15 @@ export function Appointments({
     setSlotsError(null)
     setShowModal(true)
 
-    if (doctorId && date) void loadSlots(doctorId, date, appointment?.time)
+    if (doctorId && date) {
+      void loadSlots(doctorId, date, keepTimeForEdit(appointment ?? null, doctorId, date))
+    }
   }
 
   function closeModal() {
     setShowModal(false)
     setEditingAppointment(null)
+    setSchedulingWaitlistEntry(null)
     setModal(emptyModal())
     setModalError(null)
     setAvailableSlots([])
@@ -529,8 +545,34 @@ export function Appointments({
       observations: modal.observations || undefined,
     }
 
+    const waitlistToComplete =
+      shouldCompleteWaitlistOnSave({
+        editingAppointment: !!editingAppointment,
+        waitlistEntry: schedulingWaitlistEntry,
+        patientId: modal.patientId,
+      })
+        ? schedulingWaitlistEntry
+        : null
+
     if (editingAppointment) await onUpdateAppointment({ ...payload, id: editingAppointment.id })
     else await onAddAppointment(payload)
+
+    if (waitlistToComplete) {
+      try {
+        await waitlist.update({
+          ...waitlistToComplete,
+          status: "scheduled",
+          notes: [
+            waitlistToComplete.notes,
+            `Agendado manualmente para ${modal.date} ${modal.time}.`,
+          ].filter(Boolean).join("\n"),
+        })
+      } catch {
+        window.alert(
+          "Agendamento criado, mas a fila de espera não foi atualizada. Remova o paciente da fila manualmente para evitar um segundo encaixe automático.",
+        )
+      }
+    }
     closeModal()
   }
 
@@ -633,21 +675,26 @@ export function Appointments({
     setActiveTab("calendar")
     setSuggested(null)
     setEditingAppointment(null)
+    setSchedulingWaitlistEntry(entry)
     const fallbackDoctor = entry.doctorId
       ? doctors.find((d) => d.id === entry.doctorId)
       : defaultDoctor()
+    const doctorId = fallbackDoctor?.id ?? ""
+    const doctorName = fallbackDoctor?.name ?? ""
+    const date = today
 
     setModal({
-      ...emptyModal(today),
+      ...emptyModal(date),
       patientId:   entry.patientId,
       patientName: entry.patientName,
-      doctorId:    fallbackDoctor?.id ?? "",
-      doctorName:  fallbackDoctor?.name ?? "",
+      doctorId,
+      doctorName,
     })
     setShowModal(true)
     setModalError(null)
     setAvailableSlots([])
     setSlotsError(null)
+    if (doctorId && date) void loadSlots(doctorId, date)
   }
 
   const slotOptions = modal.doctorId && modal.date ? availableSlots : []
