@@ -18,6 +18,13 @@ import { ConsultationModal } from "../../components/ui/ConsultationModal/Consult
 import { useWaitlist } from "../../hooks/useWaitlist"
 import { filterVisible, suggestForGap } from "../../services/waitlist"
 import { checkConflict, formatAppointmentType } from "../../utils"
+import {
+  consultationStepsToSave,
+  emptyConsultationSaveProgress,
+  markConsultationStep,
+  progressForAppointment,
+  type ConsultationSaveProgress,
+} from "../../utils/consultationSave"
 import { getAppointmentDoctors, getAvailableSlots, getDoctorAvailability } from "../../services/appointments"
 import type { DoctorAvailability } from "../../services/appointments"
 import type {
@@ -164,6 +171,7 @@ export function Appointments({
 }: AppointmentsProps) {
   const calendarRef = useRef<FullCalendar | null>(null)
   const slotRequestRef = useRef(0)
+  const consultationSaveProgressRef = useRef<ConsultationSaveProgress>(emptyConsultationSaveProgress())
   const isDoctor    = currentUser.role === "doctor"
   const isManager   = currentUser.role === "manager" || currentUser.role === "admin"
   const isSecretary = currentUser.role === "secretary"
@@ -174,6 +182,11 @@ export function Appointments({
   const [activeTab, setActiveTab] = useState<AppointmentsTab>("calendar")
   const [suggested, setSuggested] = useState<WaitlistEntry | null>(null)
   const [consultationFor, setConsultationFor] = useState<Appointment | null>(null)
+
+  // Troca de paciente/consulta limpa o progresso parcial do atendimento anterior.
+  useEffect(() => {
+    consultationSaveProgressRef.current = emptyConsultationSaveProgress(consultationFor?.id ?? null)
+  }, [consultationFor?.id])
 
   const waitlist = useWaitlist()
   const canStartConsultation = isDoctor && !!onAddMedicalRecord && !!onAddFinancialRecord
@@ -880,16 +893,38 @@ export function Appointments({
         currentUser={currentUser}
         onComplete={async ({ appointmentId, medicalRecord, prescription, financialRecord }) => {
           if (!onAddMedicalRecord || !onAddFinancialRecord) return
-          await onAddMedicalRecord(medicalRecord)
-          if (prescription && onAddPrescription) {
-            await onAddPrescription(prescription)
+
+          // Retry após falha parcial (ex.: cobrança 500) não deve recriar
+          // prontuário/receita já persistidos para o mesmo appointmentId.
+          let progress = progressForAppointment(
+            consultationSaveProgressRef.current,
+            appointmentId,
+          )
+          consultationSaveProgressRef.current = progress
+
+          const steps = consultationStepsToSave(progress, Boolean(prescription && onAddPrescription))
+          if (steps.saveMedical) {
+            await onAddMedicalRecord(medicalRecord)
+            progress = markConsultationStep(progress, "medical")
+            consultationSaveProgressRef.current = progress
           }
-          await onAddFinancialRecord(financialRecord)
+          if (steps.savePrescription && prescription && onAddPrescription) {
+            await onAddPrescription(prescription)
+            progress = markConsultationStep(progress, "prescription")
+            consultationSaveProgressRef.current = progress
+          }
+          if (steps.saveFinancial) {
+            await onAddFinancialRecord(financialRecord)
+            progress = markConsultationStep(progress, "financial")
+            consultationSaveProgressRef.current = progress
+          }
+
           const target = appointments.find((a) => a.id === appointmentId)
           if (target && target.status !== "completed") {
             await onUpdateAppointment({ ...target, status: "completed" })
           }
           await onRefresh?.()
+          consultationSaveProgressRef.current = emptyConsultationSaveProgress(null)
         }}
       />
 
