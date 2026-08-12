@@ -24,7 +24,9 @@
 // preenchidos) e atualiza o `appointment.status` para "completed".
 //
 // Em qualquer falha intermediária, o modal NÃO marca como completed
-// e mostra mensagem clara para o médico tentar novamente.
+// e mostra mensagem clara para o médico tentar novamente. O pai
+// (`Appointments`) guarda progresso por `appointmentId` para o retry
+// não duplicar prontuário/receita/cobrança já persistidos.
 // ─────────────────────────────────────────────────────────────────
 
 import { useMemo, useState } from "react"
