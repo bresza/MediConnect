@@ -30,8 +30,9 @@ supabase functions deploy ai-chat --no-verify-jwt
 > Por que `--no-verify-jwt`? O gateway do Supabase, com `verify_jwt = true`,
 > rejeita o preflight `OPTIONS` do navegador (porque preflight nao manda
 > Authorization), causando erro de CORS no front. Esta funcao valida o
-> Bearer JWT manualmente no codigo, entao desligar o `verify_jwt` no gateway
-> e seguro e necessario.
+> Bearer JWT com `GET /auth/v1/user` e rejeita anon key / tokens falsos,
+> entao desligar o `verify_jwt` no gateway continua necessario para o
+> preflight — mas nao substitui essa checagem.
 
 ## Request
 
