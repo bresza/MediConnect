@@ -85,6 +85,58 @@ function isValidMessage(m: unknown): m is Message {
   )
 }
 
+interface AuthUser {
+  id?: string
+  is_anonymous?: boolean
+  aud?: string
+  role?: string
+}
+
+/**
+ * Gateway JWT verification is off (`verify_jwt = false` / `--no-verify-jwt`)
+ * so CORS preflight can succeed. This must reject anything that is not a
+ * real logged-in user — a header that merely looks like `Bearer …` (or the
+ * public anon key) is not enough.
+ */
+async function requireLoggedInUser(
+  req: Request,
+  cors: Record<string, string>,
+): Promise<Response | null> {
+  const auth = req.headers.get("Authorization") ?? ""
+  if (!/^bearer\s+\S+/i.test(auth)) {
+    return json({ error: "Missing bearer token" }, 401, cors)
+  }
+
+  const supabaseUrl = (Deno.env.get("SUPABASE_URL") ?? "").replace(/\/+$/, "")
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? ""
+  if (!supabaseUrl || !anonKey) {
+    return json({ error: "Configuracao de autenticacao ausente no servidor." }, 500, cors)
+  }
+
+  let userRes: Response
+  try {
+    userRes = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      headers: {
+        Authorization: auth,
+        apikey: anonKey,
+      },
+    })
+  } catch {
+    return json({ error: "Falha ao validar a sessao." }, 401, cors)
+  }
+
+  if (!userRes.ok) {
+    return json({ error: "Sessao invalida. Faca login novamente." }, 401, cors)
+  }
+
+  const user = await userRes.json().catch(() => null) as AuthUser | null
+  if (!user?.id || user.is_anonymous || user.role === "anon" || user.aud === "anon") {
+    return json({ error: "Sessao invalida. Faca login novamente." }, 401, cors)
+  }
+
+  return null
+}
+
 Deno.serve(async (req) => {
   const cors = buildCorsHeaders(req)
 
@@ -95,10 +147,8 @@ Deno.serve(async (req) => {
     return json({ error: "Method not allowed" }, 405, cors)
   }
 
-  const auth = req.headers.get("Authorization") ?? ""
-  if (!auth.toLowerCase().startsWith("bearer ") || auth.length < 16) {
-    return json({ error: "Missing bearer token" }, 401, cors)
-  }
+  const unauthorized = await requireLoggedInUser(req, cors)
+  if (unauthorized) return unauthorized
 
   const apiKey = Deno.env.get("OPENAI_API_KEY")
   if (!apiKey) {
