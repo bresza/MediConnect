@@ -1,6 +1,14 @@
 import { ApiError, apiRequest, getApiUserId } from "./api"
 import { isDataUrl, isRemotePhotoUrl, resolvePatientPhotoUrl, attachPatientPhotos, attachPatientPhoto, deletePatientPhotoFromStorage } from "./patientPhoto"
 import { rememberPatientLink } from "./patientLinks"
+import {
+  isRemovedPatientPlaceholder,
+  pickRemovedPatientPlaceholder,
+  REMOVED_PATIENT_EMAIL,
+  REMOVED_PATIENT_NAME,
+  removedPatientCpfCandidates,
+  withoutRemovedPatientPlaceholders,
+} from "../utils/removedPatient"
 import type {
   Patient, Gender, PatientStatus, MaritalStatus,
   Ethnicity, CommunicationChannel, CommunicationFrequency,
@@ -425,6 +433,31 @@ function isMissingResource(err: unknown): boolean {
     (err.status === 404 || (err.status === 400 && /schema|cache|could not find|not found|relation|table/i.test(err.message)))
 }
 
+function isPatientCreateConflict(err: unknown): boolean {
+  return err instanceof ApiError && (
+    err.status === 409 ||
+    /duplicate key|unique constraint|already exists|23505|invalid.*cpf|cpf.*inv[aá]lid/i.test(err.message)
+  )
+}
+
+function acceptCreatedPlaceholder(raw: ApiPatient | null): ApiPatient | null {
+  if (!raw?.id) return null
+  if (raw.email && !isRemovedPatientPlaceholder(raw)) return null
+  return raw
+}
+
+async function createPlaceholderPatient(
+  payload: Record<string, unknown>,
+): Promise<ApiPatient | null> {
+  const created = await apiRequest<ApiPatient[] | ApiPatient>("/rest/v1/patients", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: payload,
+    logErrors: false,
+  })
+  return acceptCreatedPlaceholder(extractCreatedPatient(created))
+}
+
 async function deletePatientAuthUser(userId?: string): Promise<boolean> {
   if (!userId) return false
 
@@ -437,46 +470,50 @@ async function deletePatientAuthUser(userId?: string): Promise<boolean> {
 }
 
 async function getDeletedPatientPlaceholderId(): Promise<string> {
-  const email = "paciente.removido@mediconnect.local"
-  const cpf = "52998224725"
-  const existing = await findPatientByEmail(email) ?? await findPatientByCpf(cpf)
+  const email = REMOVED_PATIENT_EMAIL
+  const existing = pickRemovedPatientPlaceholder([await findPatientByEmail(email)])
   if (existing?.id) return existing.id
 
-  const payload = compactPayload({
-    full_name: "Paciente removido",
-    cpf,
-    email,
-    phone_mobile: "00000000000",
-    birth_date: "1900-01-01",
-    created_by: getApiUserId() ?? undefined,
-  })
-  let created: ApiPatient[] | ApiPatient | undefined
-  try {
-    created = await apiRequest<ApiPatient[] | ApiPatient>("/rest/v1/patients", {
-      method: "POST",
-      headers: { Prefer: "return=representation" },
-      body: payload,
-      logErrors: false,
+  const createdBy = getApiUserId() ?? undefined
+
+  for (const cpf of removedPatientCpfCandidates()) {
+    const fullPayload = compactPayload({
+      full_name: REMOVED_PATIENT_NAME,
+      cpf,
+      email,
+      phone_mobile: "00000000000",
+      birth_date: "1900-01-01",
+      created_by: createdBy,
     })
-  } catch (err) {
-    if (!isSchemaMismatch(err)) throw err
-    created = await apiRequest<ApiPatient[] | ApiPatient>("/rest/v1/patients", {
-      method: "POST",
-      headers: { Prefer: "return=representation" },
-      body: {
-        full_name: "Paciente removido",
-        cpf,
-        email,
-        phone_mobile: "00000000000",
-        birth_date: "1900-01-01",
-      },
-      logErrors: false,
-    })
+    const minimalPayload = {
+      full_name: REMOVED_PATIENT_NAME,
+      cpf,
+      email,
+      phone_mobile: "00000000000",
+      birth_date: "1900-01-01",
+    }
+
+    try {
+      const created = await createPlaceholderPatient(fullPayload)
+      if (created?.id) return created.id
+    } catch (err) {
+      if (isSchemaMismatch(err)) {
+        try {
+          const created = await createPlaceholderPatient(minimalPayload)
+          if (created?.id) return created.id
+        } catch (fallbackErr) {
+          if (!isPatientCreateConflict(fallbackErr) && !isSchemaMismatch(fallbackErr)) throw fallbackErr
+        }
+      } else if (!isPatientCreateConflict(err)) {
+        throw err
+      }
+    }
+
+    const raced = pickRemovedPatientPlaceholder([await findPatientByEmail(email)])
+    if (raced?.id) return raced.id
   }
 
-  const raw = extractCreatedPatient(created) ?? await findPatientByEmail(email) ?? await findPatientByCpf(cpf)
-  if (!raw?.id) throw new Error("A API não permitiu criar o paciente técnico para preservar vínculos antigos.")
-  return raw.id
+  throw new Error("A API não permitiu criar o paciente técnico para preservar vínculos antigos.")
 }
 
 function patientIdentityFilters(identity: PatientIdentity): string[] {
@@ -576,11 +613,10 @@ export async function getPatients(): Promise<Patient[]> {
       throw err
     }
   }
-  const patients = (data ?? []).map((row) => {
-    const patient = apiToPatient(row)
+  const patients = withoutRemovedPatientPlaceholders((data ?? []).map((row) => apiToPatient(row)))
+  for (const patient of patients) {
     rememberPatientLink({ patientId: patient.id, name: patient.name, email: patient.email, cpf: patient.cpf })
-    return patient
-  })
+  }
   return attachPatientPhotos(patients)
 }
 
@@ -604,11 +640,11 @@ export async function getPatientsForReports(): Promise<Patient[]> {
     "/rest/v1/patients?select=id,user_id,full_name,cpf,email,phone_mobile,birth_date&order=full_name.asc",
     { logErrors: false },
   )
-  return (data ?? []).map((row) => {
-    const patient = apiToPatient(row)
+  const patients = withoutRemovedPatientPlaceholders((data ?? []).map((row) => apiToPatient(row)))
+  for (const patient of patients) {
     rememberPatientLink({ patientId: patient.id, name: patient.name, email: patient.email, cpf: patient.cpf })
-    return patient
-  })
+  }
+  return patients
 }
 
 export async function createPatient(
