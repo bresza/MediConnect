@@ -14,6 +14,7 @@ import { RefreshButton } from "../../components/ui/RefreshButton/RefreshButton"
 import { RichTextEditor } from "../../components/ui/RichTextEditor/RichTextEditor"
 import { chatComplete, isAIConfigured, AIError, type ChatMessage } from "../../services/ai"
 import { formatCrm, formatDate, sortByName, toTitleCase } from "../../utils"
+import { isOwnedByDoctor } from "../../utils/doctorIdentity"
 import styles from "./Reports.module.css"
 
 interface ReportsProps { currentUser: User; patients?: Patient[] }
@@ -354,8 +355,7 @@ export function Reports({ currentUser, patients = [] }: ReportsProps) {
       .map((r) => ({ ...r, patientName: toTitleCase(r.patientName), doctorName: toTitleCase(r.doctorName) }))
       .filter((r) => {
         if (currentUser.role !== "doctor") return true
-        // Alguns registros retornam sem doctorName no join; usa created_by como fallback.
-        return r.doctorId === currentUser.id || r.doctorName === toTitleCase(currentUser.name)
+        return isOwnedByDoctor(r, currentUser)
       })
       .filter((r) => filterStatus === "All" || r.status === filterStatus)
       .filter((r) => !search ||

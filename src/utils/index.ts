@@ -20,6 +20,11 @@ export {
   showInPatientScheduledTab,
   todayDateStr,
 } from "./patientAppointments"
+export {
+  findDoctorForUser,
+  isOwnedByDoctor,
+  ownDoctorIds,
+} from "./doctorIdentity"
 
 // ─── Time helpers ─────────────────────────────────────────────────
 export function timeToMinutes(time: string): number {
