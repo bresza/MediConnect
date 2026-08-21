@@ -21,6 +21,7 @@ import { Financial }      from "./pages/Financial/Financial"
 import { Settings }       from "./pages/Settings/Settings"
 import { Team }           from "./pages/Team/Team"
 import { canAccess, canDo, getDefaultPage } from "./utils/permissions"
+import { isOwnedByDoctor } from "./utils/doctorIdentity"
 import { buildAIApiContextFromAppState } from "./services/aiContext"
 import { useAuth }          from "./contexts/authStore"
 import { usePatients }      from "./hooks/usePatients"
@@ -82,10 +83,8 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
   const isPatient   = currentUser.role === "patient"
   const isSecretary = currentUser.role === "secretary"
   const onlyDigits = (value?: string) => value?.replace(/\D/g, "") ?? ""
-  const isCurrentDoctor = (doctorId?: string, doctorName?: string) =>
-    doctorId === currentUser.id ||
-    doctorName === currentUser.name ||
-    doctorName?.toLowerCase().trim() === currentUser.name.toLowerCase().trim()
+  const isCurrentDoctor = (doctorId?: string) =>
+    isOwnedByDoctor({ doctorId }, currentUser)
 
   // ── Filtros de dados por perfil ──────────────────────────────────
   const linkedPatient = isPatient
@@ -111,7 +110,7 @@ export function AppRouter({ darkMode, onToggleDark }: AppRouterProps) {
 
   // Médico vê apenas seus próprios agendamentos e pacientes vinculados
   const doctorAppts      = isDoctor
-    ? appointments.filter((a) => isCurrentDoctor(a.doctorId, a.doctorName))
+    ? appointments.filter((a) => isCurrentDoctor(a.doctorId))
     : appointments
   const doctorPatientIds = isDoctor
     ? new Set(doctorAppts.map((a) => a.patientId))

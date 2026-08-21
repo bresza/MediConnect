@@ -653,30 +653,43 @@ async function fetchPatientLink(
   return Array.isArray(data) ? data[0] ?? null : null
 }
 
+async function fetchDoctorByFilters(
+  token: string,
+  filters: string[],
+): Promise<DoctorLinkResponse | null> {
+  if (filters.length === 0) return null
+  const clause = filters.length > 1 ? `or=(${filters.join(",")})` : filters[0]
+  // crm_state e legado de schemas antigos: o select pede apenas crm_uf.
+  const res = await fetchWithTimeout(
+    `${SUPABASE_URL}/rest/v1/doctors?${clause}&select=id,email,full_name,crm,crm_uf&limit=1`,
+    {
+      headers: {
+        "Content-Type":  "application/json",
+        "apikey":        SUPABASE_ANON_KEY,
+        "Authorization": `Bearer ${token}`,
+      },
+    },
+  )
+  if (!res.ok) return null
+  const data = await res.json().catch(() => [])
+  return Array.isArray(data) ? data[0] ?? null : null
+}
+
 async function fetchDoctorLink(
   token: string,
   userId: string,
   email: string,
-  name?: string,
 ): Promise<DoctorLinkResponse | null> {
-  const filters = [
+  // Never match doctors by display name: homonyms would attach the wrong row.
+  const byIdOrEmail = await fetchDoctorByFilters(token, [
     userId ? `id.eq.${encodeURIComponent(userId)}` : "",
     email ? `email.eq.${encodeURIComponent(email)}` : "",
-    name ? `full_name.eq.${encodeURIComponent(name)}` : "",
-  ].filter(Boolean)
-  if (filters.length === 0) return null
+  ].filter(Boolean))
+  if (byIdOrEmail) return byIdOrEmail
 
-  // crm_state e legado de schemas antigos: o select pede apenas crm_uf.
-  const res = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/doctors?or=(${filters.join(",")})&select=id,email,full_name,crm,crm_uf&limit=1`, {
-    headers: {
-      "Content-Type":  "application/json",
-      "apikey":        SUPABASE_ANON_KEY,
-      "Authorization": `Bearer ${token}`,
-    },
-  })
-  if (!res.ok) return null
-  const data = await res.json().catch(() => [])
-  return Array.isArray(data) ? data[0] ?? null : null
+  // Some schemas store auth.users.id in doctors.user_id instead of doctors.id.
+  if (!userId) return null
+  return fetchDoctorByFilters(token, [`user_id.eq.${encodeURIComponent(userId)}`])
 }
 
 async function withPatientLink(user: User, token: string): Promise<User> {
@@ -699,7 +712,7 @@ async function withPatientLink(user: User, token: string): Promise<User> {
 
 async function withDoctorLink(user: User, token: string): Promise<User> {
   if (user.role !== "doctor") return user
-  const doctor = await fetchDoctorLink(token, user.id, user.email, user.name)
+  const doctor = await fetchDoctorLink(token, user.id, user.email)
   if (!doctor) return user
   const crmUf = doctor.crm_uf ?? doctor.crm_state ?? ""
   return {

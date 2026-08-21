@@ -12,6 +12,7 @@ import {
   updateDoctorAvailability,
 } from "../../services/availability"
 import type { AvailabilityDoctor, DoctorAvailability } from "../../services/availability"
+import { findDoctorForUser } from "../../utils/doctorIdentity"
 import type { User } from "../../types"
 import styles from "./Availability.module.css"
 
@@ -41,14 +42,6 @@ const APPOINTMENT_TYPES = [
   { value: "presencial", label: "Presencial" },
   { value: "telemedicina", label: "Telemedicina" },
 ]
-
-function normalize(value?: string): string {
-  return (value ?? "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim()
-}
 
 function timeToMinutes(value: string): number {
   const [hours, minutes] = value.slice(0, 5).split(":").map(Number)
@@ -105,11 +98,7 @@ export function Availability({ currentUser }: AvailabilityProps) {
         if (!alive) return
         setDoctors(rows)
 
-        const ownDoctor = rows.find((doctor) =>
-          doctor.id === currentUser.id ||
-          normalize(doctor.email) === normalize(currentUser.email) ||
-          normalize(doctor.name) === normalize(currentUser.name) ||
-          normalize(doctor.crm) === normalize(currentUser.crm))
+        const ownDoctor = findDoctorForUser(rows, currentUser)
 
         setDoctorId((current) => {
           if (current && rows.some((doctor) => doctor.id === current)) return current

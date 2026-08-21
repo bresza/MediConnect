@@ -18,6 +18,7 @@ import { ConsultationModal } from "../../components/ui/ConsultationModal/Consult
 import { useWaitlist } from "../../hooks/useWaitlist"
 import { filterVisible, suggestForGap } from "../../services/waitlist"
 import { checkConflict, formatAppointmentType } from "../../utils"
+import { findDoctorForUser, isOwnedByDoctor } from "../../utils/doctorIdentity"
 import { getAppointmentDoctors, getAvailableSlots, getDoctorAvailability } from "../../services/appointments"
 import type { DoctorAvailability } from "../../services/appointments"
 import type {
@@ -216,10 +217,8 @@ export function Appointments({
   }, [])
 
   const currentDoctor = useMemo(() => {
-    return doctors.find((doctor) =>
-      doctor.id === currentUser.id ||
-      doctor.name.toLowerCase().trim() === currentUser.name.toLowerCase().trim())
-  }, [currentUser.id, currentUser.name, doctors])
+    return findDoctorForUser(doctors, currentUser)
+  }, [currentUser, doctors])
 
   const visibleDoctorIds = useMemo(() => {
     if (isDoctor) return [currentDoctor?.id ?? currentUser.id].filter(Boolean)
@@ -271,19 +270,12 @@ export function Appointments({
 
   const visibleAppointments = useMemo(() => {
     if (isDoctor) {
-      const currentDoctorId = currentDoctor?.id ?? currentUser.id
-      return appointments.filter((appointment) =>
-        appointment.doctorId === currentDoctorId ||
-        appointment.doctorId === currentUser.id ||
-        appointment.doctorName.toLowerCase().trim() === currentUser.name.toLowerCase().trim())
+      return appointments.filter((appointment) => isOwnedByDoctor(appointment, currentUser))
     }
 
     if (!filterDoctorId) return appointments
-    const doctor = doctors.find((item) => item.id === filterDoctorId)
-    return appointments.filter((appointment) =>
-      appointment.doctorId === filterDoctorId ||
-      Boolean(doctor && appointment.doctorName === doctor.name))
-  }, [appointments, currentDoctor?.id, currentUser.id, currentUser.name, doctors, filterDoctorId, isDoctor])
+    return appointments.filter((appointment) => appointment.doctorId === filterDoctorId)
+  }, [appointments, currentUser, filterDoctorId, isDoctor])
 
   const events = useMemo<EventInput[]>(() =>
     visibleAppointments.map((appointment) => {

@@ -8,6 +8,7 @@ import { Avatar } from "../../components/ui/Avatar/Avatar"
 import { Button } from "../../components/ui/Button/Button"
 import { RefreshButton } from "../../components/ui/RefreshButton/RefreshButton"
 import { formatDate, formatAppointmentType, sortByName, toTitleCase } from "../../utils"
+import { isOwnedByDoctor } from "../../utils/doctorIdentity"
 import type { PageId, Patient, Appointment, User } from "../../types"
 import styles from "./Dashboard.module.css"
 
@@ -68,13 +69,8 @@ export function Dashboard({ patients, appointments, currentUser, onNavigate, onR
     ])
   }, [onRefresh, loadReports])
 
-  const isCurrentDoctor = (doctorId?: string, doctorName?: string) =>
-    doctorId === currentUser.id ||
-    doctorName === currentUser.name ||
-    doctorName?.toLowerCase().trim() === currentUser.name.toLowerCase().trim()
-
   const visibleAppointments = (isDoctor
-    ? appointments.filter((a) => isCurrentDoctor(a.doctorId, a.doctorName))
+    ? appointments.filter((a) => isOwnedByDoctor(a, currentUser))
     : appointments
   ).map((a) => ({
     ...a,
@@ -97,7 +93,7 @@ export function Dashboard({ patients, appointments, currentUser, onNavigate, onR
   )
 
   const pendingReports = isDoctor
-    ? allReports.filter((r) => r.status === "Draft" && isCurrentDoctor(r.doctorId, r.doctorName))
+    ? allReports.filter((r) => r.status === "Draft" && isOwnedByDoctor(r, currentUser))
     : allReports.filter((r) => r.status === "Draft")
 
   const confirmed = visibleAppointments.filter((a) => a.status === "confirmed").length
