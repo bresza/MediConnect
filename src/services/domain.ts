@@ -1,5 +1,11 @@
 import { apiRequest, ApiError, getApiUserId } from "./api"
 import { formatSpecialtyLabel } from "../utils"
+import {
+  collectStaffDeleteIds,
+  pickUniqueEmailMatch,
+  postgrestIdFilter,
+  relatedRowsForStaffDelete,
+} from "../utils/staffDelete"
 import type {
   MedicalRecord, Prescription, Report, ReportStatus,
   Message, StaffMember, StaffRole, StaffStatus,
@@ -149,7 +155,7 @@ export async function updateReport(report: Report): Promise<Report> {
 // STAFF — criação via endpoint correto da API
 // ─────────────────────────────────────────────────────────────────
 interface ApiDoctor {
-  id: string; full_name: string; email?: string; phone?: string; phone_mobile?: string
+  id: string; user_id?: string; full_name: string; email?: string; phone?: string; phone_mobile?: string
   cpf?: string; crm?: string; crm_uf?: string; crm_state?: string; specialty?: string
   active?: boolean; created_at?: string
 }
@@ -727,30 +733,58 @@ export async function updateStaffMember(member: StaffMember): Promise<StaffMembe
 
 type StaffDeleteTarget = Pick<StaffMember, "id" | "email"> & Partial<Pick<StaffMember, "cpf">>
 
-function staffDeleteFilter(member: StaffDeleteTarget, includeCpf = false): string {
-  const cpf = member.cpf?.replace(/\D/g, "")
-  const filters = [
-    member.id ? `id.eq.${encodeURIComponent(member.id)}` : "",
-    member.email ? `email.eq.${encodeURIComponent(member.email.trim())}` : "",
-    includeCpf && cpf ? `cpf.eq.${encodeURIComponent(cpf)}` : "",
-  ].filter(Boolean)
-
-  return filters.length > 1 ? `or=(${filters.join(",")})` : filters[0]
+async function fetchStaffDeleteRows<T>(path: string): Promise<T[]> {
+  try {
+    return await apiRequest<T[]>(path, { logErrors: false })
+  } catch (err) {
+    if (err instanceof ApiError && (err.status === 400 || err.status === 404 || err.status === 406)) return []
+    throw err
+  }
 }
 
-function idsFilter(ids: string[]): string {
-  const unique = ids.filter((id, index, all) => id && all.indexOf(id) === index)
-  return unique.length > 1
-    ? `id=in.(${unique.map((id) => encodeURIComponent(id)).join(",")})`
-    : `id=eq.${encodeURIComponent(unique[0] ?? "")}`
+async function fetchDoctorsByFilter(filter: string): Promise<ApiDoctor[]> {
+  const withUserId = await fetchStaffDeleteRows<ApiDoctor>(
+    `/rest/v1/doctors?${filter}&select=id,user_id,email,full_name,cpf`,
+  )
+  if (withUserId.length > 0) return withUserId
+  return fetchStaffDeleteRows<ApiDoctor>(
+    `/rest/v1/doctors?${filter}&select=id,email,full_name,cpf`,
+  )
 }
 
-async function deleteAuthUser(target: StaffDeleteTarget, relatedIds: string[]): Promise<boolean> {
-  const ids = [target.id, ...relatedIds].filter((id, index, all) => id && all.indexOf(id) === index)
+async function fetchDoctorsForDelete(memberId: string): Promise<ApiDoctor[]> {
+  const id = encodeURIComponent(memberId)
+  const [byId, byUserId] = await Promise.all([
+    fetchDoctorsByFilter(`id=eq.${id}`),
+    fetchDoctorsByFilter(`user_id=eq.${id}`),
+  ])
+  const merged = new Map<string, ApiDoctor>()
+  for (const row of [...byId, ...byUserId]) {
+    if (row?.id) merged.set(row.id, row)
+  }
+  return [...merged.values()]
+}
+
+async function fetchProfilesForDelete(member: StaffDeleteTarget): Promise<{
+  byId: ApiProfile[]
+  uniqueEmail: ApiProfile | null
+}> {
+  const byId = await fetchStaffDeleteRows<ApiProfile>(
+    `/rest/v1/profiles?id=eq.${encodeURIComponent(member.id)}&select=id,email,full_name`,
+  )
+  if (byId.length > 0 || !member.email?.trim()) return { byId, uniqueEmail: null }
+
+  const byEmail = await fetchStaffDeleteRows<ApiProfile>(
+    `/rest/v1/profiles?email=eq.${encodeURIComponent(member.email.trim())}&select=id,email,full_name&limit=2`,
+  )
+  return { byId, uniqueEmail: pickUniqueEmailMatch(member.email, byEmail) }
+}
+
+async function deleteAuthUser(relatedIds: string[]): Promise<boolean> {
   let removed = false
   let lastError: unknown = null
 
-  for (const id of ids) {
+  for (const id of relatedIds) {
     try {
       await deleteAuthUserAt("/functions/v1/delete-user", id)
       removed = true
@@ -766,70 +800,42 @@ async function deleteAuthUser(target: StaffDeleteTarget, relatedIds: string[]): 
   return removed
 }
 
+async function deleteByFilter(table: string, filter: string | null, label: string): Promise<void> {
+  if (!filter) return
+  try {
+    await apiRequest(`/rest/v1/${table}?${filter}`, {
+      method: "DELETE",
+      headers: { Prefer: "return=minimal" },
+    })
+  } catch (err) {
+    console.warn(`[${table}] ${label} falhou ou registro inexistente:`, err)
+  }
+}
+
 export async function deleteStaffMember(member: StaffDeleteTarget): Promise<void> {
-  const doctorFilter = staffDeleteFilter(member, true)
-  const profileFilter = staffDeleteFilter(member)
-  if (!doctorFilter || !profileFilter) throw new Error("Profissional inválido para remoção.")
+  if (!member.id) throw new Error("Profissional inválido para remoção.")
 
-  const [doctorRows, profileRows] = await Promise.all([
-    apiRequest<ApiDoctor[]>(`/rest/v1/doctors?${doctorFilter}&select=id,email,full_name,cpf`).catch(() => []),
-    apiRequest<ApiProfile[]>(`/rest/v1/profiles?${profileFilter}&select=id,email,full_name`).catch(() => []),
+  const [doctorRows, profiles] = await Promise.all([
+    fetchDoctorsForDelete(member.id),
+    fetchProfilesForDelete(member),
   ])
-  const relatedIds = [
-    member.id,
-    ...(doctorRows ?? []).map((row) => row.id),
-    ...(profileRows ?? []).map((row) => row.id),
-  ].filter((id, index, all) => id && all.indexOf(id) === index)
+  const relatedRows = relatedRowsForStaffDelete(
+    member,
+    doctorRows,
+    profiles.byId,
+    profiles.uniqueEmail,
+  )
+  const relatedIds = collectStaffDeleteIds(member, relatedRows)
+  const idFilter = postgrestIdFilter("id", relatedIds)
+  const userIdFilter = postgrestIdFilter("user_id", relatedIds)
 
-  const authRemoved = await deleteAuthUser(member, relatedIds)
+  const authRemoved = await deleteAuthUser(relatedIds)
   if (authRemoved) return
 
-  try {
-    if (relatedIds.length > 0) {
-      await apiRequest(`/rest/v1/user_roles?user_id=in.(${relatedIds.map((id) => encodeURIComponent(id)).join(",")})`, {
-        method: "DELETE",
-        headers: { Prefer: "return=minimal" },
-      })
-    }
-  } catch (err) {
-    console.warn("[user_roles] remocao de papeis falhou ou registros inexistentes:", err)
-  }
-
-  try {
-    await apiRequest(`/rest/v1/doctors?${doctorFilter}`, {
-      method: "DELETE",
-      headers: { Prefer: "return=minimal" },
-    })
-  } catch (err) {
-    console.warn("[doctors] remocao de medico por filtro falhou ou registro inexistente:", err)
-  }
-
-  try {
-    if (relatedIds.length > 0) {
-      await apiRequest(`/rest/v1/doctors?${idsFilter(relatedIds)}`, {
-        method: "DELETE",
-        headers: { Prefer: "return=minimal" },
-      })
-    }
-  } catch (err) {
-    console.warn("[doctors] remocao de medico por id falhou ou registro inexistente:", err)
-  }
-
-  try {
-    await apiRequest(`/rest/v1/profiles?${profileFilter}`, {
-      method: "DELETE",
-      headers: { Prefer: "return=minimal" },
-    })
-  } catch (err) {
-    console.warn("[profiles] remocao de perfil por filtro falhou ou registro inexistente:", err)
-  }
-
-  if (relatedIds.length > 0) {
-    await apiRequest(`/rest/v1/profiles?${idsFilter(relatedIds)}`, {
-      method: "DELETE",
-      headers: { Prefer: "return=minimal" },
-    })
-  }
+  await deleteByFilter("user_roles", userIdFilter, "remocao de papeis")
+  await deleteByFilter("doctors", idFilter, "remocao de medico por id")
+  await deleteByFilter("doctors", userIdFilter, "remocao de medico por user_id")
+  await deleteByFilter("profiles", idFilter, "remocao de perfil por id")
 
   if (!authRemoved) {
     throw new Error("Registros removidos das tabelas, mas a API não removeu o usuário de autenticação. Verifique a Edge Function delete-user.")
