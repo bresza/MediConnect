@@ -13,6 +13,12 @@ export {
   formatZipCodeBR as formatZipCode,
 } from "./masks"
 export {
+  collectStaffDeleteIds,
+  isSameStaffPerson,
+  pickUniqueEmailMatch,
+  relatedRowsForStaffDelete,
+} from "./staffDelete"
+export {
   canPatientManageAppointment,
   getPatientDisplayStatus,
   isAppointmentFuture,
