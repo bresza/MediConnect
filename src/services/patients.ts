@@ -1,6 +1,7 @@
 import { ApiError, apiRequest, getApiUserId } from "./api"
 import { isDataUrl, isRemotePhotoUrl, resolvePatientPhotoUrl, attachPatientPhotos, attachPatientPhoto, deletePatientPhotoFromStorage } from "./patientPhoto"
 import { rememberPatientLink } from "./patientLinks"
+import { decideDuplicatePortalEmail } from "../utils/portalAccess"
 import type {
   Patient, Gender, PatientStatus, MaritalStatus,
   Ethnicity, CommunicationChannel, CommunicationFrequency,
@@ -400,6 +401,15 @@ async function findPatientById(id?: string): Promise<ApiPatient | null> {
   return rows?.[0] ?? null
 }
 
+async function findPatientByUserId(userId?: string): Promise<ApiPatient | null> {
+  if (!userId) return null
+  const rows = await apiRequest<ApiPatient[]>(
+    `/rest/v1/patients?user_id=eq.${encodeURIComponent(userId)}&select=*&limit=1`,
+    { logErrors: false },
+  ).catch(() => [])
+  return rows?.[0] ?? null
+}
+
 async function findPatientByEmail(email?: string): Promise<ApiPatient | null> {
   if (!email) return null
   const rows = await apiRequest<ApiPatient[]>(
@@ -677,7 +687,16 @@ export async function createPatientPortalAccess(
     userId = createdUserId(response)
   } catch (err) {
     if (!isAlreadyRegisteredError(err)) throw err
-    userId = (await findProfileByEmail(String(base.email ?? "")))?.id ?? ""
+    const profile = await findProfileByEmail(String(base.email ?? ""))
+    const linked = profile?.id ? await findPatientByUserId(profile.id) : null
+    const decision = decideDuplicatePortalEmail({
+      currentPatientId: patient.id,
+      currentPatientUserId: patient.userId,
+      existingProfileId: profile?.id,
+      patientIdLinkedToProfile: linked?.id,
+    })
+    if (!decision.ok) throw new Error(decision.message)
+    userId = decision.userId
   }
 
   if (!userId) throw new Error(response?.message || "Usuário paciente não foi criado pela API.")
