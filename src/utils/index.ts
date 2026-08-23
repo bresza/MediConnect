@@ -20,6 +20,12 @@ export {
   showInPatientScheduledTab,
   todayDateStr,
 } from "./patientAppointments"
+export {
+  PORTAL_EMAIL_IN_USE,
+  PORTAL_EMAIL_LINKED_TO_OTHER_PATIENT,
+  decideDuplicatePortalEmail,
+} from "./portalAccess"
+export type { DuplicatePortalEmailContext, DuplicatePortalEmailDecision } from "./portalAccess"
 
 // ─── Time helpers ─────────────────────────────────────────────────
 export function timeToMinutes(time: string): number {
