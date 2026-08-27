@@ -1,6 +1,5 @@
 import { ApiError, apiRequest, getApiUserId } from "./api"
 import { getPatientByIdentity, type PatientIdentity } from "./patients"
-import { fillGapFromWaitlist } from "./waitlistAutomation"
 import type {
   Appointment,
   AppointmentStatus,
@@ -735,11 +734,9 @@ export async function cancelPatientAppointment(
     notes: buildCancellationNotes(appointment.type, appointment.observations, reason),
   })
 
-  try {
-    await fillGapFromWaitlist(appointment, "patient_cancellation")
-  } catch {
-    // Cancelamento do paciente não deve falhar se o encaixe automático der erro.
-  }
+  // Do not run waitlist gap-fill under the patient's session: that path
+  // reads the clinic-wide queue and creates an appointment for someone else.
+  // Staff still promote the next patient from the agenda waitlist modal.
 
   return { ...appointment, status: "cancelled" }
 }

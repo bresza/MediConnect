@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { getAvailableSlots } from "../../services/appointments"
 import { enrollPatientInWaitlistFromPortal } from "../../services/waitlistAutomation"
-import { findWaitingEntry, getWaitlist } from "../../services/waitlist"
+import { findWaitingEntry, getWaitlistForPatient } from "../../services/waitlist"
 import {
   getBookableDoctors,
   getDoctorAvailability,
@@ -251,7 +251,7 @@ export function PatientFindDoctorView({
     if (!bookingDoctor) return
 
     let alive = true
-    void getWaitlist().then((entries) => {
+    void getWaitlistForPatient(patient.id).then((entries) => {
       if (!alive) return
       const existing = findWaitingEntry(entries, patient.id, {
         doctorId: bookingDoctor.id,

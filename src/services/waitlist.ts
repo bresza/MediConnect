@@ -330,6 +330,27 @@ export async function getWaitlist(): Promise<WaitlistEntry[]> {
   }
 }
 
+/**
+ * Portal/self-service: only this patient's waitlist rows.
+ * `getWaitlist()` is clinic-wide and must not run under a patient JWT
+ * (CID, clinical notes, pregnancy/disability flags of other patients).
+ */
+export async function getWaitlistForPatient(patientId: string): Promise<WaitlistEntry[]> {
+  const id = patientId.trim()
+  if (!id) return []
+
+  try {
+    const rows = await apiRequest<ApiWaitlistRow[]>(
+      `${TABLE_PATH}?patient_id=eq.${encodeURIComponent(id)}&select=*&order=entered_at.asc`,
+      { logErrors: false },
+    )
+    return Array.isArray(rows) ? rows.map(fromRow) : []
+  } catch (err) {
+    if (!isRemoteUnavailable(err)) throw err
+    return loadLocal().filter((entry) => entry.patientId === id)
+  }
+}
+
 export async function createWaitlistEntry(
   draft: Omit<WaitlistEntry, "id" | "enteredAt" | "dueBy" | "priorityColor" | "status"> & {
     inferred: InferPriorityResult
@@ -469,7 +490,7 @@ export interface EnrollPatientInput {
 export async function enrollPatientInWaitlist(
   input: EnrollPatientInput,
 ): Promise<{ entry: WaitlistEntry; created: boolean }> {
-  const waitlist = await getWaitlist()
+  const waitlist = await getWaitlistForPatient(input.patient.id)
   const existing = findWaitingEntry(waitlist, input.patient.id, {
     doctorId: input.doctorId,
     specialty: input.specialty,

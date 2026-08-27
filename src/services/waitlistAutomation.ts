@@ -124,6 +124,9 @@ type FreedSlot = Pick<
 /**
  * Preenche uma vaga liberada com o próximo paciente prioritário da fila
  * (`appointment_waitlist` via REST ou fallback localStorage).
+ *
+ * Must run under a staff/system session. A patient JWT must not read the
+ * clinic-wide queue or insert appointments for another patient.
  */
 export async function fillGapFromWaitlist(
   freed: FreedSlot,
